@@ -1,0 +1,32 @@
+# Secrets — never commit
+*.key
+*.rosenpass-secret
+*.p12
+*.mobileprovision
+
+# iOS
+clients/ios/*.xcodeproj/xcuserdata/
+clients/ios/*.xcworkspace/xcuserdata/
+clients/ios/DerivedData/
+clients/ios/build/
+clients/ios/.swiftpm/
+
+# Android
+clients/android/.gradle/
+clients/android/build/
+clients/android/app/build/
+clients/android/local.properties
+clients/android/.idea/
+clients/android/*.iml
+clients/android/captures/
+
+# Rust / Rosenpass build artifacts
+target/
+*.so
+!app/src/main/jniLibs/**/*.so
+
+# macOS / editor cruft
+.DS_Store
+*.swp
+.vscode/
+.idea/

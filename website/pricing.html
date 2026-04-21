@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pricing — Cloak VPN</title>
+  <meta name="description" content="Cloak VPN pricing: Basic and Pro tiers. Post-quantum protected, no-logs, AI-assisted." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: { 900: '#0a0a0f', 800: '#12121a', 700: '#1a1a24', 600: '#22222e' },
+            cloak: { 400: '#7aa2ff', 500: '#4f7cff', 600: '#3a5fe0' },
+            accent: { 400: '#5eead4' }
+          },
+          fontFamily: {
+            sans: ['ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace']
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    .grid-dots { background-image: radial-gradient(rgba(122,162,255,0.12) 1px, transparent 1px); background-size: 22px 22px; }
+  </style>
+</head>
+<body class="bg-ink-900 text-slate-200 font-sans antialiased">
+
+  <!-- Nav -->
+  <header class="border-b border-ink-700/80">
+    <div class="mx-auto max-w-6xl px-6 py-5 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2">
+        <span class="inline-block h-6 w-6 rounded bg-gradient-to-br from-cloak-400 to-accent-400"></span>
+        <span class="font-semibold tracking-tight">Cloak<span class="text-cloak-400">VPN</span></span>
+      </a>
+      <nav class="hidden md:flex items-center gap-7 text-sm text-slate-300">
+        <a href="/#features" class="hover:text-white">Features</a>
+        <a href="/#pqc" class="hover:text-white">How PQC works</a>
+        <a href="/pricing.html" class="text-white">Pricing</a>
+        <a href="https://github.com/" class="hover:text-white">GitHub</a>
+      </nav>
+      <a href="#plans" class="inline-flex items-center gap-2 rounded-md bg-cloak-500 hover:bg-cloak-600 px-3.5 py-2 text-sm font-medium text-white">Get Cloak</a>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="relative overflow-hidden">
+    <div class="absolute inset-0 grid-dots opacity-40 pointer-events-none"></div>
+    <div class="mx-auto max-w-6xl px-6 pt-16 pb-10 text-center relative">
+      <span class="inline-flex items-center gap-2 rounded-full border border-cloak-500/30 bg-cloak-500/10 px-3 py-1 text-xs text-cloak-400">
+        Simple pricing, no tricks
+      </span>
+      <h1 class="mt-5 text-4xl md:text-5xl font-semibold tracking-tight text-white">
+        One VPN. Two plans. <span class="text-cloak-400">Zero</span> logs.
+      </h1>
+      <p class="mt-4 text-slate-400 max-w-2xl mx-auto">
+        Every plan includes post-quantum protected tunnels and our strict no-logs architecture. Pay monthly or save with annual. Cancel anytime.
+      </p>
+      <div class="mt-6 inline-flex items-center gap-3 rounded-full border border-ink-600 bg-ink-800/60 p-1 text-sm">
+        <button id="billing-monthly" class="rounded-full px-4 py-1.5 bg-cloak-500 text-white">Monthly</button>
+        <button id="billing-annual"  class="rounded-full px-4 py-1.5 text-slate-300 hover:text-white">Annual <span class="ml-1 text-accent-400">−17%</span></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Plans -->
+  <section id="plans" class="mx-auto max-w-6xl px-6 pb-16">
+    <div class="grid md:grid-cols-2 gap-6">
+
+      <!-- Basic -->
+      <div class="rounded-2xl border border-ink-700 bg-ink-800/60 p-8 flex flex-col">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-semibold text-white">Basic</h2>
+          <span class="text-xs text-slate-400">For everyday privacy</span>
+        </div>
+        <div class="mt-5 flex items-baseline gap-2">
+          <span class="text-5xl font-semibold text-white" data-price="basic"
+                data-monthly="$4.99" data-annual="$49.99">$4.99</span>
+          <span class="text-slate-400" data-period="basic" data-monthly="/mo" data-annual="/yr">/mo</span>
+        </div>
+        <p class="mt-2 text-xs text-slate-500" data-note="basic"
+           data-monthly="Billed monthly. Cancel anytime."
+           data-annual="Billed annually ($4.17/mo equivalent). Cancel anytime.">
+          Billed monthly. Cancel anytime.
+        </p>
+
+        <ul class="mt-6 space-y-3 text-sm text-slate-300 flex-1">
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> Post-quantum protected WireGuard tunnels</li>
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> Strict no-logs, RAM-only servers</li>
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> iOS + Android apps</li>
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> Up to <strong class="text-white">3 devices</strong></li>
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> Core server locations (EU + US)</li>
+          <li class="flex gap-3 text-slate-500"><span>–</span> AI phishing & tracker shield</li>
+          <li class="flex gap-3 text-slate-500"><span>–</span> Split tunneling & custom DNS</li>
+          <li class="flex gap-3 text-slate-500"><span>–</span> Obfuscated / bridge servers</li>
+        </ul>
+
+        <a href="#" data-checkout="basic"
+           class="mt-7 inline-flex justify-center rounded-md border border-ink-600 bg-ink-700 hover:bg-ink-600 px-4 py-2.5 text-sm font-medium text-white">
+          Start Basic
+        </a>
+      </div>
+
+      <!-- Pro -->
+      <div class="relative rounded-2xl border border-cloak-500/40 bg-gradient-to-b from-ink-800/80 to-ink-800/40 p-8 flex flex-col shadow-[0_0_0_1px_rgba(79,124,255,0.15)]">
+        <div class="absolute -top-3 left-8 text-xs inline-flex items-center gap-2 rounded-full bg-cloak-500/20 border border-cloak-500/40 px-3 py-1 text-cloak-400">
+          Recommended
+        </div>
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-semibold text-white">Pro</h2>
+          <span class="text-xs text-slate-400">Everything, unlocked</span>
+        </div>
+        <div class="mt-5 flex items-baseline gap-2">
+          <span class="text-5xl font-semibold text-white" data-price="pro"
+                data-monthly="$9.99" data-annual="$99.99">$9.99</span>
+          <span class="text-slate-400" data-period="pro" data-monthly="/mo" data-annual="/yr">/mo</span>
+        </div>
+        <p class="mt-2 text-xs text-slate-500" data-note="pro"
+           data-monthly="Billed monthly. Cancel anytime."
+           data-annual="Billed annually ($8.33/mo equivalent). Cancel anytime.">
+          Billed monthly. Cancel anytime.
+        </p>
+
+        <ul class="mt-6 space-y-3 text-sm text-slate-300 flex-1">
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> <strong class="text-white">Everything in Basic</strong></li>
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> Up to <strong class="text-white">10 devices</strong></li>
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> AI phishing, tracker & malware shield (on-device)</li>
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> Split tunneling & custom / encrypted DNS</li>
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> Obfuscated / bridge servers (restrictive networks)</li>
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> Port forwarding on request</li>
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> Priority support</li>
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> All locations, including future launches</li>
+        </ul>
+
+        <a href="#" data-checkout="pro"
+           class="mt-7 inline-flex justify-center rounded-md bg-cloak-500 hover:bg-cloak-600 px-4 py-2.5 text-sm font-medium text-white">
+          Start Pro
+        </a>
+      </div>
+    </div>
+
+    <p class="mt-6 text-center text-xs text-slate-500">
+      Prices in USD. Taxes may apply in your region. Crypto (BTC/XMR) and anonymous cash-by-mail supported at checkout — ask support.
+    </p>
+  </section>
+
+  <!-- Stripe Pricing Table placeholder -->
+  <!--
+    Once you've created two Products in Stripe (Basic + Pro) and a Pricing Table,
+    paste your Pricing Table ID + Publishable Key below and uncomment.
+    https://stripe.com/docs/payments/checkout/pricing-table
+
+    <section class="mx-auto max-w-4xl px-6 pb-16">
+      <script async src="https://js.stripe.com/v3/pricing-table.js"></script>
+      <stripe-pricing-table
+        pricing-table-id="prctbl_REPLACE_ME"
+        publishable-key="pk_live_REPLACE_ME">
+      </stripe-pricing-table>
+    </section>
+  -->
+
+  <!-- FAQ -->
+  <section class="border-t border-ink-700/80 bg-ink-800/30">
+    <div class="mx-auto max-w-4xl px-6 py-16">
+      <h2 class="text-2xl font-semibold text-white tracking-tight">Common questions</h2>
+
+      <div class="mt-8 space-y-6 text-sm">
+        <div>
+          <h3 class="text-white font-medium">Is post-quantum cryptography really included on Basic?</h3>
+          <p class="mt-1.5 text-slate-400">Yes. Every tunnel — Basic or Pro — runs WireGuard with a Rosenpass-derived, post-quantum pre-shared key rotated every ~120 seconds. PQC isn't a paywalled feature; it's the product.</p>
+        </div>
+        <div>
+          <h3 class="text-white font-medium">Can I pay anonymously?</h3>
+          <p class="mt-1.5 text-slate-400">Stripe (card/Apple Pay/Google Pay) is our default. For maximum anonymity we also accept Bitcoin and Monero via BTCPay Server, and cash by mail on request. We do not require your real name — only a valid email for the account.</p>
+        </div>
+        <div>
+          <h3 class="text-white font-medium">What happens to my data on your servers?</h3>
+          <p class="mt-1.5 text-slate-400">Nothing persistent. Our concentrators run on RAM-only tmpfs log mounts, and the service does not store traffic logs, connection timestamps, or originating IPs. Billing is separated from usage: the server that takes your payment has no idea who you are on the network.</p>
+        </div>
+        <div>
+          <h3 class="text-white font-medium">Refunds?</h3>
+          <p class="mt-1.5 text-slate-400">7-day no-questions-asked refund on both plans. Email support within 7 days of purchase and we'll process it via Stripe.</p>
+        </div>
+        <div>
+          <h3 class="text-white font-medium">Can I use Cloak VPN in the US / UK / EU?</h3>
+          <p class="mt-1.5 text-slate-400">Yes. VPNs are legal in all of these jurisdictions. We comply with OFAC sanctions (no service in embargoed regions), but otherwise our service is available globally.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="mx-auto max-w-6xl px-6 py-16 text-center">
+    <h2 class="text-3xl md:text-4xl font-semibold tracking-tight text-white">Try Pro risk-free for 7 days.</h2>
+    <p class="mt-3 text-slate-400">If it isn't the best VPN you've used, we'll refund you.</p>
+    <a href="#plans" class="mt-7 inline-flex rounded-md bg-cloak-500 hover:bg-cloak-600 px-5 py-3 text-sm font-medium text-white">Choose a plan</a>
+  </section>
+
+  <!-- Footer -->
+  <footer class="border-t border-ink-700/80 py-10 text-sm text-slate-500">
+    <div class="mx-auto max-w-6xl px-6 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div>© <span id="year"></span> Cloak VPN. Built for a post-quantum internet.</div>
+      <div class="flex items-center gap-5">
+        <a href="/privacy.html" class="hover:text-white">Privacy</a>
+        <a href="/terms.html" class="hover:text-white">Terms</a>
+        <a href="/canary.html" class="hover:text-white">Warrant canary</a>
+        <a href="https://github.com/" class="hover:text-white">GitHub</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Year
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    // Billing toggle
+    const monthlyBtn = document.getElementById('billing-monthly');
+    const annualBtn  = document.getElementById('billing-annual');
+
+    function setBilling(mode) {
+      const active   = 'bg-cloak-500 text-white';
+      const inactive = 'text-slate-300 hover:text-white';
+      if (mode === 'monthly') {
+        monthlyBtn.className = 'rounded-full px-4 py-1.5 ' + active;
+        annualBtn.className  = 'rounded-full px-4 py-1.5 ' + inactive;
+      } else {
+        annualBtn.className  = 'rounded-full px-4 py-1.5 ' + active;
+        monthlyBtn.className = 'rounded-full px-4 py-1.5 ' + inactive;
+      }
+      document.querySelectorAll('[data-price], [data-period], [data-note]').forEach(el => {
+        const val = el.dataset[mode];
+        if (val) el.textContent = val;
+      });
+      // Rewrite CTA links so a future backend sees the tier + billing interval.
+      document.querySelectorAll('[data-checkout]').forEach(el => {
+        const tier = el.dataset.checkout;
+        el.setAttribute('href', `/api/v1/checkout?tier=${tier}&interval=${mode === 'monthly' ? 'month' : 'year'}`);
+      });
+    }
+    monthlyBtn.addEventListener('click', () => setBilling('monthly'));
+    annualBtn .addEventListener('click', () => setBilling('annual'));
+    setBilling('monthly');
+  </script>
+</body>
+</html>
