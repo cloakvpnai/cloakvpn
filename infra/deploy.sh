@@ -58,6 +58,20 @@ SSH_PRIV="${SSH_KEY_PATH%.pub}"
 
 SSH_OPTS=(-i "$SSH_PRIV" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$OUT_DIR/known_hosts" -o ConnectTimeout=10)
 
+# rsync's -e flag takes a single string that it splits on whitespace (NOT
+# shell-parsed), so neither naive joining nor `printf %q` escaping survives
+# when any path contains spaces (e.g. repo under "Cloak VPN App"). The robust
+# fix: write a tiny SSH wrapper script to a space-free path in /tmp and point
+# rsync -e at that single file. The wrapper embeds all paths safely via normal
+# double-quote semantics.
+SSH_WRAPPER=$(mktemp -t cloak-ssh.XXXXXX)
+trap 'rm -f "$SSH_WRAPPER"' EXIT
+cat > "$SSH_WRAPPER" <<WRAPPER
+#!/usr/bin/env bash
+exec ssh -i "$SSH_PRIV" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$OUT_DIR/known_hosts" -o ConnectTimeout=10 "\$@"
+WRAPPER
+chmod +x "$SSH_WRAPPER"
+
 color "waiting for SSH on $IPV4 (name=$NAME)…"
 for i in {1..60}; do
   if ssh "${SSH_OPTS[@]}" -o BatchMode=yes "root@$IPV4" true 2>/dev/null; then
@@ -69,9 +83,12 @@ for i in {1..60}; do
 done
 
 # ---------- Push repo ----------------------------------------------------
+color "ensuring /root/cloakvpn/ exists on the box"
+ssh "${SSH_OPTS[@]}" "root@$IPV4" "mkdir -p /root/cloakvpn/server"
+
 color "rsync server/ → root@$IPV4:/root/cloakvpn/"
 rsync -azP --delete \
-  -e "ssh ${SSH_OPTS[*]}" \
+  -e "$SSH_WRAPPER" \
   --exclude '.git' --exclude 'infra/out' \
   "$REPO_ROOT/server/" "root@$IPV4:/root/cloakvpn/server/"
 

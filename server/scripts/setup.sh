@@ -50,16 +50,31 @@ apt-get install -y -qq \
   curl ca-certificates gnupg ufw \
   wireguard wireguard-tools \
   qrencode jq iproute2 \
-  build-essential pkg-config \
-  rosenpass
+  build-essential pkg-config
 
-# If rosenpass is not in apt (Ubuntu <24.10), install from cargo as fallback.
-if ! command -v rosenpass >/dev/null 2>&1; then
-  warn "rosenpass not in apt; installing via cargo"
-  apt-get install -y -qq cargo
-  cargo install --locked rosenpass
-  cp "$HOME/.cargo/bin/rosenpass" /usr/local/bin/rosenpass
+# ---------- Install Rosenpass --------------------------------------------
+# Not in Ubuntu 24.04 LTS apt repos (added in 24.10). Try apt first anyway
+# (future-proofs + works on Debian testing), then fall back to cargo build.
+# Kept separate from the base apt install so a missing package doesn't trip
+# `set -e` and skip the fallback.
+log "Installing Rosenpass"
+if apt-get install -y -qq rosenpass 2>/dev/null; then
+  log "Rosenpass installed from apt"
+else
+  log "Rosenpass not in apt; building from source via cargo (~5 min on CX23)"
+  # Build deps for rosenpass-from-source on Ubuntu 24.04:
+  #   - cargo            : Rust toolchain
+  #   - cmake            : oqs-sys (C liboqs build for Kyber + Classic McEliece)
+  #   - libclang-dev     : bindgen (for oqs-sys and libsodium-sys-stable)
+  #   - libsodium-dev    : libsodium-sys-stable (classical crypto primitives)
+  #   - pkg-config + build-essential already installed above.
+  apt-get install -y -qq cargo cmake libclang-dev libsodium-dev
+  # --locked respects Cargo.lock; --root installs into /usr/local (no $HOME fiddling).
+  cargo install --locked --root /usr/local rosenpass
 fi
+
+command -v rosenpass >/dev/null || die "Rosenpass install failed — binary not on PATH."
+log "Rosenpass binary: $(command -v rosenpass) ($(rosenpass --version 2>&1 | head -n1))"
 
 # ---------- Kernel / sysctl ----------------------------------------------
 log "Enabling IPv4/IPv6 forwarding"
@@ -169,13 +184,21 @@ if [[ -x /usr/bin/rosenpass ]]; then
 fi
 
 # ---------- UFW firewall --------------------------------------------------
-log "Configuring UFW firewall (deny-by-default)"
+log "Configuring UFW firewall (deny-by-default, forward wg0 → eth0)"
 ufw --force reset >/dev/null
 ufw default deny incoming
 ufw default allow outgoing
+
+# CRITICAL for a VPN gateway: flip default FORWARD policy to ACCEPT *before*
+# enabling UFW. Without this, every packet from WG peers headed to the
+# internet gets silently dropped at the FORWARD chain, even with NAT in place.
+sed -i 's/DEFAULT_FORWARD_POLICY="DROP"/DEFAULT_FORWARD_POLICY="ACCEPT"/' /etc/default/ufw
+
 ufw allow OpenSSH
 ufw allow $WG_PORT/udp  comment 'WireGuard'
 ufw allow $RP_PORT/udp  comment 'Rosenpass PQ handshake'
+# Explicitly allow WG peers to exit via the main interface.
+ufw route allow in on "$WG_IFACE" out on "$ETH_IFACE"
 ufw --force enable
 
 # ---------- RAM-only /var/log --------------------------------------------

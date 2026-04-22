@@ -17,9 +17,9 @@ variable "location" {
 }
 
 variable "server_type" {
-  description = "CX22 is 2 vCPU / 4 GB / 40 GB SSD / 20 TB traffic, ~€3.79/mo. Upgrade to CX32 if you outgrow CPU — switch is a reboot."
+  description = "CX23 is Hetzner's current small Intel shared-vCPU type (replaces CX22 retired in 2025/26). Roughly 2 vCPU / 4 GB / 40 GB SSD / 20 TB traffic. Upgrade to CX33/CX43 if you outgrow CPU — switch is a reboot. If your chosen location retires CX23, query https://api.hetzner.cloud/v1/server_types for current offerings."
   type        = string
-  default     = "cx22"
+  default     = "cx23"
 }
 
 variable "image" {

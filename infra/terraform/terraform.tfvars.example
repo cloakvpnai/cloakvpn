@@ -14,8 +14,12 @@ server_name = "cloak-fi1"
 #               hil (Hillsboro US), sin (Singapore).
 location = "hel1"
 
-# CX22 = 2 vCPU / 4GB / 40GB / 20TB out / €3.79/mo. Fine for hundreds of peers.
-server_type = "cx22"
+# CX23 = Hetzner's current small Intel type (replaces CX22 retired in 2025/26).
+# ~2 vCPU / 4GB / 40GB / 20TB out, similar price. Fine for hundreds of peers.
+# If this errors with "server type ... not found" in your location, query
+# https://api.hetzner.cloud/v1/server_types with your API token to see what's
+# currently available.
+server_type = "cx23"
 
 # Ubuntu 24.04 is what server/scripts/setup.sh is tested against.
 image = "ubuntu-24.04"
