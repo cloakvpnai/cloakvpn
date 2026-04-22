@@ -3,7 +3,7 @@
 # Per-region state and secrets (new layout).
 terraform/regions/*/terraform.tfvars
 terraform/regions/*/terraform.tfstate
-terraform/regions/*/terraform.tfstate.backup
+terraform/regions/*/terraform.tfstate.*
 terraform/regions/*/.terraform/
 terraform/regions/*/.terraform.lock.hcl
 terraform/regions/*/crash.log
@@ -11,7 +11,7 @@ terraform/regions/*/crash.log
 # Legacy single-region state (pre-module refactor — keep ignored while migrating).
 terraform/terraform.tfvars
 terraform/terraform.tfstate
-terraform/terraform.tfstate.backup
+terraform/terraform.tfstate.*
 terraform/.terraform/
 terraform/.terraform.lock.hcl
 terraform/crash.log
