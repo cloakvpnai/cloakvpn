@@ -83,6 +83,27 @@ for i in {1..60}; do
   [[ $i -eq 60 ]] && die "SSH never came up after 5 minutes."
 done
 
+# ---------- Wait for cloud-init ------------------------------------------
+# cloud-init runs `package_update: true` + `package_upgrade: true` on first
+# boot, which holds /var/lib/dpkg/lock-frontend for 1-3 minutes. If setup.sh
+# starts before that releases, apt-get inside setup.sh fails with
+# "Could not get lock /var/lib/dpkg/lock-frontend". Block until cloud-init
+# reports `status: done`; a kernel upgrade can also trigger a reboot, so
+# re-wait for SSH afterward if we lose the connection mid-wait.
+color "waiting for cloud-init to finish on the box (apt-lock contention otherwise)…"
+if ! ssh "${SSH_OPTS[@]}" "root@$IPV4" "cloud-init status --wait" 2>/dev/null; then
+  # SSH dropped — probably a cloud-init-triggered reboot. Poll until back.
+  color "lost SSH during cloud-init wait (likely kernel-upgrade reboot) — re-polling…"
+  for i in {1..60}; do
+    if ssh "${SSH_OPTS[@]}" -o BatchMode=yes "root@$IPV4" "cloud-init status" 2>/dev/null | grep -q "status: done"; then
+      color "cloud-init done (after reboot, took ${i}x5s)"
+      break
+    fi
+    sleep 5
+    [[ $i -eq 60 ]] && die "cloud-init never reported done after 5 minutes."
+  done
+fi
+
 # ---------- Push repo ----------------------------------------------------
 color "ensuring /root/cloakvpn/ exists on the box"
 ssh "${SSH_OPTS[@]}" "root@$IPV4" "mkdir -p /root/cloakvpn/server"

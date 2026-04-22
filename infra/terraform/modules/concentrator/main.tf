@@ -5,18 +5,22 @@
 # user-specific params (SSH key path, admin CIDRs).
 #
 # Creates:
-#   - 1× SSH key registered in the Hetzner project (named per-region so
-#     multiple regions in one project don't collide)
 #   - 1× Firewall (deny-by-default, allow SSH from admin_ip_cidrs,
 #                  51820/udp WireGuard worldwide, 9999/udp Rosenpass worldwide,
 #                  optional 443/tcp for the Go API)
 #   - 1× Server (CX23 by default, Ubuntu 24.04), attached to the firewall
+#
+# Expects to exist (bootstrapped once, shared across regions):
+#   - 1× SSH key registered in the Hetzner project under the name
+#     `cloakvpn-admin`. Hetzner enforces fingerprint-uniqueness project-wide,
+#     so a per-region resource would collide. Every region looks up this
+#     single key as a data source. The `var.ssh_public_key_path` variable is
+#     kept for documentation but no longer read by terraform — the actual
+#     public-key bytes live in the Hetzner record, created out-of-band (or
+#     on the very first `terraform apply` before this module was converted).
 
-resource "hcloud_ssh_key" "admin" {
-  # Suffix with server_name so each region gets its own key resource —
-  # Hetzner requires unique names across the project.
-  name       = "cloakvpn-admin-${var.server_name}"
-  public_key = trimspace(file(pathexpand(var.ssh_public_key_path)))
+data "hcloud_ssh_key" "admin" {
+  name = "cloakvpn-admin"
 }
 
 resource "hcloud_firewall" "cloak" {
@@ -71,7 +75,7 @@ resource "hcloud_server" "concentrator" {
   server_type  = var.server_type
   image        = var.image
   location     = var.location
-  ssh_keys     = [hcloud_ssh_key.admin.id]
+  ssh_keys     = [data.hcloud_ssh_key.admin.id]
   firewall_ids = [hcloud_firewall.cloak.id]
 
   public_net {
