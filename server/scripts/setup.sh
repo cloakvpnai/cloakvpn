@@ -145,7 +145,11 @@ cat >"$ETC_RP/server.toml" <<EOF
 # Cloak VPN — Rosenpass server config
 public_key = "$ETC_RP/server.rosenpass-public"
 secret_key = "$ETC_RP/server.rosenpass-secret"
-listen = ["0.0.0.0:$RP_PORT", "[::]:$RP_PORT"]
+# A single IPv6 wildcard listener covers both v4 and v6 on Linux (IPV6_V6ONLY=0
+# by default), so this is both "dual-stack" and avoids the self-collision bug
+# where rosenpass binds 0.0.0.0:$RP_PORT then fails to bind [::]:$RP_PORT
+# because the v6 wildcard implicitly conflicts with the v4 wildcard.
+listen = ["[::]:$RP_PORT"]
 verbosity = "Quiet"
 
 [[peers]]
@@ -215,6 +219,12 @@ fi
 # ---------- Start services ------------------------------------------------
 log "Enabling and starting services"
 systemctl daemon-reload
+
+# If we're re-running setup.sh over a box that previously had the dual-listen
+# bug, the rosenpass unit may be stuck in a deep crashloop with a huge
+# restart counter. Clear that so `systemctl start` tries again cleanly.
+systemctl reset-failed cloak-rosenpass.service 2>/dev/null || true
+
 systemctl enable --now wg-quick@$WG_IFACE.service
 systemctl enable --now cloak-rosenpass.service
 
