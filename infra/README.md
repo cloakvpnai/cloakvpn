@@ -1,21 +1,41 @@
-# infra/ — Cloak VPN Phase 0 concentrator
+# infra/ — Cloak VPN concentrators (multi-region)
 
-One-command deploy for a **Hetzner CX22 in Helsinki** running WireGuard + Rosenpass, provisioned by `server/scripts/setup.sh`.
+One-command deploy for a **Hetzner CX23** (Ubuntu 24.04) concentrator running WireGuard + Rosenpass. Each region is an independent box, provisioned by `server/scripts/setup.sh`. They share nothing at this layer — account state lives in the future Go API, not on the concentrators.
 
 ```
 infra/
-├── terraform/          # Hetzner SSH key + firewall + server
-│   ├── versions.tf
-│   ├── variables.tf
-│   ├── main.tf
-│   ├── outputs.tf
-│   └── terraform.tfvars.example
-├── deploy.sh           # terraform apply → rsync → setup.sh → reboot → smoke test
-├── Makefile            # thin wrappers: make deploy / ssh / wg / destroy
-└── out/                # gitignored: known_hosts, setup.log, client.conf.ini
+├── terraform/
+│   ├── modules/
+│   │   └── concentrator/        # reusable: SSH key + firewall + server
+│   │       ├── versions.tf
+│   │       ├── variables.tf
+│   │       ├── main.tf
+│   │       └── outputs.tf
+│   └── regions/
+│       ├── fi1/                 # Finland · Helsinki (hel1)         — LIVE
+│       │   ├── versions.tf
+│       │   ├── variables.tf
+│       │   ├── main.tf          # instantiates modules/concentrator
+│       │   ├── outputs.tf
+│       │   └── terraform.tfvars.example
+│       └── de1/                 # Germany · Falkenstein (fsn1)      — ready
+│           └── …same shape…
+├── deploy.sh                    # region-aware: ./deploy.sh <region>
+├── Makefile                     # make deploy REGION=de1  (defaults to fi1)
+└── out/
+    └── <region>/                # gitignored per-region artifacts
 ```
 
-## Runbook (first-time deploy, ~15 minutes)
+## Adding a new region
+
+1. **Copy a region dir:** `cp -r terraform/regions/fi1 terraform/regions/<slug>`
+2. **Edit `main.tf`:** set `server_name = "cloak-<slug>"` and `location = "<hetzner-dc>"` (options: `hel1`, `fsn1`, `nbg1`, `ash`, `hil`, `sin`).
+3. **Copy the tfvars:** `cp terraform/regions/<slug>/terraform.tfvars.example terraform/regions/<slug>/terraform.tfvars` and fill in your Hetzner token (project-scoped — reuse across regions).
+4. **Deploy:** `make deploy REGION=<slug>`.
+
+That's it. Each region is a separate terraform state file, so re-running a deploy on one region never touches another.
+
+## Runbook — first-time deploy (~15 minutes)
 
 ### 1. Install prerequisites (your workstation)
 
@@ -27,7 +47,7 @@ brew install terraform rsync
 sudo apt install -y terraform rsync openssh-client
 ```
 
-Also: an SSH key dedicated to this project. Do not reuse your personal key.
+Also an SSH key dedicated to this project:
 
 ```bash
 ssh-keygen -t ed25519 -C cloakvpn -f ~/.ssh/cloakvpn_ed25519
@@ -35,101 +55,103 @@ ssh-keygen -t ed25519 -C cloakvpn -f ~/.ssh/cloakvpn_ed25519
 
 ### 2. Get a Hetzner token
 
-1. Create a Hetzner Cloud account → **console.hetzner.cloud**.
+1. Sign in at **console.hetzner.cloud**.
 2. Create a project named `cloakvpn`.
-3. Inside the project → **Security → API Tokens → Generate API Token**. Scope: **Read & Write**. Copy it — you won't see it again.
+3. **Security → API Tokens → Generate API Token** (scope: Read & Write). Copy it — you won't see it again. Tokens are project-scoped, not region-scoped, so the same token works for every region in that project.
 
-### 3. Configure and deploy
+### 3. Configure and deploy a region
 
 ```bash
-cd infra/terraform
+cd infra/terraform/regions/fi1
 cp terraform.tfvars.example terraform.tfvars
 $EDITOR terraform.tfvars   # paste your token, tighten admin_ip_cidrs to your /32
 
-cd ..
-make init
-make deploy
+cd ../../..                # back to infra/
+make init REGION=fi1
+make deploy REGION=fi1
 ```
 
-Expected timeline:
-- `terraform apply` — 30 s (Hetzner creates the box).
-- Wait-for-SSH — 1–2 min (Ubuntu finishes cloud-init).
-- `rsync` + `setup.sh` — 3–5 min (apt update, WireGuard + Rosenpass install, key generation, firewall).
-- Reboot + smoke test — 1–2 min.
+`REGION` defaults to `fi1`, so `make deploy` with no args deploys fi1.
 
-At the end you'll have:
-- A running server, IPv4/IPv6 printed to your terminal.
-- `infra/out/client.conf.ini` with a working peer config for testing.
-- `infra/out/setup.log` with the full boot log.
+Expected timeline:
+- `terraform apply` — 30 s.
+- Wait-for-SSH — 1–2 min (cloud-init).
+- `rsync` + `setup.sh` — 3–5 min (apt, WireGuard + Rosenpass, key generation, firewall).
+- Reboot + smoke test — 1–2 min.
 
 ### 4. Point DNS at it (Cloudflare)
 
-Once DNS is up, also flip `enable_api_port = true` in `terraform.tfvars` and re-run `make deploy` when you're ready to expose the Go API.
-
 ```
-A     fi1.cloakvpn.ai   → <ipv4 output>
-AAAA  fi1.cloakvpn.ai   → <ipv6 output>
-A     api.cloakvpn.ai   → <ipv4 output>    # later, once Caddy is up
-AAAA  api.cloakvpn.ai   → <ipv6 output>
+A     <region>.cloakvpn.ai   → <ipv4 output>
+AAAA  <region>.cloakvpn.ai   → <ipv6 output>
 ```
 
-Keep the **proxy status** *DNS-only (gray cloud)* for `fi1.cloakvpn.ai` — Cloudflare's proxy doesn't handle UDP on non-standard ports, and WireGuard is UDP. `api.cloakvpn.ai` *should* be proxied (orange cloud), because the API is plain HTTPS.
+**Proxy status must be DNS-only (grey cloud).** Cloudflare's proxy is HTTP/HTTPS only — WireGuard is UDP on 51820 and would just time out behind an orange cloud.
+
+`api.cloakvpn.ai` is different — that's plain HTTPS and *should* be proxied (orange cloud) when it comes online.
 
 ### 5. Smoke test the tunnel
 
-```bash
-# On your phone/laptop: paste infra/out/client.conf.ini into the Cloak VPN app.
-# Or use wg-quick locally:
-#   sudo wg-quick up ./peer.conf   (convert from the ini block)
+Each successful deploy produces two client configs in `infra/out/<region>/`:
 
-# On your box (from another terminal):
-make wg
-# Look for:
+- `client.conf.ini` — Cloak app format, includes the Rosenpass PQC block.
+- `cloak-<server-name>-smoketest.conf` — stock WireGuard `.conf` for the official WireGuard app. **Classical WG only**, no Rosenpass. Use this to prove end-to-end routing before the Cloak app is built.
+
+```bash
+# On your Mac: import cloak-<server-name>-smoketest.conf into the WireGuard app, activate.
+# Visit https://www.cloudflare.com/cdn-cgi/trace
+#   - 'ip=' should match the server's IPv4/IPv6
+#   - 'loc=' should match the server's country (FI / DE / …)
+
+# On the server (from another terminal):
+make wg REGION=<region>
 #   - latest handshake: a few seconds ago
-#   - transfer: > 0 received, > 0 sent
-#   - systemctl is-active: active
+#   - transfer:          > 0 received, > 0 sent
+#   - cloak-rosenpass.service: active
 ```
 
-If `make wg` shows non-zero traffic and the Cloak PSK rotates every ~2 minutes (the `latest handshake` line refreshing even when idle), the post-quantum path is working end-to-end.
+When PSK rotation is working, `latest handshake` will refresh every ~2 minutes even when the tunnel is idle — that's Rosenpass injecting a fresh post-quantum PSK into WG.
 
 ## Day-2 operations
 
-| Command | What it does |
-|---|---|
-| `make ssh` | Open a root shell on the box. |
-| `make setup` | Re-run `setup.sh` without creating a new server (idempotent). |
-| `make wg` | Quick peer/state check. |
-| `make plan` | Show terraform drift. |
-| `make destroy` | Tear the box down. Billing stops within the hour. |
+Every command accepts `REGION=<slug>` (default `fi1`).
 
-## Costs
+| Command                         | What it does                                                 |
+|---------------------------------|--------------------------------------------------------------|
+| `make regions`                  | List all configured regions.                                 |
+| `make ssh REGION=de1`           | Open a root shell on the box.                                |
+| `make setup REGION=de1`         | Re-run `setup.sh` without creating a new server (idempotent). |
+| `make wg REGION=de1`            | Quick peer/state check.                                      |
+| `make plan REGION=de1`          | Show terraform drift for that region.                        |
+| `make destroy REGION=de1`       | Tear down that region's box. Billing stops within the hour.  |
 
-| Resource | Monthly |
-|---|---|
-| Hetzner CX22 in Helsinki | **€3.79** (≈ $4.10) |
-| Outbound traffic (first 20 TB) | **included** |
-| Extra TB outbound | €1.00 |
-| IPv4 address | €0.60 (if you upgrade from CX22's included 1 IPv4) |
+## Costs (per region)
 
-Minimum realistic Phase 0 bill: **< €5/month**. There is no per-hour billing surprise — Hetzner bills hourly but caps at monthly.
+| Resource                           | Monthly         |
+|------------------------------------|-----------------|
+| Hetzner CX23                       | **€4.59** (≈ $4.90) |
+| Outbound traffic (first 20 TB)     | **included**    |
+| Extra TB outbound                  | €1.00           |
 
-## Jurisdiction choice
+Minimum realistic Phase 0 bill per region: **< €5/month**. Hetzner bills hourly and caps at monthly — you can spin a region up to experiment and destroy it the same day without a surprise charge.
 
-`hel1` (Helsinki) is the default because:
+## Jurisdiction notes
 
-- Finland is **not** a 14 Eyes member and has strong constitutional privacy protections (Section 10 — secrecy of correspondence).
-- Latency from US East is ~95 ms, Western Europe ~25 ms — workable for both target regions.
-- Hetzner has a public, specific law-enforcement response policy and publishes a transparency report.
-
-Alternatives (see `variables.tf`):
-
-- `fsn1` / `nbg1` — Germany. Stronger GDPR enforcement in practice, but Germany is in 14 Eyes.
-- `ash` / `hil` — US. Best US latency, but worst jurisdictional posture. Avoid for the primary concentrator; fine for an expansion node.
-- `sin` — Singapore. Good APAC latency; Singapore's privacy posture is weaker than EU.
+| Region | DC    | 14-Eyes | Notes                                                                     |
+|--------|-------|---------|---------------------------------------------------------------------------|
+| `fi1`  | hel1  | No      | Strong constitutional privacy (Section 10). Our recommended primary.     |
+| `de1`  | fsn1  | **Yes** | Strong GDPR enforcement, 14-Eyes membership. Disclose on regions page.   |
+| `us-e` | ash   | **Yes** | Best US latency; worst jurisdictional posture. Expansion only.           |
+| `us-w` | hil   | **Yes** | See above.                                                               |
+| `sg1`  | sin   | No      | Good APAC latency; weaker privacy posture than EU.                       |
 
 ## Things that are intentionally NOT in this module yet
 
-- **Caddy / nginx + Let's Encrypt for `api.cloakvpn.ai`.** Will arrive as `server/scripts/api-tls.sh` when the Go API is ready to serve public traffic.
-- **Backups.** Nothing on the box is worth backing up: state lives in the Go API SQLite (which runs on a *separate* future instance) and in Stripe. The concentrator is intentionally cattle.
-- **Observability.** Journald-only, RAM-only, on purpose. Metrics will go to a separate Prometheus instance that pulls a coarse counter (peer count, handshake count) without per-peer identifiers.
-- **Multi-region.** Add by duplicating the `hcloud_server` resource with a different `location`/`server_name` — they are independent concentrators sharing only the Go API for account state.
+- **Caddy / nginx + Let's Encrypt for `api.cloakvpn.ai`.** Arrives as `server/scripts/api-tls.sh` when the Go API is ready to serve public traffic.
+- **Backups.** Nothing on the concentrator is worth backing up — keys regenerate on `setup.sh`, state lives in the Go API SQLite on a separate future instance, billing lives in Stripe. Concentrators are cattle.
+- **Observability.** Journald-only, RAM-only `/var/log` on purpose. Metrics will go to a separate Prometheus instance that pulls a coarse counter (peer count, handshake count) without per-peer identifiers.
+- **Shared state between concentrators.** They are independent. The Go API is the single source of account + peer-key state.
+
+## Migrating from the pre-module layout
+
+If you already have a live box under the old `infra/terraform/` root (no `regions/`, no `modules/`), see `MIGRATE-fi1.md` in this directory for a zero-downtime state migration script. The server keeps running — only terraform's bookkeeping changes.

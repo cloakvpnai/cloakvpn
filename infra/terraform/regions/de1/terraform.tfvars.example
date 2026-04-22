@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars and fill in.
+# terraform.tfvars is in .gitignore — never commit with a real token.
+
+# Reuse the same Hetzner token as fi1 (they're project-scoped, not region-scoped).
+hcloud_token        = "REPLACE_WITH_HETZNER_API_TOKEN"
+ssh_public_key_path = "~/.ssh/cloakvpn_ed25519.pub"
+admin_ip_cidrs      = ["0.0.0.0/0"]
+enable_api_port     = false

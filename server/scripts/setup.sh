@@ -256,6 +256,7 @@ server_public_key_b64 = $RP_SERVER_PUB_B64
 server_endpoint       = $PUBLIC_IP:$RP_PORT
 psk_rotation_seconds  = 120
 
+### END_CLIENT_CONFIG ###
 -----------------------------------------------------------------------------
 
   Next:
