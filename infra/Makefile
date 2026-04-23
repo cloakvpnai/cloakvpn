@@ -21,6 +21,7 @@ help:
 	@echo "  make setup               Re-run setup.sh on the existing box (no new server)."
 	@echo "  make ssh                 Open an interactive SSH session to the concentrator."
 	@echo "  make wg                  Show live WireGuard peer state on the box."
+	@echo "  make install-api         Cross-compile server/api + install on the box (no terraform)."
 	@echo "  make regions             List all configured regions."
 	@echo "  make destroy             Tear down the region's Hetzner server."
 	@echo ""
@@ -66,6 +67,30 @@ wg: _check-region
 	KEY=$$( awk -F'=' '/^ssh_public_key_path/{gsub(/[" ]/,"",$$2); print $$2}' $(TF_DIR)/terraform.tfvars | sed "s|~|$$HOME|" ); \
 	PRIV=$${KEY%.pub}; \
 	ssh -i $$PRIV root@$$IP "wg show wg0; echo; systemctl is-active cloak-rosenpass.service"
+
+# Cross-compile cloakvpn-api + scp + run install-api.sh. No terraform, no
+# setup.sh — just the API binary. Use this after editing server/api/ to
+# push the new build without touching WG state on the box.
+#
+# Build output goes to a space-free /tmp path because $(CURDIR) can contain
+# spaces (e.g. "Business Opportunity" in user Downloads/Documents dirs) and
+# `go build -o` word-splits on whitespace regardless of quoting from Make.
+.PHONY: install-api
+install-api: _check-region
+	@command -v go >/dev/null || { echo "go not installed (brew install go)"; exit 1; }
+	@IP=$$( $(TF) output -raw ipv4 ); \
+	KEY=$$( awk -F'=' '/^ssh_public_key_path/{gsub(/[" ]/,"",$$2); print $$2}' $(TF_DIR)/terraform.tfvars | sed "s|~|$$HOME|" ); \
+	PRIV=$${KEY%.pub}; \
+	BIN=/tmp/cloakvpn-api-$(REGION); \
+	( cd ../server/api && GOOS=linux GOARCH=amd64 go build -o "$$BIN" ./ ); \
+	echo "built $$(du -h $$BIN | cut -f1) → $$BIN; rsync'ing server/ + scp'ing binary"; \
+	rsync -az --delete -e "ssh -i $$PRIV -o StrictHostKeyChecking=accept-new" \
+	  --exclude '.git' --exclude 'infra/out' \
+	  ../server/ root@$$IP:/root/cloakvpn/server/; \
+	rsync -az -e "ssh -i $$PRIV -o StrictHostKeyChecking=accept-new" \
+	  "$$BIN" root@$$IP:/tmp/cloakvpn-api; \
+	ssh -i $$PRIV -o StrictHostKeyChecking=accept-new root@$$IP \
+	  "chmod +x /root/cloakvpn/server/scripts/install-api.sh && /root/cloakvpn/server/scripts/install-api.sh"
 
 .PHONY: destroy
 destroy: _check-region

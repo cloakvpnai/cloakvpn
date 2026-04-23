@@ -1,0 +1,47 @@
+[Unit]
+Description=Cloak VPN — account + device provisioning API
+# Must come up after WireGuard + Rosenpass because the API shells out to
+# `wg`, `wg-quick`, and `systemctl restart cloak-rosenpass.service` when
+# provisioning peers. If those services aren't up, every /v1/device call
+# 500s until they are.
+After=network-online.target wg-quick@wg0.service cloak-rosenpass.service
+Requires=network-online.target
+Wants=wg-quick@wg0.service cloak-rosenpass.service
+
+# Only start the service if the env file exists. Avoids a crash-loop on
+# boxes where the operator hasn't finished the Stripe setup yet — see
+# docs/STRIPE_SETUP.md §5. The unit can be `systemctl enable`d safely
+# before the env file is populated; it'll just stay inactive.
+ConditionPathExists=/etc/cloakvpn/api.env
+
+[Service]
+Type=simple
+
+# Why run as root:
+#   - Calls `wg set wg0 peer ...` which requires CAP_NET_ADMIN
+#   - Writes to /etc/rosenpass/ (root-owned, 0700)
+#   - Calls `systemctl restart cloak-rosenpass.service`
+# Could be tightened to a dedicated user with setcap + sudoers carve-outs,
+# but that's a Phase-1 hardening item once we're actually taking payments.
+User=root
+
+EnvironmentFile=/etc/cloakvpn/api.env
+ExecStart=/usr/local/bin/cloakvpn-api
+
+# Start a throwaway DB dir on first run if it doesn't exist. api.env sets
+# DB_PATH=/var/lib/cloakvpn/cloakvpn.db; the dir needs to exist first.
+ExecStartPre=/usr/bin/install -d -m 0700 -o root -g root /var/lib/cloakvpn
+
+Restart=on-failure
+RestartSec=3
+
+# Light sandboxing. Keep loose for Phase 0 — can tighten once we confirm
+# nothing in the provisioning path trips it (wg-quick and systemctl
+# commands tend to need more than the most aggressive settings allow).
+NoNewPrivileges=false
+ProtectSystem=false
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -161,6 +161,33 @@ done
 color "post-reboot service check:"
 ssh "${SSH_OPTS[@]}" "root@$IPV4" "systemctl is-active wg-quick@wg0.service cloak-rosenpass.service; wg show wg0 | head -n 15" || true
 
+# ---------- Optional: cross-compile + install cloakvpn-api --------------
+# Gated on DEPLOY_API=1 so existing WG-only deploys stay unchanged. The
+# install-api.sh script is idempotent AND respects missing api.env, so
+# there's no risk of it crash-looping before Stripe is set up.
+if [[ "${DEPLOY_API:-0}" == "1" ]]; then
+  if ! command -v go >/dev/null; then
+    warn "DEPLOY_API=1 set but 'go' not on PATH. Install Go (brew install go) and re-run."
+  else
+    color "cross-compiling server/api → linux-amd64"
+    # Build to a space-free /tmp path: `go build -o` word-splits on any
+    # whitespace in the output path even when quoted, so paths under
+    # "Business Opportunity/" (or any dir with a space) fail.
+    API_BIN="/tmp/cloakvpn-api-$REGION"
+    (
+      cd "$REPO_ROOT/server/api"
+      GOOS=linux GOARCH=amd64 go build -o "$API_BIN" ./
+    )
+    color "scp'ing binary ($(du -h "$API_BIN" | cut -f1)) → $IPV4:/tmp/cloakvpn-api"
+    rsync -az -e "$SSH_WRAPPER" "$API_BIN" "root@$IPV4:/tmp/cloakvpn-api"
+    color "running install-api.sh on the box"
+    ssh "${SSH_OPTS[@]}" "root@$IPV4" \
+      "chmod +x /root/cloakvpn/server/scripts/install-api.sh && /root/cloakvpn/server/scripts/install-api.sh"
+  fi
+else
+  color "skipping API deploy (set DEPLOY_API=1 to include cloakvpn-api)"
+fi
+
 # ---------- Done ---------------------------------------------------------
 cat <<EOF
 
@@ -179,6 +206,11 @@ cat <<EOF
     $REGION.cloakvpn.ai   A     $IPV4
     $REGION.cloakvpn.ai   AAAA  $IPV6
     (Proxy status: DNS only / grey cloud — WireGuard is UDP, unproxyable.)
+
+  API deploy:
+    $( [[ "${DEPLOY_API:-0}" == "1" ]] \
+         && echo "installed — unit enabled; create /etc/cloakvpn/api.env to start" \
+         || echo "skipped — run 'DEPLOY_API=1 make deploy REGION=$REGION' to include" )
 
   Smoke test:
     1. Import $OUT_DIR/cloak-$NAME-smoketest.conf into the WireGuard app.
