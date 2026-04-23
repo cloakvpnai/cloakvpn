@@ -121,10 +121,11 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "provision failed", http.StatusInternalServerError)
 		return
 	}
-	dev, err := h.db.AddDevice(acct.ID, extractPub(cfg.InterfacePrivateKey, cfg), cfg.AssignedIP)
+	dev, err := h.db.AddDevice(acct.ID, cfg.InterfacePublicKey, cfg.AssignedIP)
 	if err != nil {
-		// Roll back the wg peer so we don't leak capacity.
-		_ = h.wgc.Revoke(cfg.PeerPublicKey)
+		// Roll back the wg + rosenpass peer so we don't leak capacity. NB:
+		// revoke the CLIENT's pubkey, not cfg.PeerPublicKey (the server's).
+		_ = h.wgc.Revoke(cfg.InterfacePublicKey)
 		http.Error(w, "server", http.StatusInternalServerError)
 		return
 	}
@@ -138,13 +139,6 @@ func (h *DeviceHandler) revoke(w http.ResponseWriter, r *http.Request) {
 	// to revoke, then call h.wgc.Revoke + h.db.DeleteDevice.
 	http.Error(w, "not implemented", http.StatusNotImplemented)
 }
-
-// extractPub is a placeholder for deriving the WG pubkey from the private key
-// we just generated. The real implementation stores the pubkey alongside the
-// privkey in wg.Provision and returns it; for Phase 0 we treat PeerPublicKey
-// as "server pub" and the client's pubkey is generated inside wg.Provision.
-// This stub is intentional — the signature will evolve as Phase 0 firms up.
-func extractPub(_ string, _ *wg.ClientConfig) string { return "REPLACE_WITH_CLIENT_WG_PUB" }
 
 // ---- /v1/account ----
 
