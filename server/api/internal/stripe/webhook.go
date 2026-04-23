@@ -139,16 +139,50 @@ func (h *Handler) handleSubscriptionUpdated(evt stripego.Event) error {
 		return h.db.DeactivateByStripeCustomer(sub.Customer.ID)
 	}
 
-	until := time.Unix(sub.CurrentPeriodEnd, 0).Add(3 * 24 * time.Hour) // grace
-	// We don't have the email here; re-use whatever we previously stored.
-	// Look it up via the Stripe customer ID.
-	// (For simplicity we call UpsertAccountByStripeCustomer only when we have
-	//  the email, i.e. from checkout.session.completed. Here we just bump tier.)
+	// Stripe API version 2025-03-31 (Basil) moved `current_period_end` from the
+	// Subscription to the SubscriptionItem. If the account's pinned API version
+	// is >= Basil, `sub.CurrentPeriodEnd` arrives as 0 and we'd expire the
+	// account immediately. Defensive fallback: fish the new field out of the
+	// raw JSON (v79 Go SDK doesn't expose it as a struct field yet); if even
+	// that fails, grant 35 days so a monthly subscriber isn't silently cut off.
+	// See docs/STRIPE_SETUP.md for the recommended dashboard API-version pin.
+	var until time.Time
+	if sub.CurrentPeriodEnd > 0 {
+		until = time.Unix(sub.CurrentPeriodEnd, 0).Add(3 * 24 * time.Hour)
+	} else if itemEnd := itemPeriodEnd(evt.Data.Raw); itemEnd > 0 {
+		until = time.Unix(itemEnd, 0).Add(3 * 24 * time.Hour)
+	} else {
+		log.Printf("subscription %s: no period_end in event; defaulting to 35d grace",
+			sub.ID)
+		until = time.Now().Add(35 * 24 * time.Hour)
+	}
+
 	_, err := h.db.Exec(`UPDATE accounts
 	                        SET tier = ?, device_limit = ?, active_until = ?
 	                      WHERE stripe_customer_id = ?`,
 		tier, limit, until, sub.Customer.ID)
 	return err
+}
+
+// itemPeriodEnd reaches into the raw event JSON to pull
+// items.data[0].current_period_end — the post-Basil location of the field
+// that moved off the Subscription object in the 2025-03-31 API version.
+// Returns 0 if not present (pre-Basil events) or unparseable.
+func itemPeriodEnd(raw json.RawMessage) int64 {
+	var shim struct {
+		Items struct {
+			Data []struct {
+				CurrentPeriodEnd int64 `json:"current_period_end"`
+			} `json:"data"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &shim); err != nil {
+		return 0
+	}
+	if len(shim.Items.Data) == 0 {
+		return 0
+	}
+	return shim.Items.Data[0].CurrentPeriodEnd
 }
 
 func (h *Handler) handleSubscriptionDeleted(evt stripego.Event) error {
