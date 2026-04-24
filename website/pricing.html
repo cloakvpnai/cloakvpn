@@ -220,11 +220,14 @@
     //
     // Format: https://buy.stripe.com/<short-id>
     // -----------------------------------------------------------------
+    // NOTE: These are Stripe TEST-mode payment links (prefixed /test_).
+    // When you go live, recreate the 4 Payment Links in live mode and swap
+    // these URLs for the live /pay/... equivalents. See docs/STRIPE_SETUP.md §7.
     const STRIPE_PAYMENT_LINKS = {
-      basic_month: 'https://buy.stripe.com/REPLACE_BASIC_MONTH',
-      basic_year:  'https://buy.stripe.com/REPLACE_BASIC_YEAR',
-      pro_month:   'https://buy.stripe.com/REPLACE_PRO_MONTH',
-      pro_year:    'https://buy.stripe.com/REPLACE_PRO_YEAR',
+      basic_month: 'https://buy.stripe.com/test_14A5kw22Y1flgAwetE8AE04',
+      basic_year:  'https://buy.stripe.com/test_8x2fZagXS0bhckg1GS8AE02',
+      pro_month:   'https://buy.stripe.com/test_14A00c8rm4rx9843P08AE03',
+      pro_year:    'https://buy.stripe.com/test_bJeeV6dLG3ntdok85g8AE00',
     };
 
     // Year
