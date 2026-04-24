@@ -90,12 +90,12 @@
         <ul class="mt-6 space-y-3 text-sm text-slate-300 flex-1">
           <li class="flex gap-3"><span class="text-accent-400">✓</span> Post-quantum protected WireGuard tunnels</li>
           <li class="flex gap-3"><span class="text-accent-400">✓</span> Strict no-logs, RAM-only servers</li>
-          <li class="flex gap-3"><span class="text-accent-400">✓</span> iOS + Android apps</li>
           <li class="flex gap-3"><span class="text-accent-400">✓</span> Up to <strong class="text-white">3 devices</strong></li>
-          <li class="flex gap-3"><span class="text-accent-400">✓</span> Core server locations (EU + US)</li>
-          <li class="flex gap-3 text-slate-500"><span>–</span> AI phishing & tracker shield</li>
-          <li class="flex gap-3 text-slate-500"><span>–</span> Split tunneling & custom DNS</li>
-          <li class="flex gap-3 text-slate-500"><span>–</span> Obfuscated / bridge servers</li>
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> EU server locations (Finland, Germany)</li>
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> Works with the official WireGuard app</li>
+          <li class="flex gap-3 text-slate-500"><span>–</span> Extra device slots</li>
+          <li class="flex gap-3 text-slate-500"><span>–</span> Port forwarding</li>
+          <li class="flex gap-3 text-slate-500"><span>–</span> Priority support</li>
         </ul>
 
         <a href="#" data-checkout="basic"
@@ -127,12 +127,10 @@
         <ul class="mt-6 space-y-3 text-sm text-slate-300 flex-1">
           <li class="flex gap-3"><span class="text-accent-400">✓</span> <strong class="text-white">Everything in Basic</strong></li>
           <li class="flex gap-3"><span class="text-accent-400">✓</span> Up to <strong class="text-white">10 devices</strong></li>
-          <li class="flex gap-3"><span class="text-accent-400">✓</span> AI phishing, tracker & malware shield (on-device)</li>
-          <li class="flex gap-3"><span class="text-accent-400">✓</span> Split tunneling & custom / encrypted DNS</li>
-          <li class="flex gap-3"><span class="text-accent-400">✓</span> Obfuscated / bridge servers (restrictive networks)</li>
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> All current and future server locations</li>
           <li class="flex gap-3"><span class="text-accent-400">✓</span> Port forwarding on request</li>
-          <li class="flex gap-3"><span class="text-accent-400">✓</span> Priority support</li>
-          <li class="flex gap-3"><span class="text-accent-400">✓</span> All locations, including future launches</li>
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> Priority email support</li>
+          <li class="flex gap-3"><span class="text-accent-400">✓</span> Early access to new regions and features</li>
         </ul>
 
         <a href="#" data-checkout="pro"
@@ -213,6 +211,22 @@
   </footer>
 
   <script>
+    // -----------------------------------------------------------------
+    // Stripe Payment Link URLs.
+    //
+    // Replace the 4 REPLACE_* placeholders with the URLs Stripe generates
+    // after you create each Payment Link in the dashboard.
+    // See docs/STRIPE_SETUP.md section 3 for the step-by-step.
+    //
+    // Format: https://buy.stripe.com/<short-id>
+    // -----------------------------------------------------------------
+    const STRIPE_PAYMENT_LINKS = {
+      basic_month: 'https://buy.stripe.com/REPLACE_BASIC_MONTH',
+      basic_year:  'https://buy.stripe.com/REPLACE_BASIC_YEAR',
+      pro_month:   'https://buy.stripe.com/REPLACE_PRO_MONTH',
+      pro_year:    'https://buy.stripe.com/REPLACE_PRO_YEAR',
+    };
+
     // Year
     document.getElementById('year').textContent = new Date().getFullYear();
 
@@ -234,10 +248,26 @@
         const val = el.dataset[mode];
         if (val) el.textContent = val;
       });
-      // Rewrite CTA links so a future backend sees the tier + billing interval.
+      // Point each Subscribe button at the corresponding Stripe Payment Link.
+      // Open Stripe checkout in a new tab so the user doesn't lose the pricing
+      // page if they back out mid-checkout.
+      const interval = mode === 'monthly' ? 'month' : 'year';
       document.querySelectorAll('[data-checkout]').forEach(el => {
-        const tier = el.dataset.checkout;
-        el.setAttribute('href', `/api/v1/checkout?tier=${tier}&interval=${mode === 'monthly' ? 'month' : 'year'}`);
+        const tier = el.dataset.checkout;            // 'basic' or 'pro'
+        const url  = STRIPE_PAYMENT_LINKS[`${tier}_${interval}`];
+        if (!url || url.includes('REPLACE_')) {
+          // Payment Link not configured yet — visibly degrade instead of
+          // sending the user to a dead URL. Surfaces the config gap at dev time.
+          el.setAttribute('href', '#');
+          el.addEventListener('click', e => {
+            e.preventDefault();
+            alert('Checkout is not configured yet. (Operator: paste the Stripe Payment Link URL into STRIPE_PAYMENT_LINKS in pricing.html.)');
+          }, { once: true });
+        } else {
+          el.setAttribute('href', url);
+          el.setAttribute('target', '_blank');
+          el.setAttribute('rel', 'noopener');
+        }
       });
     }
     monthlyBtn.addEventListener('click', () => setBilling('monthly'));

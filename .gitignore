@@ -30,3 +30,9 @@ target/
 *.swp
 .vscode/
 .idea/
+
+# Wrangler (Cloudflare Pages deploy CLI — local cache only)
+.wrangler/
+
+# Node (for future build steps)
+node_modules/

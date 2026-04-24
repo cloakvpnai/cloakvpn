@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Welcome — Cloak VPN</title>
+  <meta name="description" content="Welcome to Cloak VPN. Your subscription is active — here's how to set up your first device." />
+  <meta name="robots" content="noindex" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: { 900: '#0a0a0f', 800: '#12121a', 700: '#1a1a24', 600: '#22222e' },
+            cloak: { 400: '#7aa2ff', 500: '#4f7cff', 600: '#3a5fe0' },
+            accent: { 400: '#5eead4' }
+          },
+          fontFamily: {
+            sans: ['ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace']
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    .grid-dots { background-image: radial-gradient(rgba(122,162,255,0.12) 1px, transparent 1px); background-size: 22px 22px; }
+  </style>
+</head>
+<body class="bg-ink-900 text-slate-200 font-sans antialiased">
+
+  <!-- Nav -->
+  <header class="border-b border-ink-700/80">
+    <div class="mx-auto max-w-6xl px-6 py-5 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2">
+        <span class="inline-block h-6 w-6 rounded bg-gradient-to-br from-cloak-400 to-accent-400"></span>
+        <span class="font-semibold tracking-tight">Cloak<span class="text-cloak-400">VPN</span></span>
+      </a>
+      <nav class="hidden md:flex items-center gap-7 text-sm text-slate-300">
+        <a href="/#features" class="hover:text-white">Features</a>
+        <a href="/pricing.html" class="hover:text-white">Pricing</a>
+        <a href="mailto:support@cloakvpn.ai" class="hover:text-white">Support</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="relative overflow-hidden">
+    <div class="absolute inset-0 grid-dots opacity-40 pointer-events-none"></div>
+    <div class="mx-auto max-w-3xl px-6 pt-16 pb-8 text-center relative">
+      <span class="inline-flex items-center gap-2 rounded-full border border-accent-400/30 bg-accent-400/10 px-3 py-1 text-xs text-accent-400">
+        <span class="inline-block h-2 w-2 rounded-full bg-accent-400"></span>
+        Subscription active
+      </span>
+      <h1 class="mt-5 text-4xl md:text-5xl font-semibold tracking-tight text-white">
+        Welcome to Cloak.
+      </h1>
+      <p class="mt-4 text-slate-400 max-w-xl mx-auto">
+        Thanks for subscribing. Your account is now active. Follow the three steps below to get connected.
+      </p>
+    </div>
+  </section>
+
+  <!-- Steps -->
+  <section class="mx-auto max-w-3xl px-6 pb-20">
+    <ol class="space-y-6">
+
+      <!-- Step 1 -->
+      <li class="rounded-2xl border border-ink-700 bg-ink-800/60 p-8">
+        <div class="flex items-start gap-5">
+          <span class="flex-none inline-flex h-10 w-10 items-center justify-center rounded-full bg-cloak-500/20 border border-cloak-500/40 text-cloak-400 font-semibold">1</span>
+          <div class="flex-1">
+            <h2 class="text-lg font-semibold text-white">Check your email</h2>
+            <p class="mt-2 text-sm text-slate-400">
+              We've sent a confirmation to the email address you used at checkout. It has your account details and a magic link to sign in. If you don't see it within a minute, check spam.
+            </p>
+          </div>
+        </div>
+      </li>
+
+      <!-- Step 2 -->
+      <li class="rounded-2xl border border-ink-700 bg-ink-800/60 p-8">
+        <div class="flex items-start gap-5">
+          <span class="flex-none inline-flex h-10 w-10 items-center justify-center rounded-full bg-cloak-500/20 border border-cloak-500/40 text-cloak-400 font-semibold">2</span>
+          <div class="flex-1">
+            <h2 class="text-lg font-semibold text-white">Install WireGuard</h2>
+            <p class="mt-2 text-sm text-slate-400">
+              While the native Cloak app is in development, you can connect today using the official WireGuard app — it's free, open-source, and handles the tunnel itself. Cloak uses it as the data plane.
+            </p>
+            <div class="mt-4 flex flex-wrap gap-3 text-sm">
+              <a href="https://apps.apple.com/app/wireguard/id1441195209" target="_blank" rel="noopener"
+                 class="inline-flex items-center gap-2 rounded-md border border-ink-600 bg-ink-700 hover:bg-ink-600 px-4 py-2 text-white">
+                iOS (App Store)
+              </a>
+              <a href="https://play.google.com/store/apps/details?id=com.wireguard.android" target="_blank" rel="noopener"
+                 class="inline-flex items-center gap-2 rounded-md border border-ink-600 bg-ink-700 hover:bg-ink-600 px-4 py-2 text-white">
+                Android (Play Store)
+              </a>
+              <a href="https://www.wireguard.com/install/" target="_blank" rel="noopener"
+                 class="inline-flex items-center gap-2 rounded-md border border-ink-600 bg-ink-700 hover:bg-ink-600 px-4 py-2 text-white">
+                macOS / Windows / Linux
+              </a>
+            </div>
+          </div>
+        </div>
+      </li>
+
+      <!-- Step 3 -->
+      <li class="rounded-2xl border border-cloak-500/40 bg-gradient-to-b from-ink-800/80 to-ink-800/40 p-8 shadow-[0_0_0_1px_rgba(79,124,255,0.15)]">
+        <div class="flex items-start gap-5">
+          <span class="flex-none inline-flex h-10 w-10 items-center justify-center rounded-full bg-cloak-500 text-white font-semibold">3</span>
+          <div class="flex-1">
+            <h2 class="text-lg font-semibold text-white">Get your device config</h2>
+            <p class="mt-2 text-sm text-slate-400">
+              Reply to the welcome email we sent you, or email <a href="mailto:support@cloakvpn.ai" class="text-cloak-400 hover:text-cloak-300">support@cloakvpn.ai</a> from the same address, and we'll send you a WireGuard + Rosenpass config file. Import it into the WireGuard app, activate, and you're on a post-quantum-protected tunnel.
+            </p>
+            <p class="mt-3 text-xs text-slate-500">
+              Automated config issuance via the Cloak app is rolling out soon. For now, this manual flow keeps your first setup fast and auditable.
+            </p>
+          </div>
+        </div>
+      </li>
+
+    </ol>
+
+    <!-- Helpful reminders -->
+    <div class="mt-10 rounded-xl border border-ink-700 bg-ink-800/40 p-6 text-sm text-slate-400">
+      <h3 class="text-white font-medium">A few things to know</h3>
+      <ul class="mt-3 space-y-2">
+        <li class="flex gap-3"><span class="text-accent-400">•</span> Your subscription bills <strong class="text-white">monthly or annually</strong> depending on the plan you picked. Manage or cancel anytime from the Stripe customer portal link in your welcome email.</li>
+        <li class="flex gap-3"><span class="text-accent-400">•</span> Basic plans include <strong class="text-white">3 device configs</strong>; Pro includes 10. Need more? Upgrade from your email receipt.</li>
+        <li class="flex gap-3"><span class="text-accent-400">•</span> Every tunnel — Basic or Pro — rotates a <strong class="text-white">post-quantum pre-shared key every ~120 seconds</strong> via Rosenpass. You don't need to do anything for it to work.</li>
+        <li class="flex gap-3"><span class="text-accent-400">•</span> <strong class="text-white">7-day money-back guarantee</strong>. If something doesn't work or the service isn't for you, just reply to the receipt — we'll refund, no questions.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="border-t border-ink-700/80 py-10 text-sm text-slate-500">
+    <div class="mx-auto max-w-6xl px-6 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div>© <span id="year"></span> Cloak VPN. Built for a post-quantum internet.</div>
+      <div class="flex items-center gap-5">
+        <a href="/privacy.html" class="hover:text-white">Privacy</a>
+        <a href="/terms.html" class="hover:text-white">Terms</a>
+        <a href="mailto:support@cloakvpn.ai" class="hover:text-white">Support</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById('year').textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
