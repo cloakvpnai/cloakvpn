@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Cloak VPN — Post-quantum, no-logs VPN for iOS and Android</title>
-  <meta name="description" content="Cloak VPN uses post-quantum cryptography on every connection and runs its AI safety features entirely on your device. Strict no-logs, open source, independently audited." />
+  <title>Cloak VPN — Post-quantum, no-logs VPN</title>
+  <meta name="description" content="Cloak VPN adds a post-quantum pre-shared key to every WireGuard tunnel via academically-audited Rosenpass. Strict no-logs. RAM-only system journals." />
 
   <meta property="og:title" content="Cloak VPN — Post-quantum, no-logs VPN" />
-  <meta property="og:description" content="Post-quantum cryptography on every connection. On-device AI. Strict no-logs." />
+  <meta property="og:description" content="Post-quantum key exchange on every connection via academically-audited Rosenpass. Strict no-logs." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://cloakvpn.ai/" />
 
@@ -47,7 +47,7 @@
     <a href="#features" class="hover:text-white">Features</a>
     <a href="#pqc" class="hover:text-white">How PQC works</a>
     <a href="/pricing.html" class="hover:text-white">Pricing</a>
-    <a href="https://github.com/cloakvpn" class="hover:text-white">GitHub</a>
+    <a href="https://github.com/dangerfield33/cloakvpn" class="hover:text-white">GitHub</a>
   </nav>
   <a href="/pricing.html" class="text-sm font-medium bg-cloak-500 hover:bg-cloak-600 transition px-4 py-2 rounded-lg">Get Cloak Pro</a>
 </header>
@@ -62,8 +62,10 @@
     The VPN built for <span class="text-cloak-400">the next decade of threats.</span>
   </h1>
   <p class="mt-6 max-w-2xl mx-auto text-lg text-slate-300">
-    Cloak VPN uses post-quantum cryptography on every connection, runs its AI safety features
-    entirely on your device, and keeps nothing on our servers. Open source. Independently audited.
+    Every WireGuard tunnel is protected by a post-quantum pre-shared key rotated every ~120
+    seconds via <a href="https://rosenpass.eu" class="text-cloak-400 underline">Rosenpass</a>, the
+    academically peer-reviewed post-quantum key exchange. No connection logs. System journals
+    wiped on every reboot.
   </p>
   <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
     <a href="/pricing.html" class="w-full sm:w-auto bg-cloak-500 hover:bg-cloak-600 transition text-white font-semibold px-6 py-3 rounded-lg">
@@ -74,7 +76,7 @@
     </a>
   </div>
   <p class="mt-4 text-sm text-slate-400">
-    No email required. Cancel anytime. Pay with card or crypto.
+    7-day money-back guarantee. Cancel anytime. Pay with card.
   </p>
 </section>
 
@@ -90,24 +92,25 @@
       <div class="w-10 h-10 rounded-lg bg-cloak-500/20 border border-cloak-500/40 flex items-center justify-center mb-4 text-cloak-400 font-bold">PQ</div>
       <h3 class="font-semibold text-lg">Post-quantum from day one</h3>
       <p class="mt-2 text-slate-300 text-sm leading-relaxed">
-        Every handshake mixes a post-quantum-secure pre-shared key derived via Rosenpass (Classic-McEliece + Kyber).
-        Recorded today, still safe tomorrow.
+        Every tunnel mixes a post-quantum-derived pre-shared key into WireGuard via
+        Rosenpass (Classic McEliece + ML-KEM). Recorded today, still safe tomorrow.
       </p>
     </div>
     <div class="bg-ink-800/60 border border-slate-800 rounded-xl p-6">
-      <div class="w-10 h-10 rounded-lg bg-cloak-500/20 border border-cloak-500/40 flex items-center justify-center mb-4 text-cloak-400 font-bold">AI</div>
-      <h3 class="font-semibold text-lg">AI that stays on your phone</h3>
+      <div class="w-10 h-10 rounded-lg bg-cloak-500/20 border border-cloak-500/40 flex items-center justify-center mb-4 text-cloak-400 font-bold">✓</div>
+      <h3 class="font-semibold text-lg">Academically peer-reviewed</h3>
       <p class="mt-2 text-slate-300 text-sm leading-relaxed">
-        Tracker and phishing detection runs locally. We don't inspect your traffic in the cloud —
-        we can't, because the model is on-device.
+        The Rosenpass protocol has published formal proofs and peer-reviewed papers.
+        We don't invent our own crypto — we use what's already been verified.
       </p>
     </div>
     <div class="bg-ink-800/60 border border-slate-800 rounded-xl p-6">
       <div class="w-10 h-10 rounded-lg bg-cloak-500/20 border border-cloak-500/40 flex items-center justify-center mb-4 text-cloak-400 font-bold">0</div>
       <h3 class="font-semibold text-lg">Nothing to hand over</h3>
       <p class="mt-2 text-slate-300 text-sm leading-relaxed">
-        RAM-only servers. No connection logs, no activity logs, no email required to sign up.
-        Architecture first, promise second.
+        No connection logs. No traffic logs. System journals live in RAM and are wiped
+        on every reboot. The only data we hold per user is one row — see our
+        <a href="/privacy.html" class="text-cloak-400 underline">privacy policy</a>.
       </p>
     </div>
   </div>
@@ -170,21 +173,53 @@
         <div class="text-sm text-slate-300 mt-1">traffic logs</div>
       </div>
       <div>
-        <div class="text-3xl font-bold text-cloak-400">RAM</div>
-        <div class="text-sm text-slate-300 mt-1">diskless server fleet</div>
+        <div class="text-3xl font-bold text-cloak-400">~120s</div>
+        <div class="text-sm text-slate-300 mt-1">PQ key rotation interval</div>
       </div>
       <div>
-        <div class="text-3xl font-bold text-cloak-400">OSS</div>
-        <div class="text-sm text-slate-300 mt-1">every client on GitHub</div>
+        <div class="text-3xl font-bold text-cloak-400">2</div>
+        <div class="text-sm text-slate-300 mt-1">EU regions (FI, DE)</div>
       </div>
     </div>
+  </div>
+</section>
+
+<!-- Apps status -->
+<section id="apps" class="max-w-6xl mx-auto px-6 py-16">
+  <div class="bg-ink-800/60 border border-slate-800 rounded-2xl p-8 md:p-10">
+    <h2 class="text-2xl md:text-3xl font-bold">How you connect today</h2>
+    <p class="mt-3 text-slate-300 max-w-2xl">
+      Native Cloak apps for iOS and Android are in development. Until they ship, you
+      connect using the <strong>official WireGuard app</strong> — free, open-source, audited,
+      and the same underlying data-plane our native clients will use. You'll get a config
+      file by email after subscribing; import it into WireGuard and you're on a
+      post-quantum-protected tunnel.
+    </p>
+    <div class="mt-6 flex flex-wrap gap-3">
+      <a href="https://apps.apple.com/app/wireguard/id1441195209" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-700 hover:border-slate-500 px-5 py-3 text-slate-200">
+        WireGuard — App Store
+      </a>
+      <a href="https://play.google.com/store/apps/details?id=com.wireguard.android" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-700 hover:border-slate-500 px-5 py-3 text-slate-200">
+        WireGuard — Google Play
+      </a>
+      <a href="https://www.wireguard.com/install/" target="_blank" rel="noopener"
+         class="inline-flex items-center gap-2 rounded-lg border border-slate-700 hover:border-slate-500 px-5 py-3 text-slate-200">
+        Desktop installers
+      </a>
+    </div>
+    <p class="mt-4 text-xs text-slate-500">
+      When our native apps launch, this section will be replaced with App Store and Play Store
+      download buttons and you can migrate on your own schedule.
+    </p>
   </div>
 </section>
 
 <!-- CTA -->
 <section class="max-w-3xl mx-auto px-6 py-24 text-center">
   <h2 class="text-3xl md:text-5xl font-bold">Ready for the next decade?</h2>
-  <p class="mt-4 text-slate-300">Pick a plan. Install the app. We don't ask for your email.</p>
+  <p class="mt-4 text-slate-300">Pick a plan, get a WireGuard config by email, and connect in under five minutes. 7-day money-back guarantee.</p>
   <a href="/pricing.html" class="mt-8 inline-block bg-cloak-500 hover:bg-cloak-600 transition text-white font-semibold px-8 py-4 rounded-lg">
     See plans
   </a>
@@ -195,7 +230,7 @@
   <div class="max-w-6xl mx-auto px-6 py-10 grid md:grid-cols-4 gap-8 text-sm text-slate-400">
     <div>
       <div class="font-semibold text-white mb-2">Cloak VPN</div>
-      <p>Post-quantum VPN for iOS and Android.</p>
+      <p>Post-quantum protected VPN. No logs. Independent operator.</p>
     </div>
     <div>
       <div class="font-semibold text-white mb-2">Product</div>
@@ -217,14 +252,14 @@
     <div>
       <div class="font-semibold text-white mb-2">Open source</div>
       <ul class="space-y-1">
-        <li><a href="https://github.com/cloakvpn" class="hover:text-white">GitHub</a></li>
+        <li><a href="https://github.com/dangerfield33/cloakvpn" class="hover:text-white">GitHub</a></li>
         <li><a href="/transparency.html" class="hover:text-white">Transparency report</a></li>
       </ul>
     </div>
   </div>
   <div class="max-w-6xl mx-auto px-6 py-6 border-t border-slate-800 text-xs text-slate-500 flex flex-col md:flex-row justify-between gap-2">
-    <div>© 2026 Cloak VPN. Incorporated in Estonia.</div>
-    <div>Cloak does not collect IP addresses, connection logs, or activity logs.</div>
+    <div>© 2026 Cloak VPN. An independent operator.</div>
+    <div>Cloak does not collect connection logs or traffic metadata. See <a href="/privacy.html" class="hover:text-white">privacy policy</a>.</div>
   </div>
 </footer>
 

@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Transparency report — Cloak VPN</title>
+  <meta name="description" content="Legal demands received by Cloak VPN. Updated quarterly." />
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+  <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: {
+        colors: {
+          ink:   { 900: '#0A1628', 800: '#0E1F3A', 700: '#132B4F' },
+          cloak: { 500: '#3B82F6', 600: '#2563EB', 400: '#60A5FA' }
+        }
+      } }
+    };
+  </script>
+  <style>
+    body { background: radial-gradient(1000px 500px at 30% -10%, rgba(59,130,246,0.18), transparent 50%), #0A1628; }
+  </style>
+</head>
+<body class="text-slate-100 antialiased">
+
+<header class="max-w-4xl mx-auto px-6 py-5 flex items-center justify-between">
+  <a href="/" class="flex items-center gap-2 font-semibold text-white">
+    <svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <path d="M16 2 L28 7 V17 C28 23 22 28 16 30 C10 28 4 23 4 17 V7 Z" stroke="#60A5FA" stroke-width="2" fill="rgba(59,130,246,0.12)"/>
+      <path d="M12 16 L15 19 L21 13" stroke="#60A5FA" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    Cloak VPN
+  </a>
+  <a href="/pricing.html" class="text-sm text-slate-300 hover:text-white">Pricing</a>
+</header>
+
+<main class="max-w-3xl mx-auto px-6 py-12 prose prose-invert prose-slate">
+  <h1>Transparency report</h1>
+
+  <p class="text-sm text-slate-400">Reporting period: since launch — 24 April 2026.</p>
+
+  <p>
+    This page reports, at a quarterly cadence, what legal demands we have received for
+    user data and what we produced in response. The figures are cumulative from launch.
+  </p>
+
+  <div class="not-prose my-8 grid md:grid-cols-3 gap-4">
+    <div class="bg-ink-800/60 border border-slate-800 rounded-lg p-5 text-center">
+      <div class="text-4xl font-bold text-cloak-400">0</div>
+      <div class="text-sm text-slate-300 mt-1">subpoenas</div>
+    </div>
+    <div class="bg-ink-800/60 border border-slate-800 rounded-lg p-5 text-center">
+      <div class="text-4xl font-bold text-cloak-400">0</div>
+      <div class="text-sm text-slate-300 mt-1">search warrants</div>
+    </div>
+    <div class="bg-ink-800/60 border border-slate-800 rounded-lg p-5 text-center">
+      <div class="text-4xl font-bold text-cloak-400">0</div>
+      <div class="text-sm text-slate-300 mt-1">court orders</div>
+    </div>
+    <div class="bg-ink-800/60 border border-slate-800 rounded-lg p-5 text-center">
+      <div class="text-4xl font-bold text-cloak-400">0</div>
+      <div class="text-sm text-slate-300 mt-1">national security letters</div>
+    </div>
+    <div class="bg-ink-800/60 border border-slate-800 rounded-lg p-5 text-center">
+      <div class="text-4xl font-bold text-cloak-400">0</div>
+      <div class="text-sm text-slate-300 mt-1">DMCA notices acted on</div>
+    </div>
+    <div class="bg-ink-800/60 border border-slate-800 rounded-lg p-5 text-center">
+      <div class="text-4xl font-bold text-cloak-400">0</div>
+      <div class="text-sm text-slate-300 mt-1">accounts disclosed</div>
+    </div>
+  </div>
+
+  <h2>What we would disclose if compelled</h2>
+  <p>
+    Per our <a class="text-cloak-400" href="/privacy.html">Privacy Policy</a>, the total data we hold on a subscriber is:
+  </p>
+  <ul>
+    <li>email address;</li>
+    <li>Stripe customer ID;</li>
+    <li>subscription tier and expiry date;</li>
+    <li>active WireGuard public keys and the internal VPN IPs assigned to them.</li>
+  </ul>
+  <p>
+    We do not log connection times, source IPs, destination IPs, DNS queries, or traffic.
+    A compelled disclosure produces one row and nothing more. This is the architecture
+    we chose specifically so that legal demands can't extract what we never had.
+  </p>
+
+  <h2>Our policy on legal demands</h2>
+  <ol>
+    <li>We require demands to be valid legal process from a jurisdiction with authority over us or the operator. We do not accept informal requests.</li>
+    <li>We push back where we believe the demand is overbroad, improperly served, or constitutes a fishing expedition.</li>
+    <li>We notify the affected user unless we are legally prohibited from doing so. Where we are gagged, our <a class="text-cloak-400" href="/canary.html">warrant canary</a> will reflect it.</li>
+    <li>The single category we will always cooperate with law enforcement on is material that sexually exploits minors. No privacy argument overrides this.</li>
+  </ol>
+
+  <h2>Next update</h2>
+  <p>
+    We update this page quarterly, on the first business day of January, April, July,
+    and October. The first update after launch will post on <strong>1 July 2026</strong>.
+    If we receive a legal demand before the next quarterly update, we will post the
+    disclosure within 30 days of responding to it (or of the gag expiring, if applicable).
+  </p>
+</main>
+
+<footer class="border-t border-slate-800 mt-12">
+  <div class="max-w-4xl mx-auto px-6 py-6 text-xs text-slate-500 flex flex-col md:flex-row justify-between gap-2">
+    <div>© 2026 Cloak VPN.</div>
+    <div class="flex gap-4">
+      <a href="/privacy.html" class="hover:text-white">Privacy</a>
+      <a href="/terms.html" class="hover:text-white">Terms</a>
+      <a href="/canary.html" class="hover:text-white">Canary</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

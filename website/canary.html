@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Warrant canary — Cloak VPN</title>
+  <meta name="description" content="Cloak VPN warrant canary. Updated monthly." />
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+  <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: {
+        colors: {
+          ink:   { 900: '#0A1628', 800: '#0E1F3A', 700: '#132B4F' },
+          cloak: { 500: '#3B82F6', 600: '#2563EB', 400: '#60A5FA' }
+        }
+      } }
+    };
+  </script>
+  <style>
+    body { background: radial-gradient(1000px 500px at 30% -10%, rgba(59,130,246,0.18), transparent 50%), #0A1628; }
+  </style>
+</head>
+<body class="text-slate-100 antialiased">
+
+<header class="max-w-4xl mx-auto px-6 py-5 flex items-center justify-between">
+  <a href="/" class="flex items-center gap-2 font-semibold text-white">
+    <svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <path d="M16 2 L28 7 V17 C28 23 22 28 16 30 C10 28 4 23 4 17 V7 Z" stroke="#60A5FA" stroke-width="2" fill="rgba(59,130,246,0.12)"/>
+      <path d="M12 16 L15 19 L21 13" stroke="#60A5FA" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    Cloak VPN
+  </a>
+  <a href="/pricing.html" class="text-sm text-slate-300 hover:text-white">Pricing</a>
+</header>
+
+<main class="max-w-3xl mx-auto px-6 py-12 prose prose-invert prose-slate">
+  <h1>Warrant canary</h1>
+
+  <p class="text-sm text-slate-400">Statement valid as of: <strong>24 April 2026</strong>. Next scheduled update: <strong>24 May 2026</strong>.</p>
+
+  <blockquote class="border-l-4 border-cloak-500 pl-4 italic">
+    <p>
+      As of the date above, Cloak VPN has received <strong>zero</strong> of each of the following:
+    </p>
+    <ul>
+      <li>subpoenas, search warrants, court orders, or any other legal process compelling disclosure of user data;</li>
+      <li>national security letters or equivalent secret legal demands in any jurisdiction;</li>
+      <li>gag orders restricting what we can say about any of the above;</li>
+      <li>requests to install backdoors, compromise our encryption, or weaken our post-quantum key exchange;</li>
+      <li>third-party access requests we have complied with.</li>
+    </ul>
+    <p>
+      No government, law-enforcement agency, or other party has been given access to our
+      servers, our subscriber database, or any traffic passing through our service.
+    </p>
+  </blockquote>
+
+  <h2>How this page works</h2>
+  <p>
+    A warrant canary is a statement that says we <em>have not</em> received something.
+    In many jurisdictions we cannot be compelled to lie, but we can be compelled to stay
+    silent about a secret legal demand. If that happens, we will stop updating this page.
+  </p>
+  <p>
+    We commit to refreshing the statement above monthly, on the 24th of each month. If
+    this page does not update by the following month's 24th — or if the page is removed
+    entirely — you should assume we have received something we cannot talk about.
+  </p>
+
+  <h2>What we would hand over if compelled</h2>
+  <p>
+    In line with our <a class="text-cloak-400" href="/privacy.html">Privacy Policy</a>, the total data set we hold per user is:
+  </p>
+  <ul>
+    <li>your email address (for billing and account access);</li>
+    <li>your Stripe customer ID;</li>
+    <li>your subscription tier and expiry date;</li>
+    <li>the WireGuard public keys you have active on our network, and the internal VPN IPs we assigned to them (e.g. <code>10.99.0.5</code>).</li>
+  </ul>
+  <p>
+    Our servers do not log connections or traffic, and system journals are wiped on every
+    reboot. There is no database, nowhere on disk, and no third-party service storing
+    your IP address, the sites you visit, or the times you connect. A compelled disclosure
+    would produce one row from our subscriber database and nothing else.
+  </p>
+
+  <h2>Verification</h2>
+  <p>
+    The GitHub repository for this site is at <a class="text-cloak-400" href="https://github.com/dangerfield33/cloakvpn">github.com/dangerfield33/cloakvpn</a>.
+    Every update to this page is a commit with a timestamp and author you can inspect.
+    Changes to the wording above are visible in the git history.
+  </p>
+
+  <h2>Maintenance notices</h2>
+  <p>We will use this space to announce planned maintenance windows when relevant.</p>
+  <ul>
+    <li><em>No scheduled maintenance at this time.</em></li>
+  </ul>
+</main>
+
+<footer class="border-t border-slate-800 mt-12">
+  <div class="max-w-4xl mx-auto px-6 py-6 text-xs text-slate-500 flex flex-col md:flex-row justify-between gap-2">
+    <div>© 2026 Cloak VPN.</div>
+    <div class="flex gap-4">
+      <a href="/privacy.html" class="hover:text-white">Privacy</a>
+      <a href="/terms.html" class="hover:text-white">Terms</a>
+      <a href="/canary.html" class="hover:text-white">Canary</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
