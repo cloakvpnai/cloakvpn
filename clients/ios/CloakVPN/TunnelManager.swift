@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import NetworkExtension
 import SwiftUI
@@ -100,8 +101,15 @@ final class TunnelManager: ObservableObject {
         statusObserver = NotificationCenter.default.addObserver(
             forName: .NEVPNStatusDidChange, object: conn, queue: .main
         ) { [weak self] note in
-            guard let conn = note.object as? NEVPNConnection else { return }
-            Task { @MainActor in self?.updateStatus(conn.status) }
+            // Swift 6 strict concurrency: NotificationCenter's callback is
+            // @Sendable, so we can't capture `self` and just dereference it
+            // inside a Task. Instead pull the only thing we need (the new
+            // status enum, which IS Sendable) out of the notification on the
+            // notification queue, THEN hop to the main actor.
+            guard let newStatus = (note.object as? NEVPNConnection)?.status else { return }
+            Task { @MainActor [weak self] in
+                self?.updateStatus(newStatus)
+            }
         }
     }
 
