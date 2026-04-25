@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		803B510D2F9D294100F6A013 /* WireGuardKit in Frameworks */ = {isa = PBXBuildFile; productRef = 803B510C2F9D294100F6A013 /* WireGuardKit */; };
 		80F31E1D2F9C911500E4B598 /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 80F31E1C2F9C911500E4B598 /* NetworkExtension.framework */; };
 		80F31E252F9C911500E4B598 /* CloakTunnel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 80F31E1A2F9C911500E4B598 /* CloakTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		80F31E2E2F9C9A1C00E4B598 /* RosenpassFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 80F31E2D2F9C9A1C00E4B598 /* RosenpassFFI.xcframework */; };
@@ -92,6 +93,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				803B510D2F9D294100F6A013 /* WireGuardKit in Frameworks */,
 				80F31E1D2F9C911500E4B598 /* NetworkExtension.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -171,6 +173,7 @@
 			);
 			name = CloakTunnel;
 			packageProductDependencies = (
+				803B510C2F9D294100F6A013 /* WireGuardKit */,
 			);
 			productName = CloakTunnel;
 			productReference = 80F31E1A2F9C911500E4B598 /* CloakTunnel.appex */;
@@ -203,6 +206,9 @@
 			);
 			mainGroup = 80B604BD2F9C898E007EE8C3;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				803B510B2F9D27E700F6A013 /* XCRemoteSwiftPackageReference "wireguard-apple" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 80B604C72F9C898E007EE8C3 /* Products */;
 			projectDirPath = "";
@@ -385,6 +391,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -406,7 +413,6 @@
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -431,6 +437,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -452,7 +459,6 @@
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -472,6 +478,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 5HYY2YP2G9;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CloakTunnel/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = CloakTunnel;
@@ -488,7 +495,6 @@
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -508,6 +514,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 5HYY2YP2G9;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CloakTunnel/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = CloakTunnel;
@@ -524,7 +531,6 @@
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -569,6 +575,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		803B510B2F9D27E700F6A013 /* XCRemoteSwiftPackageReference "wireguard-apple" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mullvad/wireguard-apple.git";
+			requirement = {
+				branch = "mullvad-master";
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		803B510C2F9D294100F6A013 /* WireGuardKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 803B510B2F9D27E700F6A013 /* XCRemoteSwiftPackageReference "wireguard-apple" */;
+			productName = WireGuardKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 80B604BE2F9C898E007EE8C3 /* Project object */;
 }
