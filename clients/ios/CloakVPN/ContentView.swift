@@ -1,5 +1,11 @@
 import SwiftUI
-import RosenpassFFI
+
+// Note on RosenpassFFI: the Swift bindings (rosenpassffi.swift) are
+// compiled directly into the CloakVPN app target alongside this file,
+// so types like `generateStaticKeypair()` and `StaticKeypair` are
+// already in scope — no `import` needed. The bindings themselves
+// `import rosenpassffiFFI` (the C module from the xcframework) under
+// the hood; that's the only module name in this build.
 
 struct ContentView: View {
     @EnvironmentObject var tunnel: TunnelManager
