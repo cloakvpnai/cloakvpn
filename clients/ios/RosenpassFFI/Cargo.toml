@@ -1,0 +1,48 @@
+# RosenpassFFI — Swift FFI wrapper for rosenpass::protocol::CryptoServer.
+#
+# This crate exists so the iOS main-app process can run a Rosenpass
+# key-exchange (Classic McEliece + ML-KEM) entirely in Swift, by way of
+# uniffi-rs-generated Swift bindings to the upstream Rust rosenpass crate.
+#
+# The key 32-byte PSK derived here is then handed to the NetworkExtension
+# tunnel process via App Group + sendProviderMessage; the NE itself stays
+# Swift-only with no PQ-crypto memory pressure (see Mullvad's iOS pattern).
+#
+# Build artifact: an XCFramework that bundles aarch64-apple-ios (device)
+# plus aarch64-apple-ios-sim (Apple Silicon Simulator). x86_64-apple-ios
+# (Intel Simulator) is optional and gated on whether anyone on the team
+# is on an Intel Mac.
+
+[package]
+name        = "RosenpassFFI"
+version     = "0.1.0"
+edition     = "2021"
+publish     = false
+description = "Swift FFI wrapper around the Rosenpass post-quantum key-exchange crate, for iOS"
+license     = "MIT OR Apache-2.0"
+
+[lib]
+# staticlib  → linkable into Xcode as a .a + .h, bundled via XCFramework.
+# cdylib     → also useful for Linux/dev builds; harmless on iOS.
+crate-type  = ["staticlib", "cdylib", "rlib"]
+name        = "rosenpassffi"
+
+[dependencies]
+# uniffi 0.27 is the version stable in early 2026; supports proc-macro mode
+# (no .udl file required for our minimal API).
+uniffi      = { version = "0.27", features = ["build", "cli"] }
+
+# Pin to a specific git commit of upstream rosenpass to avoid surprise
+# breakage. Update this rev intentionally when tracking new releases.
+# `b096cb1` is the HEAD we cross-compile-tested for aarch64-apple-ios on
+# 2026-04-25 — see cloak-vpn/docs/IOS_PQC.md for the verification log.
+rosenpass               = { git = "https://github.com/rosenpass/rosenpass.git", rev = "b096cb1" }
+rosenpass-secret-memory = { git = "https://github.com/rosenpass/rosenpass.git", rev = "b096cb1" }
+rosenpass-ciphers       = { git = "https://github.com/rosenpass/rosenpass.git", rev = "b096cb1" }
+rosenpass-cipher-traits = { git = "https://github.com/rosenpass/rosenpass.git", rev = "b096cb1" }
+
+# Standard error/result handling exposed across the FFI boundary.
+thiserror = "1"
+
+[build-dependencies]
+uniffi      = { version = "0.27", features = ["build"] }

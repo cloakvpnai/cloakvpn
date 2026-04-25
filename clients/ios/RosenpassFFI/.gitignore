@@ -1,0 +1,15 @@
+# Cargo build artifacts (multi-GB; never committed).
+target/
+
+# Cargo's lockfile is intentionally NOT ignored — pinning it ensures
+# reproducible iOS builds across machines and across the rosenpass git
+# rev we depend on. (Library crates often gitignore Cargo.lock; we treat
+# this crate as application-shaped because the iOS app is the consumer.)
+
+# uniffi-bindgen output
+generated/
+*.swift
+!src/*.swift
+
+# macOS noise
+.DS_Store
