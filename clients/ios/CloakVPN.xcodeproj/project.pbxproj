@@ -160,6 +160,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 80F31E272F9C911500E4B598 /* Build configuration list for PBXNativeTarget "CloakTunnel" */;
 			buildPhases = (
+				803B510E2F9D2BD000F6A013 /* Build wg-go bridge */,
 				80F31E162F9C911500E4B598 /* Sources */,
 				80F31E172F9C911500E4B598 /* Frameworks */,
 				80F31E182F9C911500E4B598 /* Resources */,
@@ -237,6 +238,30 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		803B510E2F9D2BD000F6A013 /* Build wg-go bridge */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build wg-go bridge";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/libwg-go.a",
+				"$(BUILT_PRODUCTS_DIR)/libmaybenot.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\n# BUILT_PRODUCTS_DIR sits at .../DerivedData/<proj>/Build/Products/<sdk>/\n# SourcePackages sits at .../DerivedData/<proj>/SourcePackages/\n# So we need to go up THREE levels (sdk -> Products -> Build -> proj)\n# to find SourcePackages as a sibling of Build.\nWG_GO_DIR=\"${BUILT_PRODUCTS_DIR}/../../../SourcePackages/checkouts/wireguard-apple/Sources/WireGuardKitGo\"\n[ -d \"$WG_GO_DIR\" ] || { echo \"WireGuardKitGo source missing at $WG_GO_DIR\"; exit 1; }\n# Mullvad's `make clean` does `rm -rf $(CONFIGURATION_BUILD_DIR)`, which\n# would obliterate the entire Xcode Build Products dir. NEVER call clean.\nexport PATH=\"/opt/homebrew/bin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin\"\ncd \"$WG_GO_DIR\"\nmake -j$(sysctl -n hw.ncpu)\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		80B604C22F9C898E007EE8C3 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -301,7 +326,7 @@
 				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -363,7 +388,7 @@
 				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
