@@ -82,6 +82,9 @@ struct ContentView: View {
             if let cfg = tunnel.config {
                 Text("Endpoint: \(cfg.endpoint)").font(.footnote)
                 Text("PQC: Rosenpass \(cfg.pqEnabled ? "ENABLED" : "disabled")").font(.footnote)
+                Text(tunnel.rosenpass.status.description)
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundStyle(.secondary)
             } else {
                 Text("No config imported.").font(.footnote).foregroundStyle(.secondary)
             }

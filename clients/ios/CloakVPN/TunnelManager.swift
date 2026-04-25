@@ -32,8 +32,20 @@ final class TunnelManager: ObservableObject {
     @Published private(set) var status: Status = .disconnected
     @Published private(set) var config: CloakConfig?
 
+    /// The post-quantum key exchange driver. Owned by the main app
+    /// (never the NE — see docs/IOS_PQC.md). Bridges PSKs into the NE
+    /// via `sendProviderMessage` opcode 0x01.
+    let rosenpass = RosenpassBridge()
+
     private var manager: NETunnelProviderManager?
     private var statusObserver: NSObjectProtocol?
+
+    init() {
+        // Forward derived PSKs into the NE.
+        rosenpass.onPSKDerived = { [weak self] psk in
+            self?.pushPresharedKey(psk)
+        }
+    }
 
     /// Load existing VPN configurations from the system preferences.
     func load() async {
@@ -87,11 +99,67 @@ final class TunnelManager: ObservableObject {
     func connect() async throws {
         guard let m = manager else { throw TunnelError.noConfig }
         try m.connection.startVPNTunnel()
+
+        // Kick off the Rosenpass loop in parallel. The first PSK can
+        // arrive while WireGuard is still doing its classical handshake;
+        // either way the NE applies it on receipt and re-keys without
+        // dropping in-flight UDP.
+        if let cfg = config, cfg.pqEnabled {
+            rosenpass.start(
+                clientSecretKeyB64: cfg.clientRPSecretKeyB64,
+                clientPublicKeyB64: cfg.clientRPPublicKeyB64,
+                serverPublicKeyB64: cfg.serverRPPublicKeyB64,
+                serverEndpoint: cfg.rpEndpoint,
+                rotationSeconds: cfg.pskRotationSeconds
+            )
+        }
     }
 
     func disconnect() async throws {
+        rosenpass.stop()
         guard let m = manager else { return }
         m.connection.stopVPNTunnel()
+    }
+
+    // MARK: - PSK delivery to the NE
+
+    /// Wire format: opcode (1 byte) + payload.
+    /// 0x01 = SET_PSK, payload = 32-byte preshared key.
+    /// (Mirrors PacketTunnelProvider.handleAppMessage on the receiving side.)
+    private static let opcodeSetPsk: UInt8 = 0x01
+
+    /// Push a Rosenpass-derived PSK to the running PacketTunnelProvider
+    /// extension via `sendProviderMessage`. Best-effort — if the tunnel
+    /// isn't up yet, the message is dropped and we'll retry on the next
+    /// rotation tick.
+    private func pushPresharedKey(_ psk: Data) {
+        guard let session = manager?.connection as? NETunnelProviderSession else {
+            print("pushPresharedKey: tunnel not connected, dropping (will retry on next rotation)")
+            return
+        }
+        guard psk.count == 32 else {
+            print("pushPresharedKey: refusing to push PSK of length \(psk.count)")
+            return
+        }
+        var payload = Data()
+        payload.append(Self.opcodeSetPsk)
+        payload.append(psk)
+
+        do {
+            try session.sendProviderMessage(payload) { response in
+                if let response = response, let code = response.first {
+                    if code == 0 {
+                        print("PSK accepted by NE")
+                    } else {
+                        print("PSK rejected by NE, code=0x\(String(code, radix: 16))")
+                    }
+                } else {
+                    print("PSK push: no response from NE")
+                }
+            }
+        } catch {
+            print("pushPresharedKey send error: \(error)")
+        }
     }
 
     // MARK: - Status observation
