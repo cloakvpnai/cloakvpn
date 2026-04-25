@@ -19,7 +19,11 @@ import (
 	"fmt"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	// modernc.org/sqlite is a pure-Go SQLite (transpiled from C). No CGO
+	// required, so the API can be cross-compiled cleanly from the Mac and
+	// scp'd to the concentrator. The driver registers itself as "sqlite"
+	// (no trailing "3"), so update sql.Open below if you swap it back.
+	_ "modernc.org/sqlite"
 )
 
 type Tier string
@@ -50,12 +54,24 @@ type Device struct {
 type DB struct{ *sql.DB }
 
 func Open(path string) (*DB, error) {
-	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_foreign_keys=on&_busy_timeout=5000")
+	// modernc.org/sqlite uses driver name "sqlite" (not "sqlite3"). Pragmas
+	// are set via separate PRAGMA statements rather than DSN query params,
+	// since the modernc DSN syntax differs from go-sqlite3.
+	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
 	}
 	if err := db.Ping(); err != nil {
 		return nil, err
+	}
+	for _, p := range []string{
+		"PRAGMA journal_mode=WAL",
+		"PRAGMA foreign_keys=ON",
+		"PRAGMA busy_timeout=5000",
+	} {
+		if _, err := db.Exec(p); err != nil {
+			return nil, fmt.Errorf("%s: %w", p, err)
+		}
 	}
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
