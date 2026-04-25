@@ -35,6 +35,12 @@ TOOLCHAIN="1.88.0"
 LIB_NAME="librosenpassffi.a"
 CRATE_NAME="rosenpassffi"   # matches [lib].name in Cargo.toml
 
+# Pin the iOS deployment target. Without this, rustc defaults to iOS 10
+# (2016) but the Xcode 26 SDK assumes iOS 14+ for builtins like
+# __chkstk_darwin, producing "symbol not found" link errors.
+# iOS 14 (2020) covers >99% of active devices in 2026.
+export IPHONEOS_DEPLOYMENT_TARGET="14.0"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -79,7 +85,7 @@ color "sim lib:    $(du -h "$SIM_LIB"    | cut -f1) at $SIM_LIB"
 
 color "generating Swift bindings via uniffi-bindgen"
 mkdir -p "$OUT_DIR/Generated"
-cargo "+$TOOLCHAIN" run --features=uniffi/cli --bin uniffi-bindgen -- \
+cargo "+$TOOLCHAIN" run --features=uniffi-cli --bin uniffi-bindgen -- \
     generate \
     --library "$DEVICE_LIB" \
     --language swift \

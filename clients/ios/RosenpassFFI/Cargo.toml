@@ -27,6 +27,20 @@ license     = "MIT OR Apache-2.0"
 crate-type  = ["staticlib", "cdylib", "rlib"]
 name        = "rosenpassffi"
 
+# Trampoline binary that uniffi-bindgen invokes to introspect this crate's
+# proc-macros. Required because uniffi 0.27 generates Swift bindings by
+# loading our compiled library + reflecting on our types.
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["uniffi-cli"]
+
+[features]
+default = []
+# Enable to build the `uniffi-bindgen` trampoline. Pulled in implicitly
+# by build-xcframework.sh via `--features=uniffi-cli`.
+uniffi-cli = ["uniffi/cli"]
+
 [dependencies]
 # uniffi 0.27 is the version stable in early 2026; supports proc-macro mode
 # (no .udl file required for our minimal API).
