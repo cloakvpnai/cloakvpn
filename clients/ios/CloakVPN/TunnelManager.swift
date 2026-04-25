@@ -126,14 +126,6 @@ final class TunnelManager: ObservableObject {
     }
 }
 
-enum TunnelError: Error, LocalizedError {
-    case noConfig
-    case parse(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .noConfig: return "No VPN configuration imported yet."
-        case .parse(let s): return "Parse error: \(s)"
-        }
-    }
-}
+// `TunnelError` lives in ConfigParser.swift so the NetworkExtension
+// target (which compiles ConfigParser.swift but NOT this file) can see
+// it too. Don't redeclare it here.

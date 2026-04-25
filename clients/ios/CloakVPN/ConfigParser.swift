@@ -1,5 +1,24 @@
 import Foundation
 
+/// Errors thrown by config parsing and tunnel lifecycle.
+///
+/// Lives in ConfigParser.swift (not TunnelManager.swift) so it can be
+/// shared between the CloakVPN app target AND the CloakTunnel
+/// NetworkExtension target — both compile ConfigParser.swift, but only
+/// the app target compiles TunnelManager.swift (which is @MainActor +
+/// SwiftUI and cannot run inside the extension).
+enum TunnelError: Error, LocalizedError {
+    case noConfig
+    case parse(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .noConfig: return "No VPN configuration imported yet."
+        case .parse(let s): return "Parse error: \(s)"
+        }
+    }
+}
+
 /// Parsed representation of the config block produced by the server's
 /// `setup.sh` / `add-peer.sh`. Intentionally flat — serialized into the
 /// NETunnelProviderProtocol.providerConfiguration dictionary.
