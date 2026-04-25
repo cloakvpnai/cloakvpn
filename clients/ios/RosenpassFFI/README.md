@@ -110,10 +110,14 @@ while running {
 
 - [x] FFI surface designed (this crate)
 - [x] Cross-compiles for `aarch64-apple-ios`
-- [ ] Cross-compiles for `aarch64-apple-ios-sim` (in progress)
-- [ ] Wired to actual `rosenpass::protocol::CryptoServer` (TODOs in `src/lib.rs`)
-- [ ] XCFramework build script
-- [ ] Smoke-tested from Swift app
+- [x] Cross-compiles for `aarch64-apple-ios-sim` (Apple Silicon)
+- [x] Wired to actual `rosenpass::protocol::CryptoServer`
+- [x] XCFramework build script (`./build-xcframework.sh`)
+- [x] Swift bindings generated via uniffi-bindgen (`out/Generated/rosenpassffi.swift`)
+- [x] XCFramework assembled (`out/RosenpassFFI.xcframework`)
+- [ ] Wired into Xcode app target (next: drag xcframework + .swift into Xcode)
+- [ ] First end-to-end PSK derivation against `fi1.cloakvpn.ai:9999`
+- [ ] Memory profile on physical iPhone (Instruments → Allocations + VM Tracker)
 
 ## Day-by-day risk log
 

@@ -6,8 +6,9 @@ target/
 # rev we depend on. (Library crates often gitignore Cargo.lock; we treat
 # this crate as application-shaped because the iOS app is the consumer.)
 
-# uniffi-bindgen output
+# uniffi-bindgen output + build-xcframework.sh staging dir
 generated/
+out/
 *.swift
 !src/*.swift
 
