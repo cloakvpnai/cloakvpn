@@ -1,0 +1,19 @@
+# Xcode user-specific state (cursor positions, breakpoints, view state).
+# Project structure (project.pbxproj) IS committed.
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Build artifacts from RosenpassFFI/build-xcframework.sh.
+#
+# We don't commit these because:
+#   1. The .a static libs are ~35 MB each (~70 MB combined per rebuild)
+#      — would bloat git history fast.
+#   2. They're 100% reproducible from RosenpassFFI/src/ + a pinned Rust
+#      toolchain. Run `cd RosenpassFFI && ./build-xcframework.sh --release`
+#      to regenerate. The script auto-syncs the outputs into the
+#      locations Xcode expects (CloakVPN/rosenpassffi.swift and
+#      RosenpassFFI.xcframework next to the .xcodeproj).
+#   3. Anyone cloning fresh runs setup once; iteration on Swift code
+#      doesn't require rebuilding the FFI.
+RosenpassFFI.xcframework/
+CloakVPN/rosenpassffi.swift

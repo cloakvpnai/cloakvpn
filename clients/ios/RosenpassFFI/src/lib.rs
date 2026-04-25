@@ -42,23 +42,28 @@ fn ensure_policy() {
 // Error type
 // ---------------------------------------------------------------------------
 
+// uniffi-rs has a long-standing limitation: it emits broken Swift code
+// for tuple-style enum variants (`Rosenpass(String)` produces
+// `FfiConverterString.write(, into: &buf)` with an empty argument). The
+// workaround is struct-style variants with a named field. Cosmetic in
+// Rust, fixes the binding generator. See https://github.com/mozilla/uniffi-rs/issues/1095
 #[derive(Debug, Error, uniffi::Error)]
 pub enum FfiError {
     /// Wraps any internal rosenpass error.
-    #[error("rosenpass: {0}")]
-    Rosenpass(String),
+    #[error("rosenpass: {message}")]
+    Rosenpass { message: String },
 
     /// Caller passed bytes of the wrong length (e.g. truncated key).
-    #[error("invalid input: {0}")]
-    InvalidInput(String),
+    #[error("invalid input: {message}")]
+    InvalidInput { message: String },
 
     /// Method called in an inconsistent session state.
-    #[error("invalid state: {0}")]
-    InvalidState(String),
+    #[error("invalid state: {message}")]
+    InvalidState { message: String },
 
     /// Anything else (panic guard, mutex poison, etc.).
-    #[error("internal: {0}")]
-    Internal(String),
+    #[error("internal: {message}")]
+    Internal { message: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +87,7 @@ pub fn generate_static_keypair() -> Result<StaticKeypair, FfiError> {
     let mut pk = SPk::zero();
     StaticKem
         .keygen(sk.secret_mut(), pk.deref_mut())
-        .map_err(|e| FfiError::Rosenpass(format!("keygen: {e}")))?;
+        .map_err(|e| FfiError::Rosenpass { message: format!("keygen: {e}") })?;
     Ok(StaticKeypair {
         secret_key: sk.secret().to_vec(),
         public_key: pk.deref().to_vec(),
@@ -127,10 +132,10 @@ impl RosenpassSession {
         let mut sk = SSk::zero();
         let sk_len = sk.secret().len();
         if our_secret_key.len() != sk_len {
-            return Err(FfiError::InvalidInput(format!(
+            return Err(FfiError::InvalidInput { message: format!(
                 "secret key wrong length: got {}, want {sk_len}",
                 our_secret_key.len()
-            )));
+            ) });
         }
         sk.secret_mut().copy_from_slice(&our_secret_key);
 
@@ -138,20 +143,20 @@ impl RosenpassSession {
         let mut pk = SPk::zero();
         let pk_len = pk.deref().len();
         if our_public_key.len() != pk_len {
-            return Err(FfiError::InvalidInput(format!(
+            return Err(FfiError::InvalidInput { message: format!(
                 "public key wrong length: got {}, want {pk_len}",
                 our_public_key.len()
-            )));
+            ) });
         }
         pk.deref_mut().copy_from_slice(&our_public_key);
 
         // Reconstruct peer's public key (same size as ours)
         let mut peer_pk = SPk::zero();
         if peer_public_key.len() != pk_len {
-            return Err(FfiError::InvalidInput(format!(
+            return Err(FfiError::InvalidInput { message: format!(
                 "peer public key wrong length: got {}, want {pk_len}",
                 peer_public_key.len()
-            )));
+            ) });
         }
         peer_pk.deref_mut().copy_from_slice(&peer_public_key);
 
@@ -163,7 +168,7 @@ impl RosenpassSession {
                 ProtocolVersion::V03,
                 OskDomainSeparator::default(),
             )
-            .map_err(|e| FfiError::Rosenpass(format!("add_peer: {e}")))?;
+            .map_err(|e| FfiError::Rosenpass { message: format!("add_peer: {e}") })?;
 
         Ok(Arc::new(Self {
             inner: Mutex::new(SessionState {
@@ -182,7 +187,7 @@ impl RosenpassSession {
         let mut state = self
             .inner
             .lock()
-            .map_err(|e| FfiError::Internal(format!("mutex poisoned: {e}")))?;
+            .map_err(|e| FfiError::Internal { message: format!("mutex poisoned: {e}") })?;
         // Pull `peer` out as a local before re-borrowing `state` mutably —
         // borrow-checker won't let us mix &state.peer + &mut state.server
         // in the same expression.
@@ -191,7 +196,7 @@ impl RosenpassSession {
         let n = state
             .server
             .initiate_handshake(peer, buf.deref_mut())
-            .map_err(|e| FfiError::Rosenpass(format!("initiate_handshake: {e}")))?;
+            .map_err(|e| FfiError::Rosenpass { message: format!("initiate_handshake: {e}") })?;
         Ok(buf.deref()[..n].to_vec())
     }
 
@@ -207,13 +212,13 @@ impl RosenpassSession {
         let mut state = self
             .inner
             .lock()
-            .map_err(|e| FfiError::Internal(format!("mutex poisoned: {e}")))?;
+            .map_err(|e| FfiError::Internal { message: format!("mutex poisoned: {e}") })?;
 
         let mut tx_buf = MsgBuf::zero();
         let result = state
             .server
             .handle_msg(&bytes, tx_buf.deref_mut())
-            .map_err(|e| FfiError::Rosenpass(format!("handle_msg: {e}")))?;
+            .map_err(|e| FfiError::Rosenpass { message: format!("handle_msg: {e}") })?;
 
         // Borrow `peer` out of `state` before we re-borrow `state.server`
         // mutably — avoids a borrow-checker lifetime tangle.
@@ -222,7 +227,7 @@ impl RosenpassSession {
             let psk = state
                 .server
                 .osk(peer)
-                .map_err(|e| FfiError::Rosenpass(format!("osk: {e}")))?;
+                .map_err(|e| FfiError::Rosenpass { message: format!("osk: {e}") })?;
             let psk_bytes = psk.secret().to_vec();
             state.last_psk = Some(psk_bytes.clone());
             return Ok(StepResult::DerivedPsk { psk: psk_bytes });
