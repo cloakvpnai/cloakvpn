@@ -2,7 +2,10 @@
 
 Status: ✅ Decision made 2026-04-25.
 Reviewer: solo project, single decision-maker.
-Implementation status: scaffolded; cross-compile validated.
+Implementation status: ✅ end-to-end smoke test PASSING against
+`fi1.cloakvpn.ai` as of 2026-04-25 evening (see "End-to-end smoke
+test" section below). Two consecutive 120-second PSK rotations
+verified on iPhone 13 Pro Max running iOS 26.4.
 
 ## Question
 
@@ -245,24 +248,193 @@ than the conservative paper estimates assumed.
 - No memory leaks: post-keygen resident dropped *below* baseline,
   meaning all temp buffers were freed and iOS reclaimed some pages.
 
-## What's NOT yet done (subsequent days)
+## End-to-end smoke test (2026-04-25)
+
+**Status: ✅ PASSING.** Full McEliece-460896 + ML-KEM-768 + WireGuard PSK
+rotation chain operational on iPhone 13 Pro Max (iOS 26.4) against
+`fi1.cloakvpn.ai` (`204.168.252.70`). Two consecutive 120-second
+rotations confirmed live; rosenpass-derived PSK swapped onto the
+WireGuardKit-managed tunnel without dropping in-flight UDP. Working
+classical-only fallback also confirmed via `_peer-config-wg-only.txt`.
+
+The path to passing was longer than expected. Ten distinct bugs in the
+stack between the iOS app, the NetworkExtension, the rosenpass FFI,
+the server's rosenpass binary, the WireGuard tunnel routing, and iOS
+provisioning. Documenting each here so a future operator (or
+future-me re-spinning a region) doesn't burn another evening on the
+same hazards.
+
+### Bugs encountered, in rough order of discovery
+
+1. **`providerConfiguration` size limit.** The original
+   `CloakConfig.asDictionary` shoved all three rosenpass key blobs
+   (~1.4 MB combined of base64 McEliece-460896 public keys plus the
+   client secret) into `NETunnelProviderProtocol.providerConfiguration`.
+   iOS persists this dictionary to a system database with practical
+   size limits in the hundreds of KB; ours either silently truncated
+   on save or got rejected at install time. **Fix:** moved keys to an
+   App Group container via `AppGroupKeyStore.swift`; the NE doesn't
+   need them anyway since rosenpass runs in the main app.
+2. **Paste-only import UI.** `ContentView.importSheet` was a
+   `TextEditor` paste field. 1.4 MB of base64 is unpasteable in
+   practice. **Fix:** added `.fileImporter` so the user picks the file
+   from Files / iCloud Drive / AirDrop instead of pasting.
+3. **`providerBundleIdentifier` mismatch.** `TunnelManager.importConfig`
+   hard-coded `"com.cloakvpn.app.tunnel"`, but the actual NE target's
+   PRODUCT_BUNDLE_IDENTIFIER is `"ai.cloakvpn.CloakVPN.CloakTunnel"`.
+   iOS uses this string to locate the NE binary; mismatch → silent
+   launch failure. The host app worked fine, but every Connect tap
+   transitioned `Connecting → Disconnected` instantly with **no NE
+   logs whatsoever** (because the NE process never even started).
+   This is one of the most painful failure modes in NE-land — there's
+   no error path visible to the host app. **Fix:** match the strings.
+4. **Network Extensions capability missing on the CloakTunnel target.**
+   The target had App Groups but not Network Extensions in
+   Signing & Capabilities. The host app has the
+   `com.apple.developer.networking.networkextension` entitlement, but
+   without it on the NE target the embedded entitlement is never
+   granted by the provisioning profile, so iOS rejects the NE on
+   launch. Same symptom as the bundle ID issue — instant
+   `Connecting → Disconnected` with no logs. **Fix:** add the
+   capability with `Packet Tunnel` checked. After this *and* the
+   bundle ID fix, the NE finally launched and WireGuard came up.
+5. **Server rosenpass version mismatch.** Server's `setup.sh` had been
+   doing `apt-get install -y rosenpass` (apt 0.2.2) with a fallback
+   to `cargo install --locked rosenpass` from crates.io (also a
+   stable release, not git HEAD). The iOS FFI is locked to git rev
+   `b096cb1`. McEliece secret-key serialization changed between
+   those versions: stable rosenpass writes 13568-byte secret files
+   (raw OQS layout), b096cb1 writes 13608 bytes (rosenpass-framed).
+   iPhone tried to load a 13568-byte secret from a config that the
+   server's add-peer.sh had written → FFI threw
+   `invalid input: secret key wrong length: got 13568, want 13608`.
+   **Fix:** `setup.sh` now pins via
+   `cargo install --git ... --rev b096cb1`. `ROSENPASS_REV` constant
+   at the top of the install block must be bumped in lockstep with
+   `clients/ios/RosenpassFFI/Cargo.toml`.
+6. **Stale rosenpass keys after version bump.** After installing the
+   pinned binary, the server's existing `server.rosenpass-secret` and
+   `client*.rosenpass-secret` files were still in the old format and
+   the new binary couldn't deserialize them — daemon flapped on
+   startup with "could not load secret-key file: invalid key" 200+
+   times before we noticed. **Fix:** when bumping `ROSENPASS_REV`,
+   regenerate ALL keys (server's own + every peer's) with the new
+   binary, not just the failing peer's. Reset `server.toml` to the
+   `[server]`-only block first, then re-run add-peer.sh per peer.
+7. **Stale `[Peer]` blocks in `wg0.conf` and `[[peers]]` in
+   `server.toml`.** Each add-peer.sh run for the same peer name
+   re-generates a new WG keypair *and* appends new entries to both
+   files without checking for existing ones. After several
+   regenerations, both files had duplicate or stale entries pointing
+   at keys that no longer existed. **Fix:** belt-and-suspenders
+   nuke-and-pave: `sed -i '/^\[Peer\]/Q' wg0.conf` to wipe peer
+   blocks, `cat > server.toml <<EOF` to reset to a clean
+   `[server]`-only template, then `add-peer.sh` per peer.
+8. **WG full-tunnel routing captured rosenpass UDP.** Once the WG
+   tunnel was up with `AllowedIPs = 0.0.0.0/0, ::/0`, iOS routed
+   all of the iPhone's outbound traffic through `utun` — including
+   the rosenpass UDP/9999 socket the main app was trying to send
+   on. `NWParameters.prohibitedInterfaceTypes = [.other]` excludes
+   `utun` but doesn't fall back to a usable physical interface
+   when the tunnel claims everything; the connection sat in
+   `.waiting` state silently and no rosenpass packet ever escaped
+   the device. **Smoke-test fix:** edited the iPhone's
+   `_peer-config.txt` AllowedIPs to exclude `192.0.0.0/4` (the
+   block containing the server's IP), so iOS keeps a route to
+   `204.168.252.70` via the physical interface. **Production fix
+   (still TODO, tracked separately):** Mullvad pattern — call
+   `setTunnelNetworkSettings` after `WireGuardAdapter.start` with
+   `NEPacketTunnelNetworkSettings.excludedRoutes` containing just
+   the rosenpass server's `/32`. Surgical, doesn't lose routing for
+   ~6% of IPv4.
+9. **`FfiError` not surfacing its inner message.** uniffi's generated
+   `FfiError` enum carries useful `message: String` payloads on every
+   case but only conforms to `Error`, not `LocalizedError`. So
+   `error.localizedDescription` collapsed to the unhelpful
+   `"CloakVPN.FfiError error <N>"` form, hiding the actual reason.
+   **Fix:** add a `LocalizedError` extension in `RosenpassBridge.swift`
+   that pulls out and labels each variant's message.
+10. **Protocol version dispatch (V02 vs V03).** The big finale.
+    Rosenpass at b096cb1 supports two protocol versions:
+    `ProtocolVersion::V02` uses Blake2b-keyed HMAC,
+    `ProtocolVersion::V03` uses keyed SHAKE256. Each peer entry has
+    its own `protocol_version`. The iOS client at b096cb1 defaults to
+    V03 (SHAKE256). The server's TOML `[[peers]]` block defaults to
+    V02 (Blake2b) when `protocol_version` is unset. Server
+    received the InitHello, tried Blake2b → failed, tried SHAKE256
+    → also failed (the per-peer `verify_hash_choice_match` blocks
+    cross-matching even when SHAKE256 *would* parse it), and bailed
+    with `"No valid hash function found for InitHello"`. **Fix:**
+    explicitly set `protocol_version = "V03"` in `[[peers]]` blocks.
+    `add-peer.sh` now writes this automatically.
+
+### Notes for future regions / future operators
+
+- When bumping the iOS FFI's rosenpass git rev, also bump
+  `ROSENPASS_REV` in `server/scripts/setup.sh` and re-run `setup.sh`
+  on every server. Drift between client and server rosenpass is the
+  #1 gotcha and will cost you hours.
+- `add-peer.sh` is not idempotent. Re-running it for the same peer
+  name produces stale entries. If you need to re-issue keys for a
+  peer, manually clean the entries from `wg0.conf` and `server.toml`
+  first.
+- iOS NE failures during launch produce **no logs visible to the host
+  app**. If you tap Connect and the status flickers
+  `Connecting → Disconnected` with nothing in the Xcode console,
+  immediately check (a) Signing & Capabilities for both targets,
+  (b) `providerBundleIdentifier` matches the NE's
+  `PRODUCT_BUNDLE_IDENTIFIER` exactly, (c) the entitlements are
+  reflected in the active provisioning profile.
+- iOS NE state can wedge after a few failed connection attempts. If
+  Connect/Disconnect taps stop responding, the recovery is:
+  Settings → General → VPN & Device Management → VPN → Delete VPN,
+  then force-quit the app, re-import config, retry. iOS won't
+  auto-clear a half-installed profile.
+- Console.app's process filter requires the *exact* casing (`CloakTunnel`,
+  not `cloak`). Plain text search matches any field, which is usually
+  what you want. The default "ANY" dropdown is fine for keyword search.
+
+## What's still open
 
 - [x] Wire the FFI scaffolding's TODO stubs to real `rosenpass::protocol`
   calls.
 - [x] Build pipeline that produces an `.xcframework` consumable by
   Xcode (`build-xcframework.sh`).
-- [x] Memory profile on physical iPhone (above).
-- [ ] Wire `RosenpassBridge.swift` + `PacketTunnelProvider.swift` in
+- [x] Memory profile on physical iPhone.
+- [x] Wire `RosenpassBridge.swift` + `PacketTunnelProvider.swift` in
   the existing iOS skeleton to the FFI.
-- [ ] App Group entitlement + `sendProviderMessage` PSK push.
-- [ ] First end-to-end PSK derivation against `fi1.cloakvpn.ai:9999`.
-- [ ] WireGuardKit integration in `PacketTunnelProvider` (currently
-  only a stub).
-- [ ] Sort out signing for device builds for non-developer users
-  (TestFlight requires App Store Connect bundle ID registration for
-  both `ai.cloakvpn.CloakVPN` and `ai.cloakvpn.CloakVPN.CloakTunnel`).
-- [ ] App Store review submission (privacy nutrition labels, "Why does
-  this app need a VPN extension" justification, etc.).
+- [x] App Group entitlement + `sendProviderMessage` PSK push.
+- [x] First end-to-end PSK derivation against `fi1.cloakvpn.ai:9999`.
+- [x] WireGuardKit integration in `PacketTunnelProvider`.
+- [ ] **Replace the `0.0.0.0/0`-minus-`192.0.0.0/4` AllowedIPs hack
+  with surgical `excludedRoutes` in `PacketTunnelProvider`.** (Mullvad
+  pattern — adds back tunnel routing for the ~6% of IPv4 we currently
+  carve out, without re-introducing the rosenpass-UDP-through-tunnel
+  problem.) Tracked as task #29.
+- [ ] **Move rosenpass keypair generation onto the device.** Currently
+  the server runs `rosenpass gen-keys` per peer and ships both halves
+  of the keypair in the config file. This means the server holds
+  every client's PQ private key — fundamentally defeats the privacy
+  guarantee post-quantum is supposed to provide, since a server
+  compromise (or "harvest now, decrypt later" against the config
+  delivery channel) lets an adversary decrypt every PQ-protected
+  session retroactively. Hard prerequisite before any beta. The iOS
+  FFI's `generateStaticKeypair()` is already verified-working
+  on-device; the missing piece is a server endpoint that registers a
+  client's public key by upload rather than generating it. Tracked
+  as task #22.
+- [ ] **Propagate fi1 fixes to de1 and any future regions.** Rerun
+  `setup.sh` (now with the pinned `ROSENPASS_REV`) and `add-peer.sh`
+  (now with `protocol_version = "V03"`) on each region's server.
+  Tracked as task #31.
+- [ ] **TestFlight signing for non-developer device builds.** Requires
+  App Store Connect bundle ID registration for both
+  `ai.cloakvpn.CloakVPN` and `ai.cloakvpn.CloakVPN.CloakTunnel`,
+  plus distribution provisioning profiles per target.
+- [ ] **App Store review submission.** Privacy nutrition labels,
+  the "Why does this app need a VPN extension" justification, the
+  PQC marketing description, and the audit/security disclosures
+  for app review (Apple is sensitive about VPN apps).
 
 ## References
 
