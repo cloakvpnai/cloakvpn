@@ -53,25 +53,33 @@ apt-get install -y -qq \
   build-essential pkg-config
 
 # ---------- Install Rosenpass --------------------------------------------
-# Not in Ubuntu 24.04 LTS apt repos (added in 24.10). Try apt first anyway
-# (future-proofs + works on Debian testing), then fall back to cargo build.
-# Kept separate from the base apt install so a missing package doesn't trip
-# `set -e` and skip the fallback.
-log "Installing Rosenpass"
-if apt-get install -y -qq rosenpass 2>/dev/null; then
-  log "Rosenpass installed from apt"
-else
-  log "Rosenpass not in apt; building from source via cargo (~5 min on CX23)"
-  # Build deps for rosenpass-from-source on Ubuntu 24.04:
-  #   - cargo            : Rust toolchain
-  #   - cmake            : oqs-sys (C liboqs build for Kyber + Classic McEliece)
-  #   - libclang-dev     : bindgen (for oqs-sys and libsodium-sys-stable)
-  #   - libsodium-dev    : libsodium-sys-stable (classical crypto primitives)
-  #   - pkg-config + build-essential already installed above.
-  apt-get install -y -qq cargo cmake libclang-dev libsodium-dev
-  # --locked respects Cargo.lock; --root installs into /usr/local (no $HOME fiddling).
-  cargo install --locked --root /usr/local rosenpass
-fi
+# CRITICAL: the rosenpass binary on the server MUST match the rosenpass
+# crate version compiled into the iOS FFI (clients/ios/RosenpassFFI/Cargo.toml).
+# Different versions produce incompatible McEliece secret-key serialization
+# formats (a 40-byte difference between recent revs vs. apt/crates.io
+# releases) — the iOS handshake will fail with `invalid input: secret
+# key wrong length`. We pin both sides to the same git commit.
+#
+# When you bump the iOS FFI's rosenpass `rev` in
+# clients/ios/RosenpassFFI/Cargo.toml, also bump ROSENPASS_REV here AND
+# re-run setup.sh (or just `cargo install --force ...`) on every server.
+ROSENPASS_REV="b096cb1"  # must match clients/ios/RosenpassFFI/Cargo.toml
+
+log "Installing Rosenpass (git rev $ROSENPASS_REV)"
+# Build deps for rosenpass-from-source on Ubuntu 24.04:
+#   - cargo            : Rust toolchain
+#   - cmake            : oqs-sys (C liboqs build for Kyber + Classic McEliece)
+#   - libclang-dev     : bindgen (for oqs-sys and libsodium-sys-stable)
+#   - libsodium-dev    : libsodium-sys-stable (classical crypto primitives)
+#   - pkg-config + build-essential already installed above.
+apt-get install -y -qq cargo cmake libclang-dev libsodium-dev
+# Pinning to a git rev (NOT crates.io / apt) is intentional — see comment
+# above. --force lets us re-run setup.sh idempotently to bump the rev.
+# --root installs into /usr/local (no $HOME fiddling).
+cargo install --locked --force --root /usr/local \
+  --git https://github.com/rosenpass/rosenpass.git \
+  --rev "$ROSENPASS_REV" \
+  rosenpass
 
 command -v rosenpass >/dev/null || die "Rosenpass install failed — binary not on PATH."
 log "Rosenpass binary: $(command -v rosenpass) ($(rosenpass --version 2>&1 | head -n1))"
