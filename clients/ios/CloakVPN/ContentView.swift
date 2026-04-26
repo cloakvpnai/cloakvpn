@@ -31,6 +31,7 @@ struct ContentView: View {
                 statusBadge
                 bigConnectButton
                 infoPanel
+                pqcIdentityPanel
 
                 Spacer()
 
@@ -138,6 +139,53 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             } else {
                 Text("No config imported.").font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color.secondary.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// Shows this device's locally-generated rosenpass public key
+    /// fingerprint plus a Share button to AirDrop the full base64
+    /// pubkey to a Mac for server-side registration. The local
+    /// keypair is generated on first launch via the FFI's
+    /// generateStaticKeypair() — secret never leaves the device.
+    /// See docs/IOS_PQC.md for the privacy rationale.
+    private var pqcIdentityPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "key.fill")
+                    .foregroundStyle(.tint)
+                Text("Your PQC Identity")
+                    .font(.subheadline.bold())
+            }
+
+            if let fp = tunnel.localPubkeyFingerprint {
+                Text("Fingerprint: \(fp)")
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+
+                if let url = try? tunnel.makeLocalPubkeyShareFile() {
+                    ShareLink(
+                        item: url,
+                        subject: Text("Cloak VPN PQC public key"),
+                        message: Text("Register this with `sudo add-peer.sh <peer-name> <this-file>` on your Cloak server.")
+                    ) {
+                        Label("Share my public key…", systemImage: "square.and.arrow.up")
+                            .font(.footnote)
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else {
+                HStack(spacing: 8) {
+                    ProgressView().scaleEffect(0.7)
+                    Text("Generating PQC identity…")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

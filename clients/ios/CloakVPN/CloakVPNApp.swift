@@ -8,7 +8,14 @@ struct CloakVPNApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(tunnel)
-                .task { await tunnel.load() }
+                .task {
+                    // Run both startup tasks concurrently — they're
+                    // independent (loading existing VPN profile vs. ensuring
+                    // a local rosenpass keypair) and we don't want either
+                    // blocking the other.
+                    async let _ = tunnel.load()
+                    async let _ = tunnel.ensureLocalKeypair()
+                }
         }
     }
 }
