@@ -185,6 +185,30 @@ final class TunnelManager: ObservableObject {
         // first PQC smoke test.
         proto.passwordReference = nil
 
+        // ARCHITECTURAL CONFLICT — see docs/IOS_PQC.md "Open items":
+        //
+        // We need `includeAllNetworks = true` for proper full-tunnel
+        // behavior (without it, iOS lets apps Chrome/Safari/etc. split-
+        // tunnel around the VPN, leaking the user's real IP — verified
+        // by Chrome and Safari showing different non-server IPs at
+        // ifconfig.me).
+        //
+        // BUT: enabling it captures EVERYTHING through the tunnel
+        // including the rosenpass UDP that we explicitly excluded via
+        // setTunnelNetworkSettings.excludedRoutes — so the rosenpass
+        // handshake stalls (PQC stuck on "handshaking"). The fix is to
+        // route rosenpass through the tunnel itself (server's rosenpass
+        // on *:9999 still reachable via local delivery after WG
+        // decapsulation), but that needs careful work in
+        // RosenpassBridge.UDPClient (drop prohibitedInterfaceTypes hint
+        // so the connection uses utun) plus server-side verification
+        // that decrypted packets to dst=server:9999 reach rosenpass.
+        //
+        // Until that refactor lands, keep includeAllNetworks=false and
+        // accept the traffic-leak trade-off. PQC works, IP visibility
+        // doesn't. Tracked as a Phase 1 must-fix.
+        proto.includeAllNetworks = false
+
         manager.protocolConfiguration = proto
         manager.localizedDescription = "Cloak VPN"
         manager.isEnabled = true
