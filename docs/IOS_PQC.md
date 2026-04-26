@@ -368,6 +368,84 @@ same hazards.
     explicitly set `protocol_version = "V03"` in `[[peers]]` blocks.
     `add-peer.sh` now writes this automatically.
 
+### Manual config import: known sharp edges
+
+The current "AirDrop a `.txt` file → iOS Files app → Import from file" flow
+has multiple failure modes that are easy for a user to hit, and we hit
+several of them ourselves during the 2026-04-26 client-keygen smoke
+test (took ~3 hours of debugging the wrong server):
+
+1. **`_peer-config*.txt` files accumulate in iOS Files across days.** Every
+   AirDrop session leaves a fresh copy. After a few sessions there might
+   be 5+ files, all with the same name but different contents (different
+   regions, different keys, different generations). The Files import
+   picker shows them by filename only — picking by the wrong timestamp
+   silently imports a stale config. The user only notices when the in-app
+   `Endpoint:` line shows a different IP than expected.
+2. **iOS Settings → VPN profile state is sticky.** Even after deleting
+   the in-app config, iOS retains the `NETunnelProviderManager` until
+   explicitly removed via Settings → General → VPN & Device Management →
+   VPN → Delete. A new import overwrites in-memory state but not always
+   the system profile, leading to "iPhone shows Connected to wrong
+   server" symptoms.
+3. **App Group container survives Delete VPN, but NOT app uninstall.**
+   The locally-generated rosenpass keypair lives in the App Group
+   container. If the user uninstalls and reinstalls CloakVPN to recover
+   from a wedged state, they get a fresh keypair — but the server still
+   has the OLD pubkey registered, so handshakes silently fail with no
+   useful error. We saw fingerprint `4ef3ae725f7c592e` (Day 1) get
+   replaced by `15541d6003735382` (Day 2 after reinstall), and spent
+   ~30 minutes debugging "stuck on handshaking" before realizing the
+   server was registered against Day 1's pubkey.
+4. **No in-app verification that the imported config is current.** The
+   only signal is the `Endpoint:` line in the info panel, which means
+   the user has to manually compare against expectations. There's no
+   `import-time` warning if the imported config is older than a prior
+   one, no fingerprint-of-server-pubkey display for cross-checking
+   against the server-side admin.
+
+These all have product-roadmap fixes (next subsection), but for tonight's
+operators: when a smoke test fails, **first check the in-app Endpoint
+line matches the server you THINK you're talking to**. Multiple regions
+and multiple AirDrops across days makes this easy to mix up.
+
+### Roadmap: native provisioning (eliminates the manual import flow)
+
+The "AirDrop a config file" provisioning model is fine for an alpha
+proof-of-concept, but is the wrong UX for any real product. Future
+versions should support **native in-app provisioning**:
+
+- **App generates rosenpass keypair on first launch** (already shipped
+  via `ensureLocalKeypair()`).
+- **App registers with a Cloak control-plane API** over PQ-hybrid TLS
+  (`X25519MLKEM768`). Sends only its public key. Receives:
+  - The user's WireGuard private key (or, ideally, the user generates
+    that locally too — Phase 1.1 follow-up).
+  - The server's WireGuard + rosenpass public keys.
+  - The peer-assigned IPs, region endpoint, etc.
+- **Server-side enrollment** is just a thin HTTPS shim around the
+  current `add-peer.sh` flow, called from a Go service we already
+  scaffold in `server/api/`. Effectively replaces the manual
+  `scp pubkey + add-peer.sh + scp config + AirDrop` chain with a
+  single in-app tap.
+- **Region picker** in the app — list of available regions fetched
+  from the API, user picks one or "auto" (lowest-latency). No more
+  per-region config files to manage.
+- **Re-keying / rotation flow** in the app — "rotate my PQC identity"
+  generates a fresh keypair on-device and re-enrolls with the server,
+  without uninstall/reinstall.
+- **Subscription gating** — control-plane API checks a Stripe customer
+  ID before issuing a peer config. Lapsed-subscription deactivates
+  via `del-peer.sh` (which we still need to write).
+
+This is a Phase 1 → Phase 2 transition feature. Eliminates ~all the
+sharp edges in the previous subsection. Engineering size: ~2-3 weeks
+of focused work — the components mostly exist (ios-side keygen done,
+server-side `add-peer.sh` already pubkey-aware, Go API stub already
+in `server/api/`). The integration is the work.
+
+Tracked separately as task #35.
+
 ### Notes for future regions / future operators
 
 - When bumping the iOS FFI's rosenpass git rev, also bump
