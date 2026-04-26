@@ -67,12 +67,30 @@ ROSENPASS_REV="b096cb1"  # must match clients/ios/RosenpassFFI/Cargo.toml
 
 log "Installing Rosenpass (git rev $ROSENPASS_REV)"
 # Build deps for rosenpass-from-source on Ubuntu 24.04:
-#   - cargo            : Rust toolchain
 #   - cmake            : oqs-sys (C liboqs build for Kyber + Classic McEliece)
 #   - libclang-dev     : bindgen (for oqs-sys and libsodium-sys-stable)
 #   - libsodium-dev    : libsodium-sys-stable (classical crypto primitives)
 #   - pkg-config + build-essential already installed above.
-apt-get install -y -qq cargo cmake libclang-dev libsodium-dev
+# (We deliberately do NOT install apt's `cargo` package here — Ubuntu
+# 24.04 ships rustc 1.75 which is too old for rosenpass HEAD requiring
+# 1.77+. Use rustup to pull current stable instead, see below.)
+apt-get install -y -qq cmake libclang-dev libsodium-dev curl
+
+# Install rustup (current stable Rust) if cargo isn't already a recent
+# version. rosenpass at b096cb1+ requires rustc 1.77+; apt's cargo on
+# Ubuntu 24.04 LTS ships 1.75, which silently fails the install with
+# "requires rustc 1.77.0 or newer" — and the failure was non-fatal in
+# our previous setup, leading to a half-broken state where the daemon
+# ran on a stale rosenpass. Force rustup to avoid the trap.
+if ! command -v rustc >/dev/null || ! rustc --version | awk '{print $2}' | awk -F. '{exit !($1>1 || ($1==1 && $2>=77))}'; then
+  log "Installing rustup (current stable Rust toolchain)"
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain stable --no-modify-path
+  # shellcheck disable=SC1091
+  . "$HOME/.cargo/env"
+fi
+log "Rust toolchain: $(rustc --version) at $(command -v rustc)"
+
 # Pinning to a git rev (NOT crates.io / apt) is intentional — see comment
 # above. --force lets us re-run setup.sh idempotently to bump the rev.
 # --root installs into /usr/local (no $HOME fiddling).
