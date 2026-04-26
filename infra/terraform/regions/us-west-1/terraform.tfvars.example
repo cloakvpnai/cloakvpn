@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars and fill in.
+# terraform.tfvars is in .gitignore — never commit with a real token.
+
+hcloud_token        = "REPLACE_WITH_HETZNER_API_TOKEN"
+ssh_public_key_path = "~/.ssh/cloakvpn_ed25519.pub"
+
+# Lock SSH to your admin IP(s). Find yours with `curl ifconfig.me`.
+# Leaving 0.0.0.0/0 is acceptable (SSH is key-only + fail2ban) but noisy in logs.
+admin_ip_cidrs = ["0.0.0.0/0"]
+
+# Set true once Caddy/nginx with a valid cert is on the box for api.cloakvpn.ai.
+enable_api_port = false
