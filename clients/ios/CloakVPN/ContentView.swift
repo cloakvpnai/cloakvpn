@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // Note on RosenpassFFI: the Swift bindings (rosenpassffi.swift) are
 // compiled directly into the CloakVPN app target alongside this file,
@@ -11,6 +12,7 @@ struct ContentView: View {
     @EnvironmentObject var tunnel: TunnelManager
     @State private var configText: String = ""
     @State private var showingImport = false
+    @State private var showingFileImporter = false
     @State private var errorMsg: String?
 
     // Runtime smoke test for the post-quantum FFI. Pressing the button
@@ -32,8 +34,19 @@ struct ContentView: View {
 
                 Spacer()
 
-                Button("Import config") { showingImport = true }
-                    .buttonStyle(.bordered)
+                // Two import paths:
+                //   - "Import from file" → UIDocumentPickerViewController
+                //     (via SwiftUI .fileImporter). Required for PQC configs
+                //     since they're ~1.4 MB of base64 McEliece keys —
+                //     too big to paste sanely.
+                //   - "Paste config" → TextEditor sheet. Fine for the
+                //     small classical-only configs (~400 bytes).
+                HStack(spacing: 12) {
+                    Button("Import from file…") { showingFileImporter = true }
+                        .buttonStyle(.borderedProminent)
+                    Button("Paste config") { showingImport = true }
+                        .buttonStyle(.bordered)
+                }
 
                 pqcSmokeTestPanel
             }
@@ -44,6 +57,44 @@ struct ContentView: View {
             }, message: { Text(errorMsg ?? "") })
             .sheet(isPresented: $showingImport) {
                 importSheet
+            }
+            // .plainText covers .txt; .data is the catch-all so users can
+            // pick a renamed file. We don't enforce a `.cloak` extension
+            // because configs come out of `add-peer.sh` as plain text and
+            // forcing a custom UTI would just make AirDrop more annoying.
+            .fileImporter(
+                isPresented: $showingFileImporter,
+                allowedContentTypes: [.plainText, .text, .data],
+                allowsMultipleSelection: false
+            ) { result in
+                handleFileImport(result)
+            }
+        }
+    }
+
+    /// Read a peer config file the user picked from Files / iCloud Drive /
+    /// AirDrop and feed it into TunnelManager.importConfig.
+    ///
+    /// Files chosen via the document picker live OUTSIDE the app sandbox,
+    /// so we have to bracket the read with
+    /// `startAccessingSecurityScopedResource` / `stopAccessing…` — without
+    /// it, `Data(contentsOf:)` returns a permissions error even though
+    /// the user just explicitly granted access.
+    private func handleFileImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .failure(let err):
+            errorMsg = "Couldn't open file: \(err.localizedDescription)"
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let text = try String(contentsOf: url, encoding: .utf8)
+                try tunnel.importConfig(text)
+            } catch let e as TunnelError {
+                errorMsg = e.errorDescription ?? "Parse error"
+            } catch {
+                errorMsg = "Read failed: \(error.localizedDescription)"
             }
         }
     }

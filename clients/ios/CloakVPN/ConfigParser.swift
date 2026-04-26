@@ -41,6 +41,17 @@ struct CloakConfig: Codable, Equatable {
     var clientRPPublicKeyB64: String
     var pskRotationSeconds: Int
 
+    /// Subset of fields suitable for `NETunnelProviderProtocol.providerConfiguration`.
+    ///
+    /// Deliberately EXCLUDES the three Rosenpass key blobs
+    /// (`serverRPPublicKeyB64`, `clientRPSecretKeyB64`, `clientRPPublicKeyB64`).
+    /// Those are ~700 KB each (Classic McEliece-460896 public keys, base64),
+    /// totaling ~1.4 MB — well past what iOS will reliably persist in
+    /// `providerConfiguration`. They live in the App Group container
+    /// instead (see `AppGroupKeyStore`) and are loaded at connect time by
+    /// the main app. The NE never needs them — Rosenpass runs in the main
+    /// app only and pushes derived 32-byte PSKs to the NE via
+    /// `sendProviderMessage`.
     var asDictionary: [String: Any] {
         [
             "wgPrivateKey": wgPrivateKey,
@@ -51,10 +62,7 @@ struct CloakConfig: Codable, Equatable {
             "allowedIPs": allowedIPs,
             "persistentKeepalive": persistentKeepalive,
             "pqEnabled": pqEnabled,
-            "serverRPPublicKeyB64": serverRPPublicKeyB64,
             "rpEndpoint": rpEndpoint,
-            "clientRPSecretKeyB64": clientRPSecretKeyB64,
-            "clientRPPublicKeyB64": clientRPPublicKeyB64,
             "pskRotationSeconds": pskRotationSeconds
         ]
     }
@@ -73,11 +81,19 @@ struct CloakConfig: Codable, Equatable {
         allowedIPs           = try req("allowedIPs")
         persistentKeepalive  = try req("persistentKeepalive")
         pqEnabled            = try req("pqEnabled")
-        serverRPPublicKeyB64 = try req("serverRPPublicKeyB64")
         rpEndpoint           = try req("rpEndpoint")
-        clientRPSecretKeyB64 = try req("clientRPSecretKeyB64")
-        clientRPPublicKeyB64 = try req("clientRPPublicKeyB64")
         pskRotationSeconds   = try req("pskRotationSeconds")
+
+        // The three Rosenpass key blobs live in the App Group container,
+        // not in providerConfiguration (size — see `asDictionary`). When
+        // this initializer runs from a freshly-loaded providerConfiguration
+        // (either main app or NE), the keys are simply absent here; the
+        // main app reloads them from `AppGroupKeyStore` at connect time,
+        // and the NE never needs them. Tolerating absence keeps both
+        // paths working without branching at the call site.
+        serverRPPublicKeyB64 = (dict["serverRPPublicKeyB64"] as? String) ?? ""
+        clientRPSecretKeyB64 = (dict["clientRPSecretKeyB64"] as? String) ?? ""
+        clientRPPublicKeyB64 = (dict["clientRPPublicKeyB64"] as? String) ?? ""
     }
 
     init(wgPrivateKey: String, addressV4: String, addressV6: String, dns: [String],

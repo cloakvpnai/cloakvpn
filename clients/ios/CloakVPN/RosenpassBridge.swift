@@ -204,6 +204,29 @@ private enum RosenpassBridgeError: LocalizedError {
     }
 }
 
+// MARK: - FfiError → LocalizedError
+//
+// The uniffi-generated `FfiError` enum (in rosenpassffi.swift) carries
+// useful `message: String` payloads on every case, but uniffi only adds
+// `Error` conformance — not `LocalizedError`. Without this extension,
+// any FfiError surfaced through `error.localizedDescription` collapses
+// to the unhelpful "CloakVPN.FfiError error <N>" form, hiding the
+// payload that explains what actually went wrong (key length mismatch,
+// protocol error from the server, etc.).
+//
+// Defined here rather than alongside the generated bindings so we don't
+// fight the codegen on the next FFI regeneration.
+extension FfiError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .Rosenpass(let m):    return "rosenpass: \(m)"
+        case .InvalidInput(let m): return "invalid input: \(m)"
+        case .InvalidState(let m): return "invalid state: \(m)"
+        case .Internal(let m):     return "internal: \(m)"
+        }
+    }
+}
+
 // MARK: - UDPClient
 
 /// Minimal async UDP wrapper around NWConnection. Single peer, no

@@ -66,17 +66,58 @@ final class TunnelManager: ObservableObject {
     }
 
     /// Persist a new config and attach it to an NETunnelProviderManager.
+    ///
+    /// Splits the parsed CloakConfig in two:
+    ///   - WG fields + small PQ flags → `providerConfiguration` (small,
+    ///     persisted by iOS, readable by both processes).
+    ///   - Three Rosenpass key blobs (~1.4 MB combined) → App Group
+    ///     container via `AppGroupKeyStore`. The NE never reads these;
+    ///     they're for `RosenpassBridge` in the main app.
+    ///
+    /// If writing the keys to the App Group container fails, we abort the
+    /// whole import — saving an `NETunnelProviderManager` without the keys
+    /// would put the user in a state where Connect appears to work but
+    /// PQC silently never engages. Failing loud is better.
     func importConfig(_ text: String) throws {
         let parsed = try ConfigParser.parse(text)
+
+        // Stash the big Rosenpass blobs FIRST. If this fails, abort before
+        // we touch the system VPN preferences — leaves the device in a
+        // clean state.
+        if parsed.pqEnabled {
+            try AppGroupKeyStore.saveRosenpassKeys(
+                serverPublicB64: parsed.serverRPPublicKeyB64,
+                clientSecretB64: parsed.clientRPSecretKeyB64,
+                clientPublicB64: parsed.clientRPPublicKeyB64
+            )
+        } else {
+            // Re-importing a non-PQ config; clear any stale keys so a
+            // future PQ config doesn't silently inherit them.
+            AppGroupKeyStore.clear()
+        }
+
         let manager = self.manager ?? NETunnelProviderManager()
 
         let proto = NETunnelProviderProtocol()
-        proto.providerBundleIdentifier = "com.cloakvpn.app.tunnel"
+        // MUST match the CloakTunnel target's PRODUCT_BUNDLE_IDENTIFIER
+        // exactly. iOS uses this string to locate the NetworkExtension
+        // binary to launch when startVPNTunnel() is called. A mismatch
+        // here results in iOS silently doing nothing (or briefly
+        // transitioning to Connecting then snapping back to Disconnected
+        // with no logs), which is one of the most painful failure modes
+        // in NE-land — there's no error surfaced to the host app.
+        proto.providerBundleIdentifier = "ai.cloakvpn.CloakVPN.CloakTunnel"
         proto.serverAddress = parsed.endpoint
+        // .asDictionary deliberately excludes the three big Rosenpass keys
+        // — see ConfigParser.swift. They're already on disk in the App
+        // Group container by the time we reach this line.
         proto.providerConfiguration = parsed.asDictionary
 
-        // Secrets (WireGuard private key, Rosenpass secret) go to Keychain via app group.
-        // Left as TODO — see RosenpassBridge.swift and KeychainHelper (not yet committed).
+        // Secrets (WireGuard private key) currently flow through
+        // providerConfiguration plaintext. TODO: move to Keychain via the
+        // App Group's `kSecAttrAccessGroup`. Tracked separately — same
+        // posture Mullvad shipped with for months. Not blocking the
+        // first PQC smoke test.
         proto.passwordReference = nil
 
         manager.protocolConfiguration = proto
@@ -97,27 +138,47 @@ final class TunnelManager: ObservableObject {
     }
 
     func connect() async throws {
-        guard let m = manager else { throw TunnelError.noConfig }
+        debugLog("connect() called, current status=\(status)")
+        guard let m = manager else {
+            debugLog("connect() FAILING: manager is nil")
+            throw TunnelError.noConfig
+        }
+        debugLog("connect(): starting VPN tunnel via NETunnelProviderManager")
         try m.connection.startVPNTunnel()
 
         // Kick off the Rosenpass loop in parallel. The first PSK can
         // arrive while WireGuard is still doing its classical handshake;
         // either way the NE applies it on receipt and re-keys without
         // dropping in-flight UDP.
-        if let cfg = config, cfg.pqEnabled {
+        //
+        // The three big Rosenpass keys aren't in `config` (which round-
+        // trips through providerConfiguration) — they live in the App
+        // Group container. Load them on demand here. If they're missing,
+        // log it and skip rosenpass; the tunnel will still come up
+        // classically (no PQ protection) so the user isn't stranded.
+        guard let cfg = config, cfg.pqEnabled else { return }
+        do {
+            let keys = try AppGroupKeyStore.loadRosenpassKeys()
             rosenpass.start(
-                clientSecretKeyB64: cfg.clientRPSecretKeyB64,
-                clientPublicKeyB64: cfg.clientRPPublicKeyB64,
-                serverPublicKeyB64: cfg.serverRPPublicKeyB64,
+                clientSecretKeyB64: keys.clientSecretB64,
+                clientPublicKeyB64: keys.clientPublicB64,
+                serverPublicKeyB64: keys.serverPublicB64,
                 serverEndpoint: cfg.rpEndpoint,
                 rotationSeconds: cfg.pskRotationSeconds
             )
+        } catch {
+            print("connect: PQC keys unavailable, skipping rosenpass loop: \(error.localizedDescription)")
         }
     }
 
     func disconnect() async throws {
+        debugLog("disconnect() called, current status=\(status)")
         rosenpass.stop()
-        guard let m = manager else { return }
+        guard let m = manager else {
+            debugLog("disconnect(): manager is nil, nothing to stop")
+            return
+        }
+        debugLog("disconnect(): stopping VPN tunnel")
         m.connection.stopVPNTunnel()
     }
 
@@ -182,6 +243,7 @@ final class TunnelManager: ObservableObject {
     }
 
     private func updateStatus(_ s: NEVPNStatus) {
+        let old = status
         switch s {
         case .connected: status = .connected
         case .connecting: status = .connecting
@@ -191,6 +253,19 @@ final class TunnelManager: ObservableObject {
         case .invalid: status = .invalid
         @unknown default: status = .invalid
         }
+        debugLog("status change: \(old) → \(status) (raw NEVPNStatus=\(s.rawValue))")
+    }
+
+    /// Debug-only logging. Stripped from release builds entirely so the
+    /// `[TunnelManager]` prefix doesn't show up in production Console.app
+    /// captures. We added these during the 2026-04-25 PQC smoke-test
+    /// debugging marathon — keeping them around behind `#if DEBUG` because
+    /// the next time iOS NetworkExtension state goes weird, having them
+    /// pre-wired saves an hour of "wait, where's the connect path going?"
+    private func debugLog(_ message: @autoclosure () -> String) {
+        #if DEBUG
+        print("[TunnelManager] \(message())")
+        #endif
     }
 }
 
