@@ -80,9 +80,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         if cloakCfg.pqEnabled {
             self.rosenpassServerIP = Self.extractIP(from: cloakCfg.rpEndpoint)
             if rosenpassServerIP == nil {
-                // Soft warn but don't fail the whole tunnel — the user
-                // can still get classical-tunnel coverage. The PQC loop
-                // will simply fail to handshake, surfacing in the UI.
                 os_log("startTunnel: couldn't parse IP from rpEndpoint %{public}s; PQC routing exclude disabled",
                        log: log, type: .error, cloakCfg.rpEndpoint)
             }

@@ -188,25 +188,29 @@ final class TunnelManager: ObservableObject {
         // ARCHITECTURAL CONFLICT — see docs/IOS_PQC.md "Open items":
         //
         // We need `includeAllNetworks = true` for proper full-tunnel
-        // behavior (without it, iOS lets apps Chrome/Safari/etc. split-
-        // tunnel around the VPN, leaking the user's real IP — verified
-        // by Chrome and Safari showing different non-server IPs at
-        // ifconfig.me).
+        // behavior — without it, iOS lets apps (Chrome, Safari, system
+        // services) split-tunnel around the VPN, leaking the user's
+        // real IP at ifconfig.me instead of showing the server's IP.
         //
-        // BUT: enabling it captures EVERYTHING through the tunnel
-        // including the rosenpass UDP that we explicitly excluded via
-        // setTunnelNetworkSettings.excludedRoutes — so the rosenpass
-        // handshake stalls (PQC stuck on "handshaking"). The fix is to
-        // route rosenpass through the tunnel itself (server's rosenpass
-        // on *:9999 still reachable via local delivery after WG
-        // decapsulation), but that needs careful work in
-        // RosenpassBridge.UDPClient (drop prohibitedInterfaceTypes hint
-        // so the connection uses utun) plus server-side verification
-        // that decrypted packets to dst=server:9999 reach rosenpass.
+        // Two attempted fixes during the 2026-04-26 session:
+        //   (a) prohibitedInterfaceTypes=[.other] + excludedRoutes for
+        //       rosenpass server IP — works in split-tunnel mode but
+        //       NECP denies the connection when includeAllNetworks=true.
+        //   (b) NWPathMonitor + requiredInterface=utun — also failed.
+        //       NWPathMonitor in the host app does NOT appear to expose
+        //       the host app's own VPN's utun reliably. PQC stuck on
+        //       handshaking forever, no clean error path.
         //
-        // Until that refactor lands, keep includeAllNetworks=false and
-        // accept the traffic-leak trade-off. PQC works, IP visibility
-        // doesn't. Tracked as a Phase 1 must-fix.
+        // The remaining viable option: move rosenpass packet send/
+        // receive into the NE process and use NEPacketTunnelFlow to
+        // inject packets directly. The NE definitively sees utun (it
+        // OWNS utun). This is a real refactor — host app's
+        // RosenpassBridge would need to send `Data` blobs to the NE
+        // via sendProviderMessage and the NE would emit packets via
+        // packetTunnelProvider.packetFlow.
+        //
+        // Until that work lands: ship with includeAllNetworks=false.
+        // PQC works on all four regions, but apps can split-tunnel.
         proto.includeAllNetworks = false
 
         manager.protocolConfiguration = proto

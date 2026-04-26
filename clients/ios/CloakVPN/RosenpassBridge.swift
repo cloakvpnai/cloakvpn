@@ -248,6 +248,14 @@ private final class UDPClient: @unchecked Sendable {
         // would be a chicken/egg loop (the tunnel needs the PSK we're
         // trying to derive). `.other` covers utun and similar virtual
         // interfaces.
+        //
+        // Note: this works in tandem with includeAllNetworks=false on
+        // the NETunnelProviderProtocol. The full-tunnel + tunnel-internal-
+        // rosenpass combination requires a different architecture — see
+        // docs/IOS_PQC.md "Open items" — likely involving moving the
+        // rosenpass packet flow into the NE process via NEPacketTunnelFlow,
+        // since NWPathMonitor in the host app does not appear to expose
+        // the host app's own VPN interface (utun) reliably.
         params.prohibitedInterfaceTypes = [.other]
         self.connection = NWConnection(to: endpoint, using: params)
     }
