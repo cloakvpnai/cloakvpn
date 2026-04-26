@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import NetworkExtension
 import os.log
 import WireGuardKit
@@ -31,6 +32,19 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// but a fresh preshared key.
     private var currentConfig: TunnelConfiguration?
 
+    /// The IP literal of the rosenpass server (extracted from
+    /// `CloakConfig.rpEndpoint` at startTunnel time). When set, every
+    /// `setTunnelNetworkSettings` call has an `excludedRoutes` entry for
+    /// this IP added before being passed through to the parent. Without
+    /// the exclusion, the WG `0.0.0.0/0, ::/0` AllowedIPs route claims
+    /// EVERY destination — including UDP/9999 to the rosenpass server —
+    /// leaving the main app's rosenpass NWConnection sitting in
+    /// `.waiting` state forever (with `prohibitedInterfaceTypes = [.other]`
+    /// excluding utun, no usable path remains, and iOS does not fall back).
+    /// See docs/IOS_PQC.md "End-to-end smoke test" §8 for the full debug
+    /// story. Cleared in stopTunnel.
+    private var rosenpassServerIP: String?
+
     // MARK: - Lifecycle
 
     override func startTunnel(
@@ -57,6 +71,21 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                    log: log, type: .error, String(describing: error))
             completionHandler(error)
             return
+        }
+
+        // Stash the rosenpass server IP so our setTunnelNetworkSettings
+        // override can carve a hole in WireGuard's full-tunnel routing
+        // for it. Only relevant when PQC is enabled — for classical-only
+        // configs the main app never sends to UDP/9999 anyway.
+        if cloakCfg.pqEnabled {
+            self.rosenpassServerIP = Self.extractIP(from: cloakCfg.rpEndpoint)
+            if rosenpassServerIP == nil {
+                // Soft warn but don't fail the whole tunnel — the user
+                // can still get classical-tunnel coverage. The PQC loop
+                // will simply fail to handshake, surfacing in the UI.
+                os_log("startTunnel: couldn't parse IP from rpEndpoint %{public}s; PQC routing exclude disabled",
+                       log: log, type: .error, cloakCfg.rpEndpoint)
+            }
         }
 
         // 2. Build a WireGuardKit TunnelConfiguration directly from
@@ -117,8 +146,108 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             }
             self.adapter = nil
             self.currentConfig = nil
+            self.rosenpassServerIP = nil
             completionHandler()
         }
+    }
+
+    // MARK: - Tunnel network settings injection
+
+    /// Intercepts every `setTunnelNetworkSettings` call WireGuardKit makes
+    /// (initial tunnel-up + every PSK rotation re-key) and adds an
+    /// `excludedRoutes` entry for the rosenpass server's IP before passing
+    /// through to the parent. This is the surgical, Mullvad-pattern
+    /// alternative to manually carving 192.0.0.0/4 out of the peer's
+    /// AllowedIPs in the wire-format config:
+    ///
+    ///   - Server-side configs stay clean — `add-peer.sh` writes the usual
+    ///     `0.0.0.0/0, ::/0` and we don't lose tunnel coverage for any
+    ///     unrelated IPs.
+    ///   - The exclusion is reapplied on every settings write, so PSK
+    ///     rotations don't accidentally drop it.
+    ///   - Only the rosenpass server's exact `/32` (IPv4) or `/128` (IPv6)
+    ///     is excluded — strictly the minimum hole needed.
+    ///
+    /// If `rosenpassServerIP` is nil (PQC disabled or rpEndpoint
+    /// unparseable), we pass the settings through unmodified and the
+    /// behavior degrades to classical-only WG.
+    override func setTunnelNetworkSettings(
+        _ tunnelNetworkSettings: NETunnelNetworkSettings?,
+        completionHandler: ((Error?) -> Void)? = nil
+    ) {
+        if let settings = tunnelNetworkSettings as? NEPacketTunnelNetworkSettings,
+           let serverIP = self.rosenpassServerIP {
+            Self.injectRosenpassExcludedRoute(into: settings, ip: serverIP, log: log)
+        }
+        super.setTunnelNetworkSettings(tunnelNetworkSettings, completionHandler: completionHandler)
+    }
+
+    /// Mutates the given settings to add a single `/32` (or `/128`) excluded
+    /// route for the rosenpass server's IP. Idempotent — checking via
+    /// destinationAddress equality avoids duplicate entries on re-keys.
+    private static func injectRosenpassExcludedRoute(
+        into settings: NEPacketTunnelNetworkSettings,
+        ip: String,
+        log: OSLog
+    ) {
+        if let v4 = IPv4Address(ip) {
+            let route = NEIPv4Route(destinationAddress: ip, subnetMask: "255.255.255.255")
+            let ipv4 = settings.ipv4Settings ?? NEIPv4Settings(addresses: [], subnetMasks: [])
+            var existing = ipv4.excludedRoutes ?? []
+            if !existing.contains(where: { $0.destinationAddress == ip }) {
+                existing.append(route)
+                ipv4.excludedRoutes = existing
+                settings.ipv4Settings = ipv4
+                os_log("excluded route added for rosenpass server %{public}s/32",
+                       log: log, type: .info, ip)
+            }
+            _ = v4 // silence unused-binding warning while still validating parse
+        } else if let v6 = IPv6Address(ip) {
+            let route = NEIPv6Route(destinationAddress: ip, networkPrefixLength: 128)
+            let ipv6 = settings.ipv6Settings ?? NEIPv6Settings(addresses: [], networkPrefixLengths: [])
+            var existing = ipv6.excludedRoutes ?? []
+            if !existing.contains(where: { $0.destinationAddress == ip }) {
+                existing.append(route)
+                ipv6.excludedRoutes = existing
+                settings.ipv6Settings = ipv6
+                os_log("excluded route added for rosenpass server %{public}s/128",
+                       log: log, type: .info, ip)
+            }
+            _ = v6
+        } else {
+            os_log("rosenpass server IP %{public}s parsed as neither v4 nor v6 — exclude skipped",
+                   log: log, type: .error, ip)
+        }
+    }
+
+    /// Parse the host part of an "IP:port" or "[IPv6]:port" string. Returns
+    /// only the host substring; intentionally does NOT do DNS resolution
+    /// (we'd need to do that asynchronously and synchronizing with
+    /// startTunnel adds complexity for negligible benefit — `add-peer.sh`
+    /// always writes a literal IP into rpEndpoint). If/when we move to
+    /// DNS-based endpoints, replace this with NWPathMonitor or
+    /// CFHostStartInfoResolution-based resolution.
+    private static func extractIP(from endpoint: String) -> String? {
+        // Strip port. IPv6 endpoints are bracketed: "[::1]:9999".
+        if endpoint.hasPrefix("[") {
+            // [v6]:port form
+            guard let close = endpoint.firstIndex(of: "]") else { return nil }
+            let host = String(endpoint[endpoint.index(after: endpoint.startIndex)..<close])
+            return IPv6Address(host) != nil ? host : nil
+        }
+        // v4-style host:port — split on the LAST colon to be safe with
+        // bare-IPv6 (no brackets, no port) inputs, which we then validate.
+        if let colon = endpoint.lastIndex(of: ":") {
+            let host = String(endpoint[..<colon])
+            if IPv4Address(host) != nil { return host }
+            // Could be a bare IPv6 with no port — try the whole string
+            if IPv6Address(endpoint) != nil { return endpoint }
+            return nil
+        }
+        // No port at all — assume bare host, validate as IP
+        if IPv4Address(endpoint) != nil { return endpoint }
+        if IPv6Address(endpoint) != nil { return endpoint }
+        return nil
     }
 
     // MARK: - PSK rotation (called from the main app via sendProviderMessage)
