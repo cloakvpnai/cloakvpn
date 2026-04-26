@@ -44,11 +44,19 @@ AllowedIPs = $PEER_V4/32, $PEER_V6/128
 EOF
 
 # Append Rosenpass peer
+#
+# protocol_version = "V03" is REQUIRED — the iOS FFI (and any rosenpass-rs
+# client built off git rev b096cb1+) defaults to V03 (SHAKE256-based).
+# Without this line the server peer entry defaults to V02 (Blake2b) and
+# every InitHello fails with "No valid hash function found for InitHello"
+# at the rosenpass::protocol::CryptoServer::handle_msg dispatch. Cost us
+# multiple hours on the 2026-04-25 smoke-test debugging run; do not remove.
 cat >>"$ETC_RP/server.toml" <<EOF
 
 [[peers]]
 public_key = "$ETC_RP/$NAME.rosenpass-public"
 key_out = "/run/rosenpass/psk-$NAME"
+protocol_version = "V03"
 EOF
 
 # Hot-reload WireGuard (doesn't drop existing tunnels)
