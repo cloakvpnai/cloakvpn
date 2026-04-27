@@ -20,6 +20,67 @@ log()  { printf "\033[1;34m[cloak]\033[0m %s\n" "$*"; }
 warn() { printf "\033[1;33m[warn]\033[0m %s\n" "$*"; }
 die()  { printf "\033[1;31m[err]\033[0m %s\n" "$*" >&2; exit 1; }
 
+# ensure_mss_clamp_in_wg_conf — back-fill MSS clamp PostUp/PostDown lines
+# into an existing wg0.conf when missing. Required because (a) earlier
+# setup.sh revisions did not include the clamp, and (b) the idempotency
+# logic below preserves an existing config verbatim — so without an
+# explicit injection step, already-deployed regions never pick up the fix
+# on a setup.sh re-run.
+#
+# Without TCP MSS clamping on the wg0 interface, TCP segments from clients
+# (negotiated against their LAN MTU of 1500) are too large for the
+# tunnel's 1420-byte MTU, causing fragmentation or PMTUD blackhole. The
+# tunnel still works (handshake completes, throughput accumulates), but
+# page loads crawl.
+#
+# We inject the lines just before the first [Peer] block in the
+# [Interface] section. A timestamped backup is kept next to the original.
+ensure_mss_clamp_in_wg_conf() {
+  local conf="$1"
+  if grep -q -- "TCPMSS --clamp-mss-to-pmtu" "$conf"; then
+    return 0
+  fi
+  log "Back-filling MSS clamp PostUp/PostDown into $conf"
+  cp "$conf" "${conf}.bak.$(date -u +%Y%m%dT%H%M%SZ)"
+  local tmp
+  tmp=$(mktemp)
+  awk -v iface="$WG_IFACE" '
+    /^\[Peer\]/ && !injected {
+      print "PostUp   = iptables  -t mangle -A FORWARD -i " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      print "PostUp   = iptables  -t mangle -A FORWARD -o " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      print "PostUp   = ip6tables -t mangle -A FORWARD -i " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      print "PostUp   = ip6tables -t mangle -A FORWARD -o " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      print "PostDown = iptables  -t mangle -D FORWARD -i " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      print "PostDown = iptables  -t mangle -D FORWARD -o " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      print "PostDown = ip6tables -t mangle -D FORWARD -i " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      print "PostDown = ip6tables -t mangle -D FORWARD -o " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      print ""
+      injected = 1
+    }
+    { print }
+    END {
+      if (!injected) {
+        # No [Peer] line — append at end (Interface-only config).
+        print "PostUp   = iptables  -t mangle -A FORWARD -i " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+        print "PostUp   = iptables  -t mangle -A FORWARD -o " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+        print "PostUp   = ip6tables -t mangle -A FORWARD -i " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+        print "PostUp   = ip6tables -t mangle -A FORWARD -o " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+        print "PostDown = iptables  -t mangle -D FORWARD -i " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+        print "PostDown = iptables  -t mangle -D FORWARD -o " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+        print "PostDown = ip6tables -t mangle -D FORWARD -i " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+        print "PostDown = ip6tables -t mangle -D FORWARD -o " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      }
+    }
+  ' "$conf" > "$tmp"
+  if [[ -s "$tmp" ]] && grep -q -- "TCPMSS --clamp-mss-to-pmtu" "$tmp"; then
+    mv "$tmp" "$conf"
+    chmod 600 "$conf"
+  else
+    rm -f "$tmp"
+    warn "MSS clamp back-fill produced unexpected output; aborting injection (backup kept)"
+  fi
+}
+
 # ---------- Argument parsing ----------------------------------------------
 # setup.sh is designed to be idempotent: re-running on an already-configured
 # server is safe and will NOT clobber peers added via add-peer.sh. The two
@@ -195,6 +256,9 @@ fi
 WG_CONF="$ETC_WG/$WG_IFACE.conf"
 if [[ -s "$WG_CONF" && "$FORCE_RESET_CONFIGS" -eq 0 ]]; then
   log "Preserving existing $WG_CONF (idempotent run; pass --force-reset-configs to overwrite)"
+  # Back-fill MSS clamp into existing configs that pre-date this fix.
+  # Safe no-op when the lines are already present.
+  ensure_mss_clamp_in_wg_conf "$WG_CONF"
 else
   if [[ "$FORCE_RESET_CONFIGS" -eq 1 && -s "$WG_CONF" ]]; then
     warn "Overwriting existing $WG_CONF (--force-reset-configs); existing peers will be lost"
@@ -209,8 +273,20 @@ ListenPort = $WG_PORT
 PrivateKey = $WG_SERVER_PRIV
 PostUp   = iptables  -t nat -A POSTROUTING -s $WG_NET_V4 -o $ETH_IFACE -j MASQUERADE
 PostUp   = ip6tables -t nat -A POSTROUTING -s $WG_NET_V6 -o $ETH_IFACE -j MASQUERADE
+# TCP MSS clamping: forwarded TCP segments through wg0 (MTU 1420) must be
+# sized to the tunnel's PMTU, not the client's LAN MTU. Without this,
+# pages load slowly even though the tunnel is up — the classic
+# "tunnel works but Safari is sluggish" symptom.
+PostUp   = iptables  -t mangle -A FORWARD -i $WG_IFACE -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostUp   = iptables  -t mangle -A FORWARD -o $WG_IFACE -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostUp   = ip6tables -t mangle -A FORWARD -i $WG_IFACE -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostUp   = ip6tables -t mangle -A FORWARD -o $WG_IFACE -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
 PostDown = iptables  -t nat -D POSTROUTING -s $WG_NET_V4 -o $ETH_IFACE -j MASQUERADE
 PostDown = ip6tables -t nat -D POSTROUTING -s $WG_NET_V6 -o $ETH_IFACE -j MASQUERADE
+PostDown = iptables  -t mangle -D FORWARD -i $WG_IFACE -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostDown = iptables  -t mangle -D FORWARD -o $WG_IFACE -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostDown = ip6tables -t mangle -D FORWARD -i $WG_IFACE -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostDown = ip6tables -t mangle -D FORWARD -o $WG_IFACE -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
 
 [Peer]
 # client1 (test client)
@@ -400,6 +476,23 @@ ufw allow $RP_PORT/udp  comment 'Rosenpass PQ handshake'
 # Explicitly allow WG peers to exit via the main interface.
 ufw route allow in on "$WG_IFACE" out on "$ETH_IFACE"
 ufw --force enable
+
+# UFW reset above flushed every iptables table, including mangle FORWARD
+# where our TCP MSS clamping rules live. Even if wg0.conf has the MSS
+# PostUp lines, they only fire on `wg-quick up`, which we don't restart
+# here (a restart would drop the tunnel for ~120s while rosenpass
+# re-establishes a PSK — disruptive on a re-run against a live region).
+# Re-apply directly via iptables so existing tunnels get fast TCP again
+# the moment setup.sh finishes. The rules are idempotent (-C check).
+log "Re-applying TCP MSS clamp on $WG_IFACE (mangle FORWARD; survives UFW reset)"
+for cmd in iptables ip6tables; do
+  for dir in -i -o; do
+    "$cmd" -t mangle -C FORWARD $dir "$WG_IFACE" -p tcp --tcp-flags SYN,RST SYN \
+      -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \
+      || "$cmd" -t mangle -A FORWARD $dir "$WG_IFACE" -p tcp --tcp-flags SYN,RST SYN \
+        -j TCPMSS --clamp-mss-to-pmtu
+  done
+done
 
 # ---------- RAM-only /var/log --------------------------------------------
 log "Switching /var/log to tmpfs (RAM-only, wiped on reboot)"
