@@ -85,6 +85,60 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// receive can't stall WG packet shovelling.
     private let rosenpassQueue = DispatchQueue(label: "ai.cloakvpn.tunnel.rosenpass")
 
+    // MARK: - Health monitoring (Layer 1 — instrumentation only)
+    //
+    // Polls WireGuardKit's getRuntimeConfiguration every 15s and emits an
+    // os_log line per tick with rx/tx byte deltas, last-handshake age, and
+    // last-PSK-applied age. Also tracks a "would-be-wedged" heuristic and
+    // logs "WEDGE SUSPECTED" when it trips, but takes NO ACTION yet — Layer
+    // 2 (calling self.cancelTunnelWithError to force-respawn the NE) will
+    // be wired up after we have ~24h of real-device telemetry to threshold-
+    // tune. See HANDOFF_2026-04-27_session4.md for the full architecture.
+
+    /// Repeating timer that drives health checks. Lives for the duration
+    /// of the active tunnel; cancelled in stopTunnel.
+    private var healthCheckTimer: DispatchSourceTimer?
+
+    /// Dedicated serial queue for health-check state mutations so the
+    /// timer fire path and the getRuntimeConfiguration callback never
+    /// race on the cached counters.
+    private let healthCheckQueue = DispatchQueue(label: "ai.cloakvpn.tunnel.health")
+
+    /// Previous tick's WG transfer counters, for delta computation.
+    private var lastRxBytes: UInt64 = 0
+    private var lastTxBytes: UInt64 = 0
+
+    /// Wallclock timestamp of the last successful PSK application
+    /// (= last successful rosenpass exchange the NE has heard about).
+    /// Set by applyPresharedKey on success. Read by performHealthCheck.
+    private var lastPSKAppliedAt: Date?
+
+    /// Wallclock timestamp of when the tunnel came up. Used to suppress
+    /// spurious wedge warnings during the first 60s of warm-up while
+    /// the initial WG handshake completes and the first PQ exchange
+    /// runs.
+    private var tunnelUpAt: Date?
+
+    /// Consecutive ticks where the stall heuristic tripped. Reset to 0
+    /// the moment a tick sees rx growth. Logged each tick so we can see
+    /// patterns in Console.app without needing to correlate timestamps.
+    private var consecutiveStallTicks: Int = 0
+
+    /// Health-check tick interval. 15s is short enough to surface a
+    /// wedge well before keepalive timeout (180s in WG protocol) but
+    /// long enough that getRuntimeConfiguration overhead stays
+    /// negligible.
+    private static let healthCheckIntervalSec: Int = 15
+
+    /// Stall detection thresholds. Logged only as "WEDGE SUSPECTED"
+    /// for now; will gate cancelTunnelWithError when Layer 2 ships.
+    /// Three consecutive stall ticks = 45s of zero rx = a strong
+    /// signal that the NE has stopped receiving from the server.
+    private static let wedgeStallTickThreshold: Int = 3
+    private static let wedgeHandshakeAgeSec: Int = 120
+    private static let wedgePSKAgeSec: Int = 300
+    private static let warmupSuppressionSec: TimeInterval = 60
+
     // MARK: - Lifecycle
 
     override func startTunnel(
@@ -190,6 +244,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 let ifaceName = self.adapter.interfaceName ?? "unknown"
                 os_log("tunnel up on interface %{public}s",
                        log: self.log, type: .info, ifaceName)
+                self.tunnelUpAt = Date()
+                self.startHealthMonitoring()
                 completionHandler(nil)
             }
         }
@@ -200,6 +256,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler: @escaping () -> Void
     ) {
         os_log("stopTunnel reason=%d", log: log, type: .info, reason.rawValue)
+        // Stop the health monitor first so its callbacks can't fire
+        // mid-teardown and try to inspect a stopped adapter.
+        stopHealthMonitoring()
         // Tear down the rosenpass UDP socket BEFORE stopping the
         // adapter — otherwise its callback queue could fire after the
         // NE process has been told to terminate.
@@ -512,8 +571,199 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 return
             }
             self?.currentConfig = updated
+            // Stamp the rosenpass-success wallclock so the health monitor
+            // can compute "psk_age" — distinguishes "stopped getting
+            // PSK rotations" (stuck rosenpass loop) from "stopped getting
+            // bytes" (network-layer wedge).
+            self?.healthCheckQueue.async {
+                self?.lastPSKAppliedAt = Date()
+            }
             os_log("PSK rotated", log: self?.log ?? .default, type: .info)
             completion(true)
+        }
+    }
+
+    // MARK: - Health monitoring implementation
+
+    /// Spin up the recurring health-check timer. Idempotent — if a
+    /// timer is already running, it's cancelled and replaced.
+    private func startHealthMonitoring() {
+        healthCheckQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.healthCheckTimer?.cancel()
+            // Reset state so a previous tunnel session's counters don't
+            // bleed into this one (stopTunnel + startTunnel reuses the
+            // same NE process between iOS toggle cycles).
+            self.lastRxBytes = 0
+            self.lastTxBytes = 0
+            self.consecutiveStallTicks = 0
+
+            let timer = DispatchSource.makeTimerSource(queue: self.healthCheckQueue)
+            timer.schedule(
+                deadline: .now() + .seconds(Self.healthCheckIntervalSec),
+                repeating: .seconds(Self.healthCheckIntervalSec),
+                leeway: .seconds(2)
+            )
+            timer.setEventHandler { [weak self] in
+                self?.performHealthCheck()
+            }
+            timer.resume()
+            self.healthCheckTimer = timer
+            os_log("health: monitor started (interval=%ds)",
+                   log: self.log, type: .info, Self.healthCheckIntervalSec)
+        }
+    }
+
+    /// Cancel the health-check timer. Safe to call when no timer is
+    /// running (e.g. stopTunnel after a startTunnel that errored out).
+    private func stopHealthMonitoring() {
+        healthCheckQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.healthCheckTimer?.cancel()
+            self.healthCheckTimer = nil
+            os_log("health: monitor stopped", log: self.log, type: .info)
+        }
+    }
+
+    /// One health-check tick. Pulls the wg UAPI runtime config, parses
+    /// the byte counters and last-handshake timestamp, computes the
+    /// stall heuristic, logs everything. Layer 1 takes no action on
+    /// "WEDGE SUSPECTED" — it just logs. Layer 2 will replace the log
+    /// line with a self.cancelTunnelWithError(...) call once thresholds
+    /// are validated against real-device telemetry.
+    private func performHealthCheck() {
+        // adapter.getRuntimeConfiguration is async with its own callback
+        // queue; bounce results back onto healthCheckQueue so all state
+        // mutations stay serialized on one queue.
+        adapter.getRuntimeConfiguration { [weak self] settings in
+            guard let self = self else { return }
+            self.healthCheckQueue.async {
+                self.parseAndLogHealth(settings: settings)
+            }
+        }
+    }
+
+    /// Parse the wg UAPI runtime config string and emit one os_log line
+    /// summarising the tunnel's health for this tick. Runs on
+    /// healthCheckQueue.
+    ///
+    /// Expected wg UAPI format (subset we care about):
+    ///
+    ///   private_key=...            (interface, ignored)
+    ///   public_key=<peer>          (start of peer block)
+    ///   preshared_key=...
+    ///   endpoint=ip:port
+    ///   last_handshake_time_sec=<unix-seconds>
+    ///   last_handshake_time_nsec=<nanos>
+    ///   rx_bytes=<count>
+    ///   tx_bytes=<count>
+    ///   persistent_keepalive_interval=<n>
+    ///
+    /// We aggregate across all peers (currently always 1 in CloakVPN)
+    /// so this code is robust if a future multi-peer config arrives.
+    private func parseAndLogHealth(settings: String?) {
+        guard let settings = settings, !settings.isEmpty else {
+            os_log("health: getRuntimeConfiguration returned nil/empty (adapter not ready?)",
+                   log: log, type: .error)
+            return
+        }
+
+        var rxTotal: UInt64 = 0
+        var txTotal: UInt64 = 0
+        var lastHandshakeSec: UInt64 = 0  // max across peers — we want the freshest
+
+        for line in settings.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard let eq = line.firstIndex(of: "=") else { continue }
+            let key = String(line[..<eq])
+            let val = String(line[line.index(after: eq)...])
+            switch key {
+            case "rx_bytes":
+                if let n = UInt64(val) { rxTotal &+= n }
+            case "tx_bytes":
+                if let n = UInt64(val) { txTotal &+= n }
+            case "last_handshake_time_sec":
+                if let n = UInt64(val), n > lastHandshakeSec { lastHandshakeSec = n }
+            default:
+                break
+            }
+        }
+
+        let now = Date()
+        let nowEpoch = UInt64(now.timeIntervalSince1970)
+
+        // Deltas. Counters monotonically increase in WG (only reset on
+        // wg-go session restart inside the NE) so subtraction is safe
+        // unless wg-go reset; in that case rxTotal < lastRxBytes and we
+        // treat the delta as 0 (next tick will catch up).
+        let rxDelta = rxTotal >= lastRxBytes ? rxTotal - lastRxBytes : 0
+        let txDelta = txTotal >= lastTxBytes ? txTotal - lastTxBytes : 0
+        lastRxBytes = rxTotal
+        lastTxBytes = txTotal
+
+        // Handshake age. last_handshake_time_sec=0 means "never
+        // handshook" — different from "old handshake".
+        let handshakeAgeStr: String
+        let handshakeAgeSec: Int
+        if lastHandshakeSec == 0 {
+            handshakeAgeStr = "never"
+            handshakeAgeSec = Int.max
+        } else {
+            // Guard against clock skew (handshake in the future would
+            // produce a negative age; clamp to 0).
+            handshakeAgeSec = max(0, Int(nowEpoch) - Int(lastHandshakeSec))
+            handshakeAgeStr = "\(handshakeAgeSec)s"
+        }
+
+        // PSK age. Tracks the rosenpass success path independently of
+        // WG's own handshake (they're different layers — WG handshake
+        // can succeed without a fresh PQ exchange if the peer already
+        // has the current PSK).
+        let pskAgeStr: String
+        let pskAgeSec: Int
+        if let lastPSK = lastPSKAppliedAt {
+            pskAgeSec = max(0, Int(now.timeIntervalSince(lastPSK)))
+            pskAgeStr = "\(pskAgeSec)s"
+        } else {
+            pskAgeStr = "never"
+            pskAgeSec = Int.max
+        }
+
+        // Stall heuristic: zero rx for this tick AND handshake older
+        // than wedgeHandshakeAgeSec. (Tx-only flows still count as
+        // healthy because the iPhone might be uploading — what matters
+        // is whether the server is responding.) This is the same logic
+        // Layer 2 will use to decide whether to cancelTunnelWithError.
+        let isStalled = (rxDelta == 0) &&
+            (handshakeAgeSec >= Self.wedgeHandshakeAgeSec)
+        if isStalled {
+            consecutiveStallTicks += 1
+        } else {
+            consecutiveStallTicks = 0
+        }
+
+        // Suppress wedge warnings during the warmup window — the first
+        // ~60s after tunnel-up has no rx/handshake yet and would
+        // otherwise spam false positives.
+        let suppressWarning: Bool
+        if let upAt = tunnelUpAt {
+            suppressWarning = now.timeIntervalSince(upAt) < Self.warmupSuppressionSec
+        } else {
+            suppressWarning = false
+        }
+
+        os_log("health: rx_delta=%llu tx_delta=%llu rx_total=%llu tx_total=%llu handshake_age=%{public}s psk_age=%{public}s stall_ticks=%d",
+               log: log, type: .info,
+               rxDelta, txDelta, rxTotal, txTotal,
+               handshakeAgeStr, pskAgeStr, consecutiveStallTicks)
+
+        // Wedge alarm: the same condition that will gate Layer 2's
+        // cancelTunnelWithError. Logging only for now.
+        let wedgeByStall = consecutiveStallTicks >= Self.wedgeStallTickThreshold
+        let wedgeByPSK = pskAgeSec >= Self.wedgePSKAgeSec && lastPSKAppliedAt != nil
+        if (wedgeByStall || wedgeByPSK) && !suppressWarning {
+            os_log("health: WEDGE SUSPECTED (stall_ticks=%d, handshake_age=%{public}s, psk_age=%{public}s) — Layer 2 would call cancelTunnelWithError here",
+                   log: log, type: .fault,
+                   consecutiveStallTicks, handshakeAgeStr, pskAgeStr)
         }
     }
 }
