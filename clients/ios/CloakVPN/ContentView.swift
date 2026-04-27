@@ -25,6 +25,14 @@ struct ContentView: View {
     @State private var pqcStatus: String = "PQC: not tested"
     @State private var pqcRunning = false
 
+    // Layer 4 of the NE wedge auto-recovery story — manual reset
+    // escape hatch for the rare case where Layers 1-3 have all failed
+    // (rate limits hit, repeated wedges, etc.) and the user is stuck.
+    // Confirmed via alert because the operation prompts for VPN
+    // permission and is destructive enough to warrant intent.
+    @State private var showingResetConfirm = false
+    @State private var resetInProgress = false
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 24) {
@@ -50,12 +58,21 @@ struct ContentView: View {
                 }
 
                 pqcSmokeTestPanel
+                troubleshootingPanel
             }
             .padding()
             .navigationTitle("Cloak VPN")
             .alert("Error", isPresented: .constant(errorMsg != nil), actions: {
                 Button("OK") { errorMsg = nil }
             }, message: { Text(errorMsg ?? "") })
+            .alert("Reset Tunnel?", isPresented: $showingResetConfirm) {
+                Button("Reset", role: .destructive) {
+                    Task { await performReset() }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This deletes and recreates the iOS VPN profile, then reconnects. iOS will ask you to allow Cloak VPN to add VPN configurations again. Use this only when normal disconnect+reconnect doesn't recover the tunnel.")
+            }
             .sheet(isPresented: $showingImport) {
                 importSheet
             }
@@ -215,6 +232,46 @@ struct ContentView: View {
             }
             .buttonStyle(.bordered)
             .disabled(pqcRunning)
+        }
+    }
+
+    /// Layer 4 of the wedge auto-recovery story — last-resort manual
+    /// "Reset Tunnel" affordance. Shows a small destructive button at
+    /// the bottom of the main view. Disabled when no config is
+    /// imported or when a reset is already in flight.
+    private var troubleshootingPanel: some View {
+        VStack(spacing: 6) {
+            Divider()
+            Button {
+                showingResetConfirm = true
+            } label: {
+                if resetInProgress {
+                    HStack(spacing: 6) {
+                        ProgressView().scaleEffect(0.7)
+                        Text("Resetting tunnel…")
+                    }
+                    .font(.footnote)
+                } else {
+                    Label("Reset Tunnel (last resort)", systemImage: "arrow.counterclockwise")
+                        .font(.footnote)
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(tunnel.config == nil || resetInProgress)
+        }
+    }
+
+    /// Calls TunnelManager.resetTunnel and surfaces any error in the
+    /// shared error alert. Spinner state via resetInProgress disables
+    /// the button while the reset is running so the user can't double-
+    /// trigger it.
+    private func performReset() async {
+        resetInProgress = true
+        defer { resetInProgress = false }
+        do {
+            try await tunnel.resetTunnel()
+        } catch {
+            errorMsg = "Reset failed: \(error.localizedDescription)"
         }
     }
 

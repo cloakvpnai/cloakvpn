@@ -337,6 +337,91 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    /// Layer 4 — last-resort manual recovery escape hatch.
+    ///
+    /// Tears down the entire NETunnelProviderManager and recreates it
+    /// using the cached CloakConfig. Equivalent to "Settings → VPN →
+    /// Delete + reopen app + re-import" in one tap, except iOS will
+    /// still prompt the user once for permission to add the new VPN
+    /// configuration (Apple's hard requirement; not a UX choice we can
+    /// bypass). Used when Layers 1-3 of wedge auto-recovery have all
+    /// failed — typically because Layer 3's rate limit (3 reconnects /
+    /// 5min) was hit while the underlying issue keeps recurring, and
+    /// the only remaining option is to fully reset iOS's VPN state.
+    ///
+    /// Sequence:
+    ///   1. Stop the rosenpass loop and unwire sendNE.
+    ///   2. Stop any running tunnel cleanly.
+    ///   3. removeFromPreferences (deletes the iOS VPN profile).
+    ///   4. Wait briefly for iOS to settle.
+    ///   5. Build a fresh NETunnelProviderManager with the same config.
+    ///   6. saveToPreferences (triggers iOS permission prompt — user
+    ///      must tap Allow once).
+    ///   7. observeStatus + connect.
+    ///
+    /// Throws if there's no cached config to recreate from (user has
+    /// never imported one). Otherwise propagates errors from
+    /// removeFromPreferences / saveToPreferences / connect — the UI
+    /// should surface these in an alert.
+    func resetTunnel() async throws {
+        debugLog("resetTunnel: starting")
+
+        guard let cfg = self.config else {
+            throw TunnelError.noConfig
+        }
+
+        // 1. Stop rosenpass loop and clear NE relay closure.
+        rosenpass.stop()
+        rosenpass.sendNE = nil
+
+        // 2 + 3. Stop existing tunnel and remove the manager from prefs.
+        if let m = manager {
+            let st = m.connection.status
+            if st == .connected || st == .connecting || st == .reasserting {
+                debugLog("resetTunnel: stopping active tunnel")
+                m.connection.stopVPNTunnel()
+                // Brief wait for the stop to propagate before removeFromPreferences
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+            debugLog("resetTunnel: removeFromPreferences")
+            try await m.removeFromPreferences()
+        }
+        self.manager = nil
+
+        // 4. Settle delay. Without this, the subsequent
+        // saveToPreferences sometimes races with iOS's profile-deletion
+        // bookkeeping and either fails or silently doesn't show the
+        // permission prompt.
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+
+        // 5. Rebuild a fresh manager from the cached config. Mirrors
+        // the inner logic of importConfig but skips the parse step
+        // since we already have a CloakConfig in self.config.
+        let manager = NETunnelProviderManager()
+        let proto = NETunnelProviderProtocol()
+        proto.providerBundleIdentifier = "ai.cloakvpn.CloakVPN.CloakTunnel"
+        proto.serverAddress = cfg.endpoint
+        proto.providerConfiguration = cfg.asDictionary
+        proto.passwordReference = nil
+        proto.includeAllNetworks = true
+        manager.protocolConfiguration = proto
+        manager.localizedDescription = "Cloak VPN"
+        manager.isEnabled = true
+
+        // 6. Save (triggers iOS permission prompt the first time after
+        // a removeFromPreferences). User must tap "Allow" — without
+        // user action this hangs.
+        debugLog("resetTunnel: saveToPreferences (iOS may prompt for permission)")
+        try await manager.saveToPreferences()
+        try await manager.loadFromPreferences()
+        self.manager = manager
+
+        // 7. Wire up status observation + connect.
+        self.observeStatus(manager.connection)
+        debugLog("resetTunnel: profile recreated, calling connect()")
+        try await connect()
+    }
+
     func disconnect() async throws {
         debugLog("disconnect() called, current status=\(status)")
         rosenpass.stop()
