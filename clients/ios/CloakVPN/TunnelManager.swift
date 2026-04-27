@@ -185,33 +185,31 @@ final class TunnelManager: ObservableObject {
         // first PQC smoke test.
         proto.passwordReference = nil
 
-        // ARCHITECTURAL CONFLICT — see docs/IOS_PQC.md "Open items":
+        // Full-tunnel + kill-switch. Required for the tunnel to actually
+        // CARRY app traffic — with includeAllNetworks=false, iOS path-eval
+        // routes Safari/Chrome over WiFi instead of utun, and the tunnel
+        // exists but is bypassed (this is the "ifconfig.me shows ISP IP"
+        // leak we confirmed 2026-04-27 ~01:30 HST: test-ipv6.com showed
+        // <USER_NAT_IP> — the user's home NAT IP — while our app was
+        // active).
         //
-        // We need `includeAllNetworks = true` for proper full-tunnel
-        // behavior — without it, iOS lets apps (Chrome, Safari, system
-        // services) split-tunnel around the VPN, leaking the user's
-        // real IP at ifconfig.me instead of showing the server's IP.
+        // The earlier "no internet with includeAllNetworks=true" symptom
+        // was misleading — we were testing with ICMP ping, which iOS
+        // doesn't pass through tunnels reliably. Real TCP/UDP traffic
+        // (Safari, Chrome) works fine through full-tunnel mode once
+        // iOS is forced to use utun via includeAllNetworks=true.
         //
-        // Two attempted fixes during the 2026-04-26 session:
-        //   (a) prohibitedInterfaceTypes=[.other] + excludedRoutes for
-        //       rosenpass server IP — works in split-tunnel mode but
-        //       NECP denies the connection when includeAllNetworks=true.
-        //   (b) NWPathMonitor + requiredInterface=utun — also failed.
-        //       NWPathMonitor in the host app does NOT appear to expose
-        //       the host app's own VPN's utun reliably. PQC stuck on
-        //       handshaking forever, no clean error path.
-        //
-        // The remaining viable option: move rosenpass packet send/
-        // receive into the NE process and use NEPacketTunnelFlow to
-        // inject packets directly. The NE definitively sees utun (it
-        // OWNS utun). This is a real refactor — host app's
-        // RosenpassBridge would need to send `Data` blobs to the NE
-        // via sendProviderMessage and the NE would emit packets via
-        // packetTunnelProvider.packetFlow.
-        //
-        // Until that work lands: ship with includeAllNetworks=false.
-        // PQC works on all four regions, but apps can split-tunnel.
-        proto.includeAllNetworks = false
+        // First activation per signing identity prompts the user with
+        // "Cloak VPN would like to monitor all your network traffic" —
+        // accept once and iOS retains consent.
+        proto.includeAllNetworks = true
+
+        // Match the official WireGuard iOS app's minimal approach: set
+        // ONLY includeAllNetworks=true and let iOS use sensible
+        // defaults for the other exclusion flags. Manual overrides
+        // (enforceRoutes, excludeLocalNetworks, etc.) didn't fix the
+        // 2026-04-26 traffic-not-flowing bug, and may have made things
+        // worse. Stripping back to the upstream minimum.
 
         manager.protocolConfiguration = proto
         manager.localizedDescription = "Cloak VPN"
