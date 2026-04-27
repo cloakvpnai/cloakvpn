@@ -130,14 +130,41 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// negligible.
     private static let healthCheckIntervalSec: Int = 15
 
-    /// Stall detection thresholds. Logged only as "WEDGE SUSPECTED"
-    /// for now; will gate cancelTunnelWithError when Layer 2 ships.
-    /// Three consecutive stall ticks = 45s of zero rx = a strong
-    /// signal that the NE has stopped receiving from the server.
-    private static let wedgeStallTickThreshold: Int = 3
+    /// Stall detection thresholds. When tripped, Layer 2 calls
+    /// self.cancelTunnelWithError to terminate the NE process; iOS
+    /// re-spawns it on the next user-initiated connect (or via the host
+    /// app's auto-reconnect when Layer 3 ships). Thresholds tuned from
+    /// real-device telemetry captured 2026-04-27 — stall_ticks=4 +
+    /// handshake_age>=120s correlated cleanly with observed wedge events.
+    /// Bumped from the original Layer-1-only stall_ticks>=3 to >=4 to
+    /// avoid spurious recoveries on transient single-tick rx-zero
+    /// fluctuations.
+    private static let wedgeStallTickThreshold: Int = 4
     private static let wedgeHandshakeAgeSec: Int = 120
     private static let wedgePSKAgeSec: Int = 300
     private static let warmupSuppressionSec: TimeInterval = 60
+
+    // MARK: - Layer 2 — wedge auto-recovery state
+
+    /// Sliding window of recent self-kill (cancelTunnelWithError) timestamps.
+    /// Prevents an infinite restart loop if the wedge condition is itself
+    /// caused by an unrecoverable factor (server unreachable, bad PSK
+    /// state on server, etc.) — after maxSelfKillsPerWindow attempts in
+    /// selfKillWindowSec, we stop self-killing and just log; user must
+    /// intervene manually.
+    private var selfKillTimestamps: [Date] = []
+
+    /// Set to true between cancelTunnelWithError invocation and the iOS
+    /// stopTunnel callback that follows. Suppresses repeat-firing on
+    /// subsequent timer ticks during the brief shutdown window.
+    private var selfKillInFlight: Bool = false
+
+    /// Layer 2 thresholds. Three self-kills per 5 min = at most one
+    /// every 100s on average. Past that, the issue is likely environ-
+    /// mental (server PSK desync, network outage, etc.) and more
+    /// restarts won't help.
+    private static let maxSelfKillsPerWindow: Int = 3
+    private static let selfKillWindowSec: TimeInterval = 300
 
     // MARK: - Lifecycle
 
@@ -756,15 +783,74 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                rxDelta, txDelta, rxTotal, txTotal,
                handshakeAgeStr, pskAgeStr, consecutiveStallTicks)
 
-        // Wedge alarm: the same condition that will gate Layer 2's
-        // cancelTunnelWithError. Logging only for now.
+        // Wedge detection — same condition Layer 2 acts on.
         let wedgeByStall = consecutiveStallTicks >= Self.wedgeStallTickThreshold
         let wedgeByPSK = pskAgeSec >= Self.wedgePSKAgeSec && lastPSKAppliedAt != nil
         if (wedgeByStall || wedgeByPSK) && !suppressWarning {
-            os_log("health: WEDGE SUSPECTED (stall_ticks=%d, handshake_age=%{public}s, psk_age=%{public}s) — Layer 2 would call cancelTunnelWithError here",
-                   log: log, type: .fault,
-                   consecutiveStallTicks, handshakeAgeStr, pskAgeStr)
+            let reason: String
+            if wedgeByStall {
+                reason = "stall_ticks=\(consecutiveStallTicks), handshake_age=\(handshakeAgeStr)"
+            } else {
+                reason = "psk_age=\(pskAgeStr)"
+            }
+            os_log("health: WEDGE DETECTED — %{public}s",
+                   log: log, type: .fault, reason)
+            attemptWedgeRecovery(reason: reason)
         }
+    }
+
+    /// Layer 2 — Force-restart the NE process on detected wedge.
+    ///
+    /// `cancelTunnelWithError` signals to iOS that the NE cannot continue.
+    /// iOS responds by:
+    ///   1. Marking NETunnelProviderManager status as `.disconnected` with
+    ///      our supplied error attached (visible to host app via
+    ///      `connection.fetchLastDisconnectError`).
+    ///   2. Calling our `stopTunnel(with:.userInitiated)` to clean up.
+    ///   3. Terminating the NE process.
+    ///
+    /// On the NEXT user-initiated connect (or, when Layer 3 ships, an
+    /// auto-restart from the host app on `NEVPNStatusDidChange`), iOS
+    /// spawns a fresh NE process. The fresh process has clean
+    /// wireguard-go state, no stale PSK, no wedged sockets — equivalent
+    /// to the manual "delete VPN profile + re-import" recovery the user
+    /// has been doing all session, but with one tap instead of seven.
+    ///
+    /// Rate-limited via `selfKillTimestamps` to avoid pathological loops:
+    /// after maxSelfKillsPerWindow recoveries in selfKillWindowSec, we
+    /// stop killing and require manual intervention. This protects
+    /// against environmental causes (server-side PSK desync, network
+    /// outage) where killing won't help.
+    private func attemptWedgeRecovery(reason: String) {
+        if selfKillInFlight { return }
+
+        let now = Date()
+        // Drop timestamps older than the rolling window
+        selfKillTimestamps.removeAll { now.timeIntervalSince($0) > Self.selfKillWindowSec }
+
+        if selfKillTimestamps.count >= Self.maxSelfKillsPerWindow {
+            os_log("health: rate-limited (%d self-kills in last %.0fs window) — refusing to cancel; manual intervention required",
+                   log: log, type: .fault,
+                   selfKillTimestamps.count, Self.selfKillWindowSec)
+            return
+        }
+
+        selfKillTimestamps.append(now)
+        selfKillInFlight = true
+
+        os_log("health: TRIGGERING WEDGE RECOVERY (kill #%d in last %.0fs window) — reason: %{public}s",
+               log: log, type: .fault,
+               selfKillTimestamps.count, Self.selfKillWindowSec, reason)
+
+        let err = NSError(
+            domain: "ai.cloakvpn.CloakTunnel",
+            code: -1001,
+            userInfo: [
+                NSLocalizedDescriptionKey:
+                    "Tunnel wedge auto-recovery (\(reason)). NE process restarting; reconnect via the Cloak app."
+            ]
+        )
+        cancelTunnelWithError(err)
     }
 }
 
