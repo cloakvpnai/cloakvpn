@@ -1,31 +1,42 @@
 // SPDX-License-Identifier: MIT
 //
 // Cloak VPN — PacketTunnelProvider for the CloakTunnel NetworkExtension
-// target. This file is a STRUCTURAL CLONE of upstream wireguard-apple's
-// reference PacketTunnelProvider.swift (commit master/2024+), with two
-// additions:
+// target.
 //
-//   (a) Custom config parsing — we read CloakConfig from
-//       NETunnelProviderProtocol.providerConfiguration (our wire format,
-//       not wg-quick) and build a TunnelConfiguration manually.
+// 2026-04-27 ROOT-CAUSE FIX (see docs/TRIAGE_2026-04-27.md):
+// Our SwiftPM dep is mullvad/wireguard-apple (mullvad-master). Mullvad's
+// `WireGuardAdapter.start()` was rewritten to support multi-hop and DAITA
+// and in the process REMOVED the `setTunnelNetworkSettings` call that
+// upstream wireguard-apple makes in `start()`. Mullvad expects the host
+// app to install network settings via a higher-level coordinator they
+// don't ship publicly. Without that call, iOS never installs IPs / DNS /
+// routes on the utun, so the wireguard-go data plane runs blind: WG
+// handshake completes (UDP, doesn't traverse utun), keepalives flow
+// (internal heartbeat), but no application traffic enters utun.
 //
-//   (b) `handleAppMessage` opcode 0x01 SET_PSK — the host app pushes a
-//       freshly-derived rosenpass PSK via sendProviderMessage; we apply
-//       it to the WG peer configuration via WireGuardAdapter.update().
+// This file compensates by calling `setTunnelNetworkSettings`
+// EXPLICITLY before `adapter.start`. We can't switch to upstream
+// wireguard-apple as a SwiftPM dep because upstream's Package.swift has
+// been broken since 2023 (declares swift-tools-version:5.3 but uses
+// .macOS(.v12)/.iOS(.v15) which require 5.5+).
 //
-// Critically, this file does NOT override `setTunnelNetworkSettings` —
-// upstream doesn't either, and overriding it (even as a stub
-// pass-through) was the cause of an 8-hour debugging marathon on
-// 2026-04-26 evening where decrypted packets never reached iOS network
-// stack despite handshakes completing.
+// Layout of this file:
+//   - Lifecycle: startTunnel / stopTunnel
+//   - handleAppMessage: opcode 0x00 GET_RUNTIME_CONFIG, 0x01 SET_PSK
+//   - applyPresharedKey: builds new TunnelConfiguration with PSK and
+//     hands it to WireGuardAdapter.update()
+//   - makeTunnelConfiguration: CloakConfig wire format → WireGuardKit
+//     model
+//   - makeNetworkSettings: TunnelConfiguration → NEPacketTunnelNetwork-
+//     Settings (port of upstream's PacketTunnelSettingsGenerator.
+//     generateNetworkSettings — this is the bit Mullvad's adapter is
+//     missing)
 //
-// Earlier additions (Option D rosenpass UDP relay opcodes 0x02-0x04,
-// the rosenpassServerIP property, the extractIP helper) are
-// REMOVED here. They will be re-added carefully on top of this
-// known-working base when we re-enable PQC. For now: plain WG, focus on
-// proving traffic flows.
+// Opcodes 0x02-0x04 (Option D rosenpass UDP relay) will be re-added
+// after this file is validated end-to-end with plain WG.
 
 import Foundation
+import Network
 import NetworkExtension
 import os.log
 import WireGuardKit
@@ -97,27 +108,46 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
         self.currentConfig = tunnelCfg
 
-        // Hand off to WireGuardAdapter. WireGuardKit will:
-        //   1. Tell iOS to set up utun via setTunnelNetworkSettings
-        //   2. Wait for that to complete
-        //   3. Call wgTurnOn to start the wireguard-go data plane
-        //   4. Wire packetFlow ↔ wireguard-go's TUN reader/writer
-        //
-        // We do NOT override setTunnelNetworkSettings (upstream doesn't
-        // either; intercepting it broke the data path on 2026-04-26).
-        adapter.start(tunnelConfiguration: tunnelCfg) { [weak self] adapterError in
+        // ROOT-CAUSE FIX: install network settings on the utun BEFORE
+        // adapter.start. Upstream's WireGuardAdapter does this for you;
+        // Mullvad's fork (which we depend on via SwiftPM) does NOT.
+        // Without this call, the utun has no IPs/routes/DNS and iOS
+        // routes nothing into the tunnel even though wireguard-go is
+        // running and WG handshakes complete.
+        let networkSettings = Self.makeNetworkSettings(from: tunnelCfg)
+        os_log("setTunnelNetworkSettings: applying", log: log, type: .info)
+        setTunnelNetworkSettings(networkSettings) { [weak self] settingsError in
             guard let self = self else { return }
-            if let adapterError = adapterError {
-                os_log("WireGuardAdapter.start failed: %{public}s",
+            if let settingsError = settingsError {
+                os_log("setTunnelNetworkSettings failed: %{public}s",
                        log: self.log, type: .error,
-                       String(describing: adapterError))
-                completionHandler(adapterError)
+                       String(describing: settingsError))
+                completionHandler(settingsError)
                 return
             }
-            let ifaceName = self.adapter.interfaceName ?? "unknown"
-            os_log("tunnel up on interface %{public}s",
-                   log: self.log, type: .info, ifaceName)
-            completionHandler(nil)
+            os_log("setTunnelNetworkSettings: applied; starting adapter",
+                   log: self.log, type: .info)
+
+            // Now hand off to WireGuardAdapter. With Mullvad's fork the
+            // adapter will:
+            //   1. NOT call setTunnelNetworkSettings (we did it above)
+            //   2. Resolve endpoints, build the wg UAPI config string
+            //   3. Call wgTurnOnIAN to start the wireguard-go data plane
+            //      against the utun fd we already configured
+            self.adapter.start(tunnelConfiguration: tunnelCfg) { [weak self] adapterError in
+                guard let self = self else { return }
+                if let adapterError = adapterError {
+                    os_log("WireGuardAdapter.start failed: %{public}s",
+                           log: self.log, type: .error,
+                           String(describing: adapterError))
+                    completionHandler(adapterError)
+                    return
+                }
+                let ifaceName = self.adapter.interfaceName ?? "unknown"
+                os_log("tunnel up on interface %{public}s",
+                       log: self.log, type: .info, ifaceName)
+                completionHandler(nil)
+            }
         }
     }
 
@@ -322,5 +352,108 @@ extension PacketTunnelProvider {
         // be installed later via handleAppMessage → applyPresharedKey.
 
         return TunnelConfiguration(name: "Cloak", interface: iface, peers: [peer])
+    }
+}
+
+// MARK: - TunnelConfiguration → NEPacketTunnelNetworkSettings
+//
+// Port of upstream wireguard-apple's
+// PacketTunnelSettingsGenerator.generateNetworkSettings, with logic kept
+// identical so the routing/DNS behaviour matches the official WG iOS app
+// exactly. We need this because Mullvad's WireGuardAdapter doesn't call
+// setTunnelNetworkSettings on our behalf.
+//
+// SPDX-License-Identifier: MIT (the inlined logic below is © 2018-2023
+// WireGuard LLC, MIT-licensed in upstream wireguard-apple).
+extension PacketTunnelProvider {
+    static func makeNetworkSettings(from tunnelCfg: TunnelConfiguration) -> NEPacketTunnelNetworkSettings {
+        // iOS requires a tunnelRemoteAddress, but WG can have many or
+        // zero peers — 127.0.0.1 is the upstream-blessed placeholder.
+        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
+
+        // ---- DNS ----
+        if !tunnelCfg.interface.dnsSearch.isEmpty || !tunnelCfg.interface.dns.isEmpty {
+            let dnsServerStrings = tunnelCfg.interface.dns.map { $0.stringRepresentation }
+            let dnsSettings = NEDNSSettings(servers: dnsServerStrings)
+            dnsSettings.searchDomains = tunnelCfg.interface.dnsSearch
+            if !tunnelCfg.interface.dns.isEmpty {
+                // Force ALL DNS through the tunnel. Without this, iOS
+                // can leak DNS to the captive resolver via mDNSResponder.
+                dnsSettings.matchDomains = [""]
+            }
+            settings.dnsSettings = dnsSettings
+        }
+
+        // ---- MTU ----
+        // 1280 is upstream's chosen-by-pain default for iOS (see
+        // PacketTunnelSettingsGenerator comment about "broken networks
+        // out there"). If our config specifies a non-zero MTU, honor it.
+        let mtu = tunnelCfg.interface.mtu ?? 0
+        if mtu == 0 {
+            settings.mtu = NSNumber(value: 1280)
+        } else {
+            settings.mtu = NSNumber(value: mtu)
+        }
+
+        // ---- Local interface addresses ----
+        var ipv4Addresses: [(addr: String, mask: String)] = []
+        var ipv6Addresses: [(addr: String, prefix: NSNumber)] = []
+        for range in tunnelCfg.interface.addresses {
+            if range.address is IPv4Address {
+                ipv4Addresses.append(("\(range.address)", "\(range.subnetMask())"))
+            } else if range.address is IPv6Address {
+                ipv6Addresses.append(("\(range.address)",
+                                     NSNumber(value: range.networkPrefixLength)))
+            }
+        }
+
+        // ---- Included routes (= what gets routed INTO the tunnel) ----
+        var ipv4Routes = [NEIPv4Route]()
+        var ipv6Routes = [NEIPv6Route]()
+
+        // First: routes to our own interface subnets, with us as gateway.
+        for range in tunnelCfg.interface.addresses {
+            if range.address is IPv4Address {
+                let route = NEIPv4Route(destinationAddress: "\(range.maskedAddress())",
+                                        subnetMask: "\(range.subnetMask())")
+                route.gatewayAddress = "\(range.address)"
+                ipv4Routes.append(route)
+            } else if range.address is IPv6Address {
+                let route = NEIPv6Route(destinationAddress: "\(range.maskedAddress())",
+                                        networkPrefixLength: NSNumber(value: range.networkPrefixLength))
+                route.gatewayAddress = "\(range.address)"
+                ipv6Routes.append(route)
+            }
+        }
+
+        // Then: each peer's allowedIPs becomes an included route.
+        // For full-tunnel WG (allowedIPs = 0.0.0.0/0, ::/0) this is what
+        // installs the default route into the tunnel. THIS is the line
+        // whose absence was breaking us.
+        for peer in tunnelCfg.peers {
+            for range in peer.allowedIPs {
+                if range.address is IPv4Address {
+                    ipv4Routes.append(NEIPv4Route(destinationAddress: "\(range.address)",
+                                                  subnetMask: "\(range.subnetMask())"))
+                } else if range.address is IPv6Address {
+                    ipv6Routes.append(NEIPv6Route(destinationAddress: "\(range.address)",
+                                                  networkPrefixLength: NSNumber(value: range.networkPrefixLength)))
+                }
+            }
+        }
+
+        // ---- IPv4 settings ----
+        let v4 = NEIPv4Settings(addresses: ipv4Addresses.map { $0.addr },
+                                subnetMasks: ipv4Addresses.map { $0.mask })
+        v4.includedRoutes = ipv4Routes
+        settings.ipv4Settings = v4
+
+        // ---- IPv6 settings ----
+        let v6 = NEIPv6Settings(addresses: ipv6Addresses.map { $0.addr },
+                                networkPrefixLengths: ipv6Addresses.map { $0.prefix })
+        v6.includedRoutes = ipv6Routes
+        settings.ipv6Settings = v6
+
+        return settings
     }
 }
