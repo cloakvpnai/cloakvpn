@@ -46,7 +46,7 @@ Manual alternative (you already own the box):
 
 ```bash
 ssh root@<server-ip>
-git clone https://github.com/<your-org>/cloak-vpn.git
+git clone https://github.com/cloakvpnai/cloakvpn.git
 sudo ./cloak-vpn/server/scripts/setup.sh
 ```
 
