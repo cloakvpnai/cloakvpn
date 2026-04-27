@@ -252,6 +252,17 @@ final class TunnelManager: ObservableObject {
         do {
             let local = try AppGroupKeyStore.loadLocalKeypair()
             let serverPub = try AppGroupKeyStore.loadServerPublicKey()
+
+            // Wire the NE relay closure BEFORE start(): runLoop checks
+            // sendNE != nil at the top of every rotation iteration and
+            // errors out with neSessionUnavailable if it's missing.
+            // The closure captures the session weakly via the manager
+            // and hops to the MainActor for the actual API call (NE
+            // session methods are MainActor-bound).
+            rosenpass.sendNE = { [weak m] payload in
+                try await Self.sendProviderMessageAsync(payload, manager: m)
+            }
+
             rosenpass.start(
                 clientSecretKeyB64: local.secretB64,
                 clientPublicKeyB64: local.publicB64,
@@ -264,9 +275,38 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    /// Async wrapper around NETunnelProviderSession.sendProviderMessage.
+    /// Hops to the MainActor to make the call (NE session methods are
+    /// MainActor-bound) and bridges the completion-handler API to async/
+    /// await. Returns the raw response bytes (or empty Data if the NE
+    /// returned nil — caller decides what nil/empty means).
+    nonisolated private static func sendProviderMessageAsync(
+        _ payload: Data,
+        manager: NETunnelProviderManager?
+    ) async throws -> Data {
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Data, Error>) in
+            Task { @MainActor in
+                guard let session = manager?.connection as? NETunnelProviderSession else {
+                    cont.resume(throwing: TunnelError.noConfig)
+                    return
+                }
+                do {
+                    try session.sendProviderMessage(payload) { response in
+                        cont.resume(returning: response ?? Data())
+                    }
+                } catch {
+                    cont.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     func disconnect() async throws {
         debugLog("disconnect() called, current status=\(status)")
         rosenpass.stop()
+        // Drop the NE relay closure so a stale capture can't fire
+        // sendProviderMessage after the session goes away.
+        rosenpass.sendNE = nil
         guard let m = manager else {
             debugLog("disconnect(): manager is nil, nothing to stop")
             return
