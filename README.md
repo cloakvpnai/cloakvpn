@@ -9,7 +9,7 @@ Post-quantum, strict no-logs, AI-enhanced consumer VPN for iOS and Android.
 A monorepo containing:
 
 - `infra/` — Terraform + deploy runner that spins up a Hetzner CX22 and runs `server/scripts/setup.sh` unattended. `make deploy` from zero to running concentrator in ~15 minutes.
-- `server/scripts/` — Bootstrap scripts for a WireGuard VPN concentrator with post-quantum key exchange (via [Rosenpass](https://rosenpass.eu)) on fresh Ubuntu 24.04. Designed for $5–10/month VPS providers (Hetzner Cloud recommended).
+- `server/scripts/` — Bootstrap scripts for a WireGuard VPN concentrator with post-quantum key exchange (via [Rosenpass](https://rosenpass.eu)) on fresh Ubuntu 24.04.
 - `server/api/` — Go HTTP service that handles Stripe webhooks, tracks per-account tier/device-limits, and provisions new WireGuard peers for paying customers.
 - `clients/ios/` — Swift skeleton using `NEPacketTunnelProvider` + the official `wireguard-apple` library.
 - `clients/android/` — Kotlin skeleton using `VpnService` + the official `wireguard-android` library.
