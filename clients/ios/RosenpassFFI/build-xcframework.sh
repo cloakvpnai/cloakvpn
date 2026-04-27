@@ -19,16 +19,46 @@
 #   sudo xcodebuild -license accept
 #
 # Usage:
-#   ./build-xcframework.sh           # debug build (faster iteration)
-#   ./build-xcframework.sh --release # release build (ship this)
+#   ./build-xcframework.sh           # release build (default — what to ship)
+#   ./build-xcframework.sh --release # release build (explicit)
+#   ./build-xcframework.sh --debug   # debug build (DO NOT USE on iOS — see below)
+#
+# WARNING: --debug builds CRASH on iOS at app launch (Session 2, 2026-04-26).
+# Reason: rosenpass-secret-memory's Public<_>::zero() materializes a ~512 KB
+# Classic McEliece-460896 public-key buffer on the stack before moving it
+# into a Box. In release builds, LLVM's RVO/copy-elision constructs directly
+# into the heap allocation. In debug builds, the optimization is OFF and the
+# stack copy survives — overflowing iOS's 1 MB main-thread stack on the
+# first call to generate_static_keypair() and producing
+# EXC_BAD_ACCESS / KERN_PROTECTION_FAILURE in the stack guard region.
+#
+# If you genuinely need debug symbols (LLDB stepping into Rust), use a
+# release+debuginfo profile via Cargo profile overrides instead — don't
+# fall back to --debug on iOS.
 
 set -euo pipefail
 
-PROFILE="${1:---debug}"
+# Default to release. Anyone who wants the (broken-on-iOS) debug build must
+# pass --debug explicitly AND will see a loud warning before the build runs.
+PROFILE="${1:---release}"
 case "$PROFILE" in
   --release) PROFILE_FLAG="--release"; PROFILE_DIR="release" ;;
-  --debug|"") PROFILE_FLAG="";          PROFILE_DIR="debug" ;;
-  *) echo "Unknown profile: $PROFILE (want --debug or --release)" >&2; exit 1 ;;
+  --debug)
+    PROFILE_FLAG=""; PROFILE_DIR="debug"
+    cat <<'WARN' >&2
+
+  ⚠️  --debug builds of RosenpassFFI CRASH on iOS at app launch.
+      The McEliece-460896 keygen overflows the main-thread stack in debug
+      mode (524 KB on-stack temp inside generate_static_keypair before the
+      Box move). This is fine for `cargo test` on macOS but NOT for the
+      iOS xcframework. Use --release.
+
+      Continuing in 5 seconds — Ctrl-C to abort.
+
+WARN
+    sleep 5
+    ;;
+  *) echo "Unknown profile: $PROFILE (want --release or --debug)" >&2; exit 1 ;;
 esac
 
 TOOLCHAIN="1.88.0"
