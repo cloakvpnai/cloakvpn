@@ -48,6 +48,42 @@ final class TunnelManager: ObservableObject {
     private var manager: NETunnelProviderManager?
     private var statusObserver: NSObjectProtocol?
 
+    // MARK: - Layer 3 — auto-reconnect on detected wedge recovery
+    //
+    // When the NE calls `cancelTunnelWithError` from Layer 2, iOS marks
+    // the tunnel as disconnected with our specific error attached
+    // (domain="ai.cloakvpn.CloakTunnel", code=-1001). We watch for that
+    // signature in the status-change notification and auto-fire a fresh
+    // connect, bridging the gap between Layer 2 (NE self-kills) and full
+    // transparent customer-facing recovery. Without this, the user has
+    // to manually tap Connect after every wedge — better than the
+    // pre-Layer-2 state (delete VPN profile in iOS Settings) but still
+    // unshippable as the steady-state UX.
+
+    /// Sliding window of auto-reconnect timestamps for rate limiting.
+    /// Mirrors the Layer 2 self-kill rate limiter on the NE side: if
+    /// recovery keeps failing (server outage, persistent state desync,
+    /// etc.) we eventually stop trying and surface to the user.
+    private var autoReconnectTimestamps: [Date] = []
+    private static let maxAutoReconnectsPerWindow: Int = 3
+    private static let autoReconnectWindowSec: TimeInterval = 300
+
+    /// Brief delay between detecting the wedge-recovery disconnect and
+    /// firing the new connect. Lets iOS finish tearing down the old NE
+    /// process and releasing the utun before we ask for a new one.
+    /// Empirically 1-2s is enough; below ~500ms iOS can refuse the new
+    /// startVPNTunnel with "another connection is in progress".
+    private static let autoReconnectDelaySec: TimeInterval = 1.5
+
+    /// Specific error code we use when calling cancelTunnelWithError
+    /// from the NE's Layer 2 wedge recovery. Matched against
+    /// `connection.fetchLastDisconnectError` to distinguish recoverable
+    /// wedges from user-initiated disconnects, server-side disconnects,
+    /// network unavailability, etc. Must stay in sync with the constant
+    /// in PacketTunnelProvider.swift's attemptWedgeRecovery.
+    private static let ne_wedgeRecoveryErrorDomain = "ai.cloakvpn.CloakTunnel"
+    private static let ne_wedgeRecoveryErrorCode = -1001
+
     init() {
         // Forward derived PSKs into the NE.
         rosenpass.onPSKDerived = { [weak self] psk in
@@ -387,6 +423,83 @@ final class TunnelManager: ObservableObject {
         @unknown default: status = .invalid
         }
         debugLog("status change: \(old) → \(status) (raw NEVPNStatus=\(s.rawValue))")
+
+        // Layer 3: detect wedge-recovery transitions and auto-reconnect.
+        // We only attempt the auto-reconnect when the previous state was
+        // an "active" tunnel state (.connected, .connecting, .reasserting)
+        // because that filters out two cases:
+        //   1. Already-disconnected -> still-disconnected idle transitions.
+        //   2. App-launch initial state read where status starts as
+        //      .disconnected and we observe it.
+        // Within those active states, we still verify the actual disconnect
+        // error matches our wedge-recovery signature before reconnecting.
+        if status == .disconnected,
+           old == .connected || old == .connecting || old == .reasserting {
+            checkForWedgeRecoveryAutoReconnect()
+        }
+    }
+
+    /// Inspect the connection's last disconnect error. If it matches our
+    /// wedge-recovery error signature (domain=ai.cloakvpn.CloakTunnel,
+    /// code=-1001), schedule an auto-reconnect. Otherwise no-op.
+    ///
+    /// `fetchLastDisconnectError` is callback-style; we bridge to the
+    /// MainActor for the actual auto-reconnect call.
+    private func checkForWedgeRecoveryAutoReconnect() {
+        guard let conn = manager?.connection else {
+            debugLog("checkForWedgeRecoveryAutoReconnect: no connection — skipping")
+            return
+        }
+        conn.fetchLastDisconnectError { [weak self] error in
+            // Hop to MainActor for state mutations and connect() call.
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                guard let nsErr = error as NSError?,
+                      nsErr.domain == Self.ne_wedgeRecoveryErrorDomain,
+                      nsErr.code == Self.ne_wedgeRecoveryErrorCode else {
+                    self.debugLog("checkForWedgeRecoveryAutoReconnect: not a wedge-recovery disconnect (err=\(String(describing: error))); skipping auto-reconnect")
+                    return
+                }
+                self.attemptAutoReconnect(reason: nsErr.localizedDescription)
+            }
+        }
+    }
+
+    /// Schedule an auto-reconnect after a brief settle delay, with rate
+    /// limiting to avoid pathological reconnect loops if recovery itself
+    /// keeps failing (e.g. server is genuinely down — after maxAutoReconnects
+    /// in window, we stop trying and require manual user intervention).
+    private func attemptAutoReconnect(reason: String) {
+        let now = Date()
+        // Drop entries older than the rolling window
+        autoReconnectTimestamps.removeAll { now.timeIntervalSince($0) > Self.autoReconnectWindowSec }
+
+        if autoReconnectTimestamps.count >= Self.maxAutoReconnectsPerWindow {
+            debugLog("autoReconnect: rate-limited (\(autoReconnectTimestamps.count) in last \(Int(Self.autoReconnectWindowSec))s) — manual reconnect required")
+            return
+        }
+
+        autoReconnectTimestamps.append(now)
+        let attemptNumber = autoReconnectTimestamps.count
+        debugLog("autoReconnect: scheduling (#\(attemptNumber) in window) after \(Self.autoReconnectDelaySec)s delay; reason=\(reason)")
+
+        // Tear down stale rosenpass loop state from before the wedge —
+        // the NE that the loop was talking to is gone. The new connect()
+        // call below re-spins it up cleanly with sendNE rebound to the
+        // freshly spawned NE process.
+        rosenpass.stop()
+        rosenpass.sendNE = nil
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.autoReconnectDelaySec * 1_000_000_000))
+            guard let self = self else { return }
+            do {
+                try await self.connect()
+                self.debugLog("autoReconnect: connect() initiated successfully (attempt #\(attemptNumber))")
+            } catch {
+                self.debugLog("autoReconnect: connect() failed: \(error)")
+            }
+        }
     }
 
     /// Debug-only logging. Stripped from release builds entirely so the

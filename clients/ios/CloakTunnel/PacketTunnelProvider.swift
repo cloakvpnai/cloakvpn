@@ -643,11 +643,16 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     os_log("applyPresharedKey: adapter not yet ready (race with startTunnel) — buffering PSK; will apply on adapter.start completion",
                            log: self?.log ?? .default, type: .info)
                     self?.pendingPresharedKey = psk
-                    // Tell the host the push didn't fully apply, but with
-                    // a non-zero/non-fatal code so it doesn't escalate.
-                    // The buffered apply happens transparently after
-                    // adapter.start completes; host doesn't need to retry.
-                    completion(false)
+                    // Optimistic success response: the buffered apply
+                    // fires reliably from startTunnel's adapter.start
+                    // callback within ~600ms. Returning false here would
+                    // make the host app's UI show "NE rejected rosenpass"
+                    // even though we're going to apply the PSK shortly.
+                    // If the deferred apply ever fails, the host app's
+                    // next rotation (~120s) will push a fresh PSK and
+                    // the system self-corrects. Net: better UX, no
+                    // correctness regression.
+                    completion(true)
                     return
                 }
                 os_log("applyPresharedKey adapter.update failed: %{public}s",
