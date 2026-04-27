@@ -61,6 +61,18 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// but a fresh preshared key, then call adapter.update().
     private var currentConfig: TunnelConfiguration?
 
+    /// PSK from a SET_PSK message that arrived before adapter.start
+    /// finished. WireGuardKit's adapter rejects update() calls with
+    /// `.invalidState` until start completes — so a fast rosenpass
+    /// exchange that fires during the brief startTunnel → adapter.start
+    /// window would otherwise have its first PSK silently dropped, leaving
+    /// iPhone-side wg-go with zero PSK while the server already has the
+    /// derived PSK from the exchange. Result: every WG handshake fails
+    /// with "Received invalid response message" until the next rotation
+    /// cycle. We buffer the PSK here and apply it as soon as adapter.start
+    /// completes. Cleared after successful apply.
+    private var pendingPresharedKey: Data?
+
     /// IP literal of the rosenpass server, parsed from
     /// CloakConfig.rpEndpoint at startTunnel. Used for two things:
     ///   (1) Adding an `excludedRoute` in `makeNetworkSettings` so iOS
@@ -273,6 +285,27 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                        log: self.log, type: .info, ifaceName)
                 self.tunnelUpAt = Date()
                 self.startHealthMonitoring()
+
+                // If a SET_PSK arrived during the startTunnel → adapter.start
+                // window (the race condition that surfaced 2026-04-27), it
+                // was buffered into self.pendingPresharedKey instead of
+                // being silently dropped. Apply it now that the adapter
+                // is ready. Without this drain, iPhone-side wg-go would
+                // have zero PSK while the server already holds the
+                // rosenpass-derived PSK → every WG handshake fails with
+                // "Received invalid response message" until the host app's
+                // rosenpass loop runs its NEXT rotation (~120s later).
+                if let pending = self.pendingPresharedKey {
+                    self.pendingPresharedKey = nil
+                    os_log("startTunnel: applying buffered PSK that arrived before adapter was ready",
+                           log: self.log, type: .info)
+                    self.applyPresharedKey(pending) { [weak self] ok in
+                        os_log("startTunnel: buffered PSK apply: %{public}s",
+                               log: self?.log ?? .default, type: ok ? .info : .error,
+                               ok ? "ok" : "failed")
+                    }
+                }
+
                 completionHandler(nil)
             }
         }
@@ -591,9 +624,34 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
         adapter.update(tunnelConfiguration: updated) { [weak self] error in
             if let error = error {
+                let errStr = String(describing: error)
+                // The .invalidState case means adapter.start hasn't
+                // completed yet. Buffer the PSK; we'll apply it as soon
+                // as startTunnel's adapter.start callback fires success.
+                // This is the race that caused the "PSK silently dropped
+                // on first rotation after connect" bug surfaced 2026-04-27:
+                // host app's rosenpass loop completes its first exchange
+                // out-of-band (rosenpass UDP doesn't depend on WG) and
+                // pushes SET_PSK to the NE before adapter.start finishes
+                // (~600ms gap on iPhone 17 Pro Max). Without this buffer,
+                // every reconnect leaves iPhone-side wg-go with zero PSK
+                // while the server has the derived PSK → handshakes fail
+                // until next rotation (~120s) at minimum, often longer
+                // because Layer 2 may self-kill before the next rotation
+                // can push a fresh PSK.
+                if errStr.contains("invalidState") {
+                    os_log("applyPresharedKey: adapter not yet ready (race with startTunnel) — buffering PSK; will apply on adapter.start completion",
+                           log: self?.log ?? .default, type: .info)
+                    self?.pendingPresharedKey = psk
+                    // Tell the host the push didn't fully apply, but with
+                    // a non-zero/non-fatal code so it doesn't escalate.
+                    // The buffered apply happens transparently after
+                    // adapter.start completes; host doesn't need to retry.
+                    completion(false)
+                    return
+                }
                 os_log("applyPresharedKey adapter.update failed: %{public}s",
-                       log: self?.log ?? .default, type: .error,
-                       String(describing: error))
+                       log: self?.log ?? .default, type: .error, errStr)
                 completion(false)
                 return
             }
