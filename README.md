@@ -46,7 +46,7 @@ Manual alternative (you already own the box):
 
 ```bash
 ssh root@<server-ip>
-git clone https://github.com/<your-org>/cloak-vpn.git
+git clone https://github.com/cloakvpnai/cloakvpn.git
 sudo ./cloak-vpn/server/scripts/setup.sh
 ```
 
@@ -73,7 +73,15 @@ Landing page + pricing page live in `website/` and are deployable to Cloudflare 
 
 ## License
 
-TBD — reserve the name, decide license (MIT or GPLv3) before any public release.
+[GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).
+
+The AGPL is the strongest copyleft license commonly used in security tooling. In plain English: anyone is free to study, modify, run, and redistribute Cloak's code — but if you modify it and run that modified version as a network service for others, you must publish your modifications under AGPL too. This is the same license posture as Mastodon, Nextcloud, MongoDB (pre-SSPL), and others where the server-side modification loophole would otherwise undermine the whole point of being open.
+
+For commercial licensing inquiries (e.g. if you want to ship a closed-source product based on Cloak's code without honoring AGPL's source-disclosure obligation), contact `licensing@cloakvpn.ai`.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for our vulnerability disclosure policy and coordinated-disclosure timelines. Email `security@cloakvpn.ai` for sensitive reports.
 
 ## Roadmap
 

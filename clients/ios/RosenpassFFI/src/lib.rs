@@ -223,6 +223,26 @@ impl RosenpassSession {
         // Borrow `peer` out of `state` before we re-borrow `state.server`
         // mutably — avoids a borrow-checker lifetime tangle.
         let peer = state.peer;
+
+        // V03 protocol fix (2026-04-27 — see docs/TRIAGE_2026-04-27.md
+        // and HANDOFF Bug A/B): when `exchanged_with` is Some, the PSK
+        // has been derived on OUR side — but we may STILL need to send
+        // `result.resp` bytes (the InitConf message) for the responder
+        // to commit on its side. The previous version returned
+        // DerivedPsk immediately and DROPPED `result.resp`, which left
+        // the rosenpass server in a state where it received InitHello,
+        // sent RespHello, but never received InitConf — and so never
+        // wrote the PSK to /run/rosenpass/<peer>. tcpdump on 2026-04-26
+        // confirmed this exactly: 2 packets per handshake instead of 3.
+        //
+        // Correct V03 handling:
+        //   - Always stash the PSK in `last_psk` so the bridge can
+        //     fetch it via `lastDerivedPsk()` after we finish driving
+        //     the wire-protocol exchange.
+        //   - PRIORITIZE sending `result.resp` if it exists (InitConf
+        //     bytes that the responder needs to commit).
+        //   - Only return DerivedPsk if we have nothing to send (e.g.
+        //     responder side, where no further message is required).
         if let Some(_) = result.exchanged_with {
             let psk = state
                 .server
@@ -230,6 +250,19 @@ impl RosenpassSession {
                 .map_err(|e| FfiError::Rosenpass { message: format!("osk: {e}") })?;
             let psk_bytes = psk.secret().to_vec();
             state.last_psk = Some(psk_bytes.clone());
+
+            // If there are response bytes to send (InitConf in V03
+            // initiator path), send them FIRST. The bridge fetches the
+            // PSK via lastDerivedPsk() after the send completes — see
+            // RosenpassBridge.singleHandshake's `.sendMessage` arm.
+            if let Some(n) = result.resp {
+                return Ok(StepResult::SendMessage {
+                    bytes: tx_buf.deref()[..n].to_vec(),
+                });
+            }
+
+            // No further message to send — pure PSK-derived case
+            // (e.g. responder side after InitConf arrives).
             return Ok(StepResult::DerivedPsk { psk: psk_bytes });
         }
 

@@ -514,6 +514,87 @@ Tracked separately as task #35.
   PQC marketing description, and the audit/security disclosures
   for app review (Apple is sensitive about VPN apps).
 
+## 2026-04-26/27 evening session post-mortem
+
+19-hour debugging marathon (10am 2026-04-26 → 03:00 HST 2026-04-27)
+that uncovered TWO new latent bugs and ended without a fully working
+custom NE. See `/HANDOFF.md` at project root for the full pickup
+context. Brief technical summary here:
+
+### What we proved isolated to OUR NE (not network/server)
+
+- Official App Store WireGuard iOS app with the SAME wg-quick config
+  (same WG keys, same server `5.78.203.171`, same iPhone, same WiFi)
+  loads `https://test-ipv6.com` showing `5.78.203.171` correctly.
+- Our custom CloakTunnel NE: handshake completes, transfer counters
+  increment, wireguard-go's data-plane routines all start (TUN reader,
+  decryption/encryption workers), but Safari shows "iPhone is not
+  connected to the internet" with `includeAllNetworks=true`. With
+  `includeAllNetworks=false`, Safari traffic leaks via ISP entirely
+  (test-ipv6.com shows the user's NAT IP `<USER_NAT_IP>`).
+
+### Eliminated as the cause (DON'T re-try these tomorrow)
+
+| Hypothesis | Verified ruled out by |
+|---|---|
+| `WireGuardKitGo` not linked | `nm CloakTunnel.debug.dylib` shows `_wgTurnOn`, `_wgSetConfig` etc. ARE present |
+| `setTunnelNetworkSettings` override interfering | Removed entirely; still broken |
+| `makeTunnelConfiguration` differs from wg-quick parser output | Agent-verified byte-equivalent |
+| `enforceRoutes=false` default | Set to true; no change |
+| `excludeLocalNetworks=true` etc. defaults | Tried various override combinations; no change |
+| Stale iOS state from many install cycles | Did full nuclear reset (delete VPN profile + delete app + reboot phone + clean install); no change |
+| Custom config parsing path | Replaced entire PacketTunnelProvider with code structurally identical to upstream's; still broken |
+
+### Two new latent bugs identified
+
+**Bug A: Server-side rosenpass at `b096cb1` doesn't write PSK file.**
+Daemon receives InitHello, sends RespHello, but never writes
+`/run/rosenpass/psk-iphone-prod-1` despite `key_out` configured.
+tcpdump shows only 2 UDP/9999 packets per handshake (InitHello +
+RespHello), no third InitConf message. Rosenpass V03 protocol is
+1.5-RTT (InitHello → RespHello → InitConf → optional ack) per agent
+research; responder only commits on InitConf receipt. We worked
+around this on us-west-1 by deploying an inotify-based
+`cloak-psk-installer.service` watcher (waits for the PSK file then
+runs `wg set wg0 peer ... preshared-key /run/rosenpass/...`), but
+the daemon never writes the file in the first place since iPhone
+isn't sending InitConf.
+
+**Bug B: iPhone FFI was dropping InitConf bytes.** Found in
+`clients/ios/RosenpassFFI/src/lib.rs::handle_message`: when
+`server.handle_msg()` returned BOTH `exchanged_with=Some` (PSK
+derived) AND `resp=Some(InitConfBytes)`, the FFI returned
+`StepResult::DerivedPsk` and dropped the InitConf bytes. The bridge
+then exited the loop without sending InitConf, so the responder
+never committed. Fix applied to `lib.rs` (uncommitted) — now stashes
+PSK in `last_psk` and prioritizes returning `SendMessage(resp)`.
+Bridge updated to fetch PSK via `lastDerivedPsk()` after sending.
+
+These two bugs are SEPARATE from the iOS NE traffic-not-flowing bug
+that derailed us. They need to be re-validated end-to-end ONCE the
+custom NE is unbroken (or replaced with the upstream-fork base).
+
+### Workaround for tonight
+
+User is using the official App Store WireGuard iOS app + wg-quick
+config (no PQC, but full-tunnel + IP leak closed via standard
+WireGuard kill-switch behavior). See `/HANDOFF.md` for the exact
+config block.
+
+### Path forward (decision: Option 2)
+
+Fork upstream wireguard-apple sample iOS app as the new base for
+Cloak VPN's NE. Port our additions (PSK push opcode 0x01, Option D
+rosenpass UDP relay opcodes 0x02-0x04, App Group key store,
+RosenpassBridge, custom UI, region picker) onto IT. Tracked as
+task #13. ~1-2 days of focused work.
+
+The custom NE's bug is at a level (entitlements, signing, build
+phases, target setup, or iOS 26 + Xcode 26 specific quirk) that
+requires live Xcode debugging to identify. Not productive to
+continue chasing remotely. The fork approach inherits a known-working
+WG data plane and adds our PQC layer cleanly on top.
+
 ## References
 
 iOS NE memory:

@@ -7,23 +7,26 @@ import os.log
 /// concentrator's UDP rosenpass listener (typically `<region>.cloakvpn.ai:9999`).
 ///
 /// Architecture (see docs/IOS_PQC.md):
-///   - Runs in the MAIN APP only, never inside the NetworkExtension.
-///     Rosenpass keygen/handshake peaks at 1-3 MB working set; the NE's
-///     50 MiB jetsam cap is too tight to host this safely.
+///   - Crypto state machine runs in the MAIN APP only (NE's ~50 MiB
+///     jetsam cap is too tight for rosenpass keygen).
+///   - Rosenpass UDP transport runs in the NE process. The host app
+///     (this class) relays bytes through the NE via opcodes 0x02 (SEND)
+///     / 0x03 (RECV) / 0x04 (CLOSE) on `NETunnelProviderSession.sendProviderMessage`.
+///     The NE owns the actual NWConnection to the rosenpass server.
+///     This is required under `includeAllNetworks = true` because iOS
+///     NECP forbids host-app sockets from bypassing the tunnel — but
+///     NE-process sockets are exempt (the NE *is* the tunnel).
 ///   - For each rotation cycle:
 ///       1. Constructs a fresh `RosenpassSession` from the imported keys.
-///       2. Calls `.initiate()` to get InitHello bytes; UDP-sends them.
-///       3. Loops on UDP receive → `session.handleMessage()` → reply
-///          until `handleMessage` returns `.derivedPsk`.
+///       2. Calls `.initiate()` to get InitHello bytes; transport-sends.
+///       3. Loops on transport-receive → `session.handleMessage()` →
+///          reply, ending when the FFI surfaces a 32-byte PSK
+///          (either via `.derivedPsk` or stashed in `lastDerivedPsk()`
+///          after a `.sendMessage` containing the V03 InitConf bytes
+///          that the responder needs in order to commit).
 ///       4. Surfaces the 32-byte PSK via `onPSKDerived`.
 ///       5. Sleeps until the next rotation deadline (default 120 s).
 ///   - On `stop()` or app termination, cancels the loop.
-///
-/// Routing note: Rosenpass UDP traffic must NOT go through the WireGuard
-/// tunnel (the tunnel itself depends on the PSK we're trying to derive —
-/// chicken/egg). We force the underlying NWConnection to bypass virtual
-/// interfaces via `prohibitedInterfaceTypes = [.other]`, so the UDP
-/// goes directly over WiFi/cellular.
 @MainActor
 final class RosenpassBridge: ObservableObject {
     enum Status: Equatable, CustomStringConvertible {
@@ -51,6 +54,15 @@ final class RosenpassBridge: ObservableObject {
     /// The receiver (TunnelManager) is expected to push it to the NE
     /// via `NETunnelProviderSession.sendProviderMessage` opcode 0x01.
     var onPSKDerived: ((Data) -> Void)?
+
+    /// Relays a `sendProviderMessage` round-trip to the NE process.
+    /// Must be set by the owning TunnelManager before `start(...)` is
+    /// called (otherwise the run loop errors out with neSessionUnavailable).
+    /// The closure is `@Sendable` because singleHandshake runs in a
+    /// detached Task off the MainActor, but the underlying NETunnel-
+    /// ProviderSession.sendProviderMessage call must be made on the
+    /// MainActor — see TunnelManager.connect().
+    var sendNE: (@Sendable (Data) async throws -> Data)?
 
     private static let log = OSLog(subsystem: "ai.cloakvpn.CloakVPN", category: "rosenpass")
 
@@ -128,7 +140,10 @@ final class RosenpassBridge: ObservableObject {
         while !Task.isCancelled {
             self.status = .handshaking
             do {
-                let psk = try await Self.singleHandshake(cfg: cfg)
+                guard let sendNE = self.sendNE else {
+                    throw RosenpassBridgeError.neSessionUnavailable
+                }
+                let psk = try await Self.singleHandshake(cfg: cfg, sendNE: sendNE)
                 rotations += 1
                 consecutiveFailures = 0
                 self.status = .established(rotations: rotations)
@@ -153,7 +168,11 @@ final class RosenpassBridge: ObservableObject {
     /// One round-trip of the Rosenpass protocol. Heavy lifting (FFI
     /// calls into Rust crypto) happens on a detached priority-userInitiated
     /// task so we don't block the main actor with megabyte allocations.
-    private static func singleHandshake(cfg: SessionConfig) async throws -> Data {
+    /// UDP I/O is relayed through the NE via the supplied sendNE closure.
+    private static func singleHandshake(
+        cfg: SessionConfig,
+        sendNE: @escaping @Sendable (Data) async throws -> Data
+    ) async throws -> Data {
         try await Task.detached(priority: .userInitiated) {
             let session = try RosenpassSession(
                 ourSecretKey: cfg.clientSecret,
@@ -161,29 +180,58 @@ final class RosenpassBridge: ObservableObject {
                 peerPublicKey: cfg.serverPublic
             )
 
-            let udp = UDPClient(host: cfg.serverHost, port: cfg.serverPort)
-            try await udp.connect()
-            defer { udp.close() }
+            let transport = NETunnelTransport(sendNE: sendNE)
+            try await transport.connect()
+            defer { transport.close() }
 
             let firstMsg = try session.initiate()
-            try await udp.send(firstMsg)
+            try await transport.send(firstMsg)
 
-            // Rosenpass v0.3 needs a single round-trip in steady state, but
-            // we allow up to ~6 messages to handle retransmits and the
-            // optional InitConf path. This is well below any sane cap.
+            // Rosenpass V03 protocol flow against a responder peer:
+            //   tx: InitHello       (we just sent this)
+            //   rx: RespHello       → handle_msg derives PSK on our side
+            //                         AND emits InitConf bytes
+            //   tx: InitConf        (we send this; responder commits)
+            //   rx: <none>          (responder typically doesn't ack)
+            //
+            // After step 2 above, the FFI returns SendMessage(InitConf)
+            // (NOT DerivedPsk) — because the InitConf bytes MUST be sent
+            // for the responder to commit. The PSK is stashed in the
+            // session's last_psk field; we fetch it via lastDerivedPsk()
+            // after sending. If we returned DerivedPsk and exited the
+            // loop here, we'd drop InitConf on the floor and leave the
+            // responder's WireGuard with no PSK installed — which broke
+            // us-west-1's full-tunnel mode for ~3 hours 2026-04-26
+            // evening before we tracked it down.
+            //
+            // Up to 6 iterations to handle retransmits.
             for _ in 0..<6 {
                 try Task.checkCancellation()
-                let inbound = try await udp.receive(timeoutSeconds: 8)
+                let inbound = try await transport.receive(timeoutSeconds: 8)
                 let result = try session.handleMessage(bytes: inbound)
                 switch result {
                 case .sendMessage(let bytes):
-                    try await udp.send(bytes)
+                    try await transport.send(bytes)
+                    // V03 initiator: PSK may have been derived during
+                    // this same handle_message call (the one that
+                    // produced these outgoing bytes). The responder
+                    // needed the bytes to commit; we still need the PSK
+                    // to push to the NE. Fetch it from the session's
+                    // stash.
+                    if let psk = session.lastDerivedPsk(), psk.count == 32 {
+                        return psk
+                    }
                 case .derivedPsk(let psk):
                     guard psk.count == 32 else {
                         throw RosenpassBridgeError.badPskLength(psk.count)
                     }
                     return psk
                 case .idle:
+                    // V03 responder may surface PSK via Idle (no resp,
+                    // PSK derived from InitConf). Check the stash.
+                    if let psk = session.lastDerivedPsk(), psk.count == 32 {
+                        return psk
+                    }
                     continue
                 }
             }
@@ -195,11 +243,15 @@ final class RosenpassBridge: ObservableObject {
 private enum RosenpassBridgeError: LocalizedError {
     case badPskLength(Int)
     case exceededMessageBudget
+    case neSessionUnavailable
+    case neSendFailed(code: UInt8)
 
     var errorDescription: String? {
         switch self {
         case .badPskLength(let n): return "PSK length \(n) ≠ 32"
         case .exceededMessageBudget: return "handshake exceeded message budget"
+        case .neSessionUnavailable: return "VPN tunnel not active (sendNE closure missing)"
+        case .neSendFailed(let code): return "NE rejected rosenpass UDP (code 0x\(String(code, radix: 16)))"
         }
     }
 }
@@ -227,92 +279,84 @@ extension FfiError: LocalizedError {
     }
 }
 
-// MARK: - UDPClient
+// MARK: - NETunnelTransport
 
-/// Minimal async UDP wrapper around NWConnection. Single peer, no
-/// fancy buffering — fits Rosenpass's unicast request/response shape
-/// exactly. Bypasses virtual interfaces (the WireGuard tunnel) so
-/// rosenpass UDP doesn't try to flow through the very tunnel whose
-/// PSK it's deriving.
-private final class UDPClient: @unchecked Sendable {
-    private let connection: NWConnection
-    private let queue = DispatchQueue(label: "ai.cloakvpn.rosenpass.udp")
+/// Adapter that mirrors the old UDPClient API but relays every
+/// send/receive through the NE process via `sendProviderMessage`. The
+/// NE owns the actual UDP socket to the rosenpass server (see
+/// PacketTunnelProvider.handleAppMessage opcodes 0x02/0x03/0x04).
+///
+/// Why route through the NE rather than from the host app directly:
+/// under `includeAllNetworks = true` (which we want for IP-leak
+/// protection), iOS's NECP forbids host-app sockets from bypassing the
+/// tunnel even with explicit interface hints. NE-process sockets ARE
+/// the tunnel and so are exempt. By having the host-app rosenpass state
+/// machine relay through the NE, we keep the heavy crypto in the
+/// high-memory main app process AND get the routing privileges of the
+/// NE for the UDP transport.
+///
+/// `@unchecked Sendable` because the wrapped `sendNE` closure is
+/// already `@Sendable` and we don't store any other mutable state.
+/// `nonisolated` keeps the type out of the @MainActor isolation that
+/// Swift 6 mode would otherwise infer (because this file also contains
+/// the @MainActor RosenpassBridge class). The transport itself holds no
+/// actor-bound state — all its methods are async and just await the
+/// Sendable closure — so MainActor isolation would be both unnecessary
+/// and incompatible with `Task.detached` usage in singleHandshake.
+nonisolated private final class NETunnelTransport: @unchecked Sendable {
+    private let sendNE: @Sendable (Data) async throws -> Data
 
-    init(host: String, port: UInt16) {
-        let endpoint = NWEndpoint.hostPort(
-            host: NWEndpoint.Host(host),
-            port: NWEndpoint.Port(rawValue: port)!
-        )
-        let params = NWParameters.udp
-        // Don't route over the utun interface our own NE created; that
-        // would be a chicken/egg loop (the tunnel needs the PSK we're
-        // trying to derive). `.other` covers utun and similar virtual
-        // interfaces.
-        //
-        // Note: this works in tandem with includeAllNetworks=false on
-        // the NETunnelProviderProtocol. The full-tunnel + tunnel-internal-
-        // rosenpass combination requires a different architecture — see
-        // docs/IOS_PQC.md "Open items" — likely involving moving the
-        // rosenpass packet flow into the NE process via NEPacketTunnelFlow,
-        // since NWPathMonitor in the host app does not appear to expose
-        // the host app's own VPN interface (utun) reliably.
-        params.prohibitedInterfaceTypes = [.other]
-        self.connection = NWConnection(to: endpoint, using: params)
+    init(sendNE: @escaping @Sendable (Data) async throws -> Data) {
+        self.sendNE = sendNE
     }
 
+    /// Mirror of the old UDPClient.connect — but the NE creates its
+    /// internal NWConnection lazily on first SEND_RP_UDP, so there's
+    /// nothing for us to do here. Kept as a public API to preserve the
+    /// call shape in singleHandshake.
     func connect() async throws {
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-            var resumed = false
-            connection.stateUpdateHandler = { state in
-                guard !resumed else { return }
-                switch state {
-                case .ready:
-                    resumed = true
-                    cont.resume()
-                case .failed(let err):
-                    resumed = true
-                    cont.resume(throwing: err)
-                case .cancelled:
-                    resumed = true
-                    cont.resume(throwing: CancellationError())
-                default:
-                    break
-                }
-            }
-            connection.start(queue: queue)
-        }
+        // Intentionally empty.
     }
 
+    /// Send a rosenpass UDP packet via the NE. The NE responds with
+    /// a 1-byte status (0x00 = sent, anything else = error code).
     func send(_ data: Data) async throws {
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-            connection.send(content: data, completion: .contentProcessed { err in
-                if let err = err { cont.resume(throwing: err) }
-                else { cont.resume() }
-            })
+        var payload = Data()
+        payload.append(0x02) // SEND_RP_UDP
+        payload.append(data)
+        let response = try await sendNE(payload)
+        let code = response.first ?? 0xFF
+        if code != 0x00 {
+            throw RosenpassBridgeError.neSendFailed(code: code)
         }
     }
 
+    /// Block in the NE for up to `timeoutSeconds` waiting for a
+    /// rosenpass UDP datagram from the server. Empty response from
+    /// the NE means timeout/error — we map it onto the existing
+    /// `exceededMessageBudget` error so the runLoop's exponential
+    /// backoff handles it.
     func receive(timeoutSeconds: TimeInterval) async throws -> Data {
-        try await withThrowingTaskGroup(of: Data.self) { group in
-            group.addTask {
-                try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Data, Error>) in
-                    self.connection.receiveMessage { content, _, _, err in
-                        if let err = err { cont.resume(throwing: err); return }
-                        cont.resume(returning: content ?? Data())
-                    }
-                }
-            }
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(timeoutSeconds * 1_000_000_000))
-                throw RosenpassBridgeError.exceededMessageBudget
-            }
-            let result = try await group.next()!
-            group.cancelAll()
-            return result
+        var payload = Data()
+        payload.append(0x03) // RECV_RP_UDP
+        // 1-byte timeout, clamped to 1..255 seconds.
+        let clamped = max(1, min(255, Int(timeoutSeconds.rounded())))
+        payload.append(UInt8(clamped))
+        let response = try await sendNE(payload)
+        if response.isEmpty {
+            throw RosenpassBridgeError.exceededMessageBudget
         }
+        return response
     }
 
+    /// Tear down the NE-side UDP connection between handshakes. Best
+    /// effort — fire-and-forget so we don't extend a handshake's
+    /// happy-path latency by an extra IPC round trip.
     func close() {
-        connection.cancel()
+        let payload = Data([0x04]) // CLOSE_RP_UDP
+        let sendNE = self.sendNE
+        Task {
+            _ = try? await sendNE(payload)
+        }
     }
 }

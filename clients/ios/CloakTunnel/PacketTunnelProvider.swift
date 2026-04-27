@@ -1,49 +1,89 @@
+// SPDX-License-Identifier: MIT
+//
+// Cloak VPN — PacketTunnelProvider for the CloakTunnel NetworkExtension
+// target.
+//
+// 2026-04-27 ROOT-CAUSE FIX (see docs/TRIAGE_2026-04-27.md):
+// Our SwiftPM dep is mullvad/wireguard-apple (mullvad-master). Mullvad's
+// `WireGuardAdapter.start()` was rewritten to support multi-hop and DAITA
+// and in the process REMOVED the `setTunnelNetworkSettings` call that
+// upstream wireguard-apple makes in `start()`. Mullvad expects the host
+// app to install network settings via a higher-level coordinator they
+// don't ship publicly. Without that call, iOS never installs IPs / DNS /
+// routes on the utun, so the wireguard-go data plane runs blind: WG
+// handshake completes (UDP, doesn't traverse utun), keepalives flow
+// (internal heartbeat), but no application traffic enters utun.
+//
+// This file compensates by calling `setTunnelNetworkSettings`
+// EXPLICITLY before `adapter.start`. We can't switch to upstream
+// wireguard-apple as a SwiftPM dep because upstream's Package.swift has
+// been broken since 2023 (declares swift-tools-version:5.3 but uses
+// .macOS(.v12)/.iOS(.v15) which require 5.5+).
+//
+// Layout of this file:
+//   - Lifecycle: startTunnel / stopTunnel
+//   - handleAppMessage: opcode 0x00 GET_RUNTIME_CONFIG, 0x01 SET_PSK
+//   - applyPresharedKey: builds new TunnelConfiguration with PSK and
+//     hands it to WireGuardAdapter.update()
+//   - makeTunnelConfiguration: CloakConfig wire format → WireGuardKit
+//     model
+//   - makeNetworkSettings: TunnelConfiguration → NEPacketTunnelNetwork-
+//     Settings (port of upstream's PacketTunnelSettingsGenerator.
+//     generateNetworkSettings — this is the bit Mullvad's adapter is
+//     missing)
+//
+// Opcodes 0x02-0x04 (Option D rosenpass UDP relay) will be re-added
+// after this file is validated end-to-end with plain WG.
+
 import Foundation
 import Network
 import NetworkExtension
 import os.log
 import WireGuardKit
 
-/// The Network Extension entrypoint. iOS instantiates this when the user
-/// flips the connect toggle (or when the system auto-connects on demand).
-///
-/// Responsibilities:
-///   - Parse our CloakConfig out of the providerConfiguration dictionary
-///     (populated by the main app via TunnelManager.importConfig).
-///   - Build a wg-quick-style tunnel configuration from that.
-///   - Hand it to `WireGuardAdapter`, which owns the wireguard-go data
-///     path and the tun interface.
-///   - Honor PSK updates pushed from the main app via `handleAppMessage`
-///     (this is how Rosenpass-derived post-quantum PSKs reach us — see
-///     docs/IOS_PQC.md for the full story).
-///
-/// What this file deliberately does NOT do:
-///   - Run rosenpass crypto inside the NE. Memory budget is too tight in
-///     the worst case (50 MiB jetsam cap). Rosenpass runs in the main app;
-///     see RosenpassBridge.swift.
 final class PacketTunnelProvider: NEPacketTunnelProvider {
     private let log = OSLog(subsystem: "ai.cloakvpn.CloakVPN.tunnel", category: "tunnel")
 
-    /// The WireGuardKit adapter. nil before startTunnel, non-nil after.
-    private var adapter: WireGuardAdapter?
+    /// The WireGuardKit adapter. Lazily constructed so initialization
+    /// happens on the same thread that drives startTunnel — matches
+    /// upstream's pattern.
+    private lazy var adapter: WireGuardAdapter = {
+        return WireGuardAdapter(with: self) { [weak self] logLevel, message in
+            os_log("wg: %{public}s",
+                   log: self?.log ?? .default,
+                   type: logLevel.osLogType,
+                   message)
+        }
+    }()
 
-    /// The active tunnel config. We keep a copy so PSK rotation can build
-    /// a new TunnelConfiguration with the same peer + interface settings
-    /// but a fresh preshared key.
+    /// The active tunnel configuration. Kept so PSK rotations can build
+    /// a new TunnelConfiguration with the same interface + peer settings
+    /// but a fresh preshared key, then call adapter.update().
     private var currentConfig: TunnelConfiguration?
 
-    /// The IP literal of the rosenpass server (extracted from
-    /// `CloakConfig.rpEndpoint` at startTunnel time). When set, every
-    /// `setTunnelNetworkSettings` call has an `excludedRoutes` entry for
-    /// this IP added before being passed through to the parent. Without
-    /// the exclusion, the WG `0.0.0.0/0, ::/0` AllowedIPs route claims
-    /// EVERY destination — including UDP/9999 to the rosenpass server —
-    /// leaving the main app's rosenpass NWConnection sitting in
-    /// `.waiting` state forever (with `prohibitedInterfaceTypes = [.other]`
-    /// excluding utun, no usable path remains, and iOS does not fall back).
-    /// See docs/IOS_PQC.md "End-to-end smoke test" §8 for the full debug
-    /// story. Cleared in stopTunnel.
+    /// IP literal of the rosenpass server, parsed from
+    /// CloakConfig.rpEndpoint at startTunnel. Used for two things:
+    ///   (1) Adding an `excludedRoute` in `makeNetworkSettings` so iOS
+    ///       doesn't route NE-side traffic to this IP through utun
+    ///       (which would loop the rosenpass UDP socket back into the
+    ///       very tunnel whose PSK it's deriving — chicken/egg).
+    ///   (2) Parsing the same endpoint a second time in
+    ///       `ensureRosenpassConnection` to build the NWConnection.
+    /// nil means PQC is disabled OR rpEndpoint couldn't be parsed; in
+    /// both cases the rosenpass UDP relay is inert.
     private var rosenpassServerIP: String?
+
+    /// NE-side UDP socket to the rosenpass server. Lazily created when
+    /// the host app's RosenpassBridge first asks us to relay traffic
+    /// (opcode 0x02), torn down on opcode 0x04 or stopTunnel.
+    /// Sized for one peer at a time — there's only ever one rosenpass
+    /// concentrator per tunnel.
+    private var rosenpassUDP: NWConnection?
+
+    /// Dispatch queue for the NE-side rosenpass NWConnection's
+    /// callbacks. Separate from the NE's main queue so a slow rosenpass
+    /// receive can't stall WG packet shovelling.
+    private let rosenpassQueue = DispatchQueue(label: "ai.cloakvpn.tunnel.rosenpass")
 
     // MARK: - Lifecycle
 
@@ -53,7 +93,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     ) {
         os_log("startTunnel", log: log, type: .info)
 
-        // 1. Pull our serialized CloakConfig out of providerConfiguration.
+        // Pull the serialized CloakConfig out of the NE's
+        // providerConfiguration dictionary (populated by the host app's
+        // TunnelManager.importConfig).
         guard
             let proto = protocolConfiguration as? NETunnelProviderProtocol,
             let dict = proto.providerConfiguration
@@ -73,25 +115,29 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
-        // Stash the rosenpass server IP so our setTunnelNetworkSettings
-        // override can carve a hole in WireGuard's full-tunnel routing
-        // for it. Only relevant when PQC is enabled — for classical-only
-        // configs the main app never sends to UDP/9999 anyway.
-        if cloakCfg.pqEnabled {
+        // Stash the rosenpass server IP so makeNetworkSettings can carve
+        // out an excludedRoute for it. Inert if PQC is disabled OR
+        // rpEndpoint isn't a parseable host:port — in either case the
+        // rosenpass UDP relay opcodes are no-ops.
+        if cloakCfg.pqEnabled, !cloakCfg.rpEndpoint.isEmpty {
             self.rosenpassServerIP = Self.extractIP(from: cloakCfg.rpEndpoint)
-            if rosenpassServerIP == nil {
+            if self.rosenpassServerIP == nil {
                 os_log("startTunnel: couldn't parse IP from rpEndpoint %{public}s; PQC routing exclude disabled",
                        log: log, type: .error, cloakCfg.rpEndpoint)
+            } else {
+                os_log("startTunnel: PQC excludedRoute target %{public}s",
+                       log: log, type: .info, self.rosenpassServerIP!)
             }
+        } else {
+            self.rosenpassServerIP = nil
         }
 
-        // 2. Build a WireGuardKit TunnelConfiguration directly from
-        //    CloakConfig fields. Mullvad's wireguard-apple fork exposes
-        //    only `WireGuardKit` and `WireGuardKitTypes` as public
-        //    products — the wg-quick parser lives in their internal
-        //    `Shared` module, not reachable from here. So we wire each
-        //    field through manually. (Side benefit: tighter error
-        //    messages than the parser would give.)
+        // Build a WireGuardKit TunnelConfiguration directly from
+        // CloakConfig fields. Mullvad's wireguard-apple fork exposes
+        // only `WireGuardKit` and `WireGuardKitTypes` as public products
+        // — the wg-quick parser lives in their internal `Shared`
+        // module, not reachable from here. So we wire each field
+        // through manually. See `makeTunnelConfiguration` below.
         let tunnelCfg: TunnelConfiguration
         do {
             tunnelCfg = try Self.makeTunnelConfiguration(from: cloakCfg)
@@ -101,29 +147,51 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             completionHandler(error)
             return
         }
-
-        // 3. Build the adapter. The closure is the wireguard-go log sink.
-        let adapter = WireGuardAdapter(with: self) { [weak self] _, message in
-            // wireguard-go logs are noisy; log at debug. NSLog works inside
-            // the NE without an OSLog import; this also surfaces in
-            // Console.app filtered by process name "CloakTunnel".
-            os_log("wg: %{public}s", log: self?.log ?? .default, type: .debug, message)
-        }
-        self.adapter = adapter
         self.currentConfig = tunnelCfg
 
-        // 4. Start the tunnel. WireGuardKit handles setTunnelNetworkSettings
-        //    internally based on the InterfaceConfiguration we passed in
-        //    — we don't need to build NEPacketTunnelNetworkSettings ourselves.
-        adapter.start(tunnelConfiguration: tunnelCfg) { adapterError in
-            if let adapterError = adapterError {
-                os_log("WireGuardAdapter.start failed: %{public}s",
-                       log: self.log, type: .error, String(describing: adapterError))
-                completionHandler(adapterError)
+        // ROOT-CAUSE FIX: install network settings on the utun BEFORE
+        // adapter.start. Upstream's WireGuardAdapter does this for you;
+        // Mullvad's fork (which we depend on via SwiftPM) does NOT.
+        // Without this call, the utun has no IPs/routes/DNS and iOS
+        // routes nothing into the tunnel even though wireguard-go is
+        // running and WG handshakes complete.
+        let networkSettings = Self.makeNetworkSettings(
+            from: tunnelCfg,
+            rosenpassServerIP: self.rosenpassServerIP
+        )
+        os_log("setTunnelNetworkSettings: applying", log: log, type: .info)
+        setTunnelNetworkSettings(networkSettings) { [weak self] settingsError in
+            guard let self = self else { return }
+            if let settingsError = settingsError {
+                os_log("setTunnelNetworkSettings failed: %{public}s",
+                       log: self.log, type: .error,
+                       String(describing: settingsError))
+                completionHandler(settingsError)
                 return
             }
-            os_log("tunnel up", log: self.log, type: .info)
-            completionHandler(nil)
+            os_log("setTunnelNetworkSettings: applied; starting adapter",
+                   log: self.log, type: .info)
+
+            // Now hand off to WireGuardAdapter. With Mullvad's fork the
+            // adapter will:
+            //   1. NOT call setTunnelNetworkSettings (we did it above)
+            //   2. Resolve endpoints, build the wg UAPI config string
+            //   3. Call wgTurnOnIAN to start the wireguard-go data plane
+            //      against the utun fd we already configured
+            self.adapter.start(tunnelConfiguration: tunnelCfg) { [weak self] adapterError in
+                guard let self = self else { return }
+                if let adapterError = adapterError {
+                    os_log("WireGuardAdapter.start failed: %{public}s",
+                           log: self.log, type: .error,
+                           String(describing: adapterError))
+                    completionHandler(adapterError)
+                    return
+                }
+                let ifaceName = self.adapter.interfaceName ?? "unknown"
+                os_log("tunnel up on interface %{public}s",
+                       log: self.log, type: .info, ifaceName)
+                completionHandler(nil)
+            }
         }
     }
 
@@ -132,178 +200,291 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler: @escaping () -> Void
     ) {
         os_log("stopTunnel reason=%d", log: log, type: .info, reason.rawValue)
-        guard let adapter = adapter else {
-            completionHandler()
-            return
-        }
-        adapter.stop { error in
+        // Tear down the rosenpass UDP socket BEFORE stopping the
+        // adapter — otherwise its callback queue could fire after the
+        // NE process has been told to terminate.
+        closeRosenpassConnection()
+        self.rosenpassServerIP = nil
+        adapter.stop { [weak self] error in
             if let error = error {
                 os_log("adapter.stop error: %{public}s",
-                       log: self.log, type: .error, String(describing: error))
+                       log: self?.log ?? .default, type: .error,
+                       String(describing: error))
             }
-            self.adapter = nil
-            self.currentConfig = nil
-            self.rosenpassServerIP = nil
+            self?.currentConfig = nil
             completionHandler()
         }
-    }
-
-    // MARK: - Tunnel network settings injection
-
-    /// Intercepts every `setTunnelNetworkSettings` call WireGuardKit makes
-    /// (initial tunnel-up + every PSK rotation re-key) and adds an
-    /// `excludedRoutes` entry for the rosenpass server's IP before passing
-    /// through to the parent. This is the surgical, Mullvad-pattern
-    /// alternative to manually carving 192.0.0.0/4 out of the peer's
-    /// AllowedIPs in the wire-format config:
-    ///
-    ///   - Server-side configs stay clean — `add-peer.sh` writes the usual
-    ///     `0.0.0.0/0, ::/0` and we don't lose tunnel coverage for any
-    ///     unrelated IPs.
-    ///   - The exclusion is reapplied on every settings write, so PSK
-    ///     rotations don't accidentally drop it.
-    ///   - Only the rosenpass server's exact `/32` (IPv4) or `/128` (IPv6)
-    ///     is excluded — strictly the minimum hole needed.
-    ///
-    /// If `rosenpassServerIP` is nil (PQC disabled or rpEndpoint
-    /// unparseable), we pass the settings through unmodified and the
-    /// behavior degrades to classical-only WG.
-    override func setTunnelNetworkSettings(
-        _ tunnelNetworkSettings: NETunnelNetworkSettings?,
-        completionHandler: ((Error?) -> Void)? = nil
-    ) {
-        if let settings = tunnelNetworkSettings as? NEPacketTunnelNetworkSettings,
-           let serverIP = self.rosenpassServerIP {
-            Self.injectRosenpassExcludedRoute(into: settings, ip: serverIP, log: log)
-        }
-        super.setTunnelNetworkSettings(tunnelNetworkSettings, completionHandler: completionHandler)
-    }
-
-    /// Mutates the given settings to add a single `/32` (or `/128`) excluded
-    /// route for the rosenpass server's IP. Idempotent — checking via
-    /// destinationAddress equality avoids duplicate entries on re-keys.
-    private static func injectRosenpassExcludedRoute(
-        into settings: NEPacketTunnelNetworkSettings,
-        ip: String,
-        log: OSLog
-    ) {
-        if let v4 = IPv4Address(ip) {
-            let route = NEIPv4Route(destinationAddress: ip, subnetMask: "255.255.255.255")
-            let ipv4 = settings.ipv4Settings ?? NEIPv4Settings(addresses: [], subnetMasks: [])
-            var existing = ipv4.excludedRoutes ?? []
-            if !existing.contains(where: { $0.destinationAddress == ip }) {
-                existing.append(route)
-                ipv4.excludedRoutes = existing
-                settings.ipv4Settings = ipv4
-                os_log("excluded route added for rosenpass server %{public}s/32",
-                       log: log, type: .info, ip)
-            }
-            _ = v4 // silence unused-binding warning while still validating parse
-        } else if let v6 = IPv6Address(ip) {
-            let route = NEIPv6Route(destinationAddress: ip, networkPrefixLength: 128)
-            let ipv6 = settings.ipv6Settings ?? NEIPv6Settings(addresses: [], networkPrefixLengths: [])
-            var existing = ipv6.excludedRoutes ?? []
-            if !existing.contains(where: { $0.destinationAddress == ip }) {
-                existing.append(route)
-                ipv6.excludedRoutes = existing
-                settings.ipv6Settings = ipv6
-                os_log("excluded route added for rosenpass server %{public}s/128",
-                       log: log, type: .info, ip)
-            }
-            _ = v6
-        } else {
-            os_log("rosenpass server IP %{public}s parsed as neither v4 nor v6 — exclude skipped",
-                   log: log, type: .error, ip)
-        }
-    }
-
-    /// Parse the host part of an "IP:port" or "[IPv6]:port" string. Returns
-    /// only the host substring; intentionally does NOT do DNS resolution
-    /// (we'd need to do that asynchronously and synchronizing with
-    /// startTunnel adds complexity for negligible benefit — `add-peer.sh`
-    /// always writes a literal IP into rpEndpoint). If/when we move to
-    /// DNS-based endpoints, replace this with NWPathMonitor or
-    /// CFHostStartInfoResolution-based resolution.
-    private static func extractIP(from endpoint: String) -> String? {
-        // Strip port. IPv6 endpoints are bracketed: "[::1]:9999".
-        if endpoint.hasPrefix("[") {
-            // [v6]:port form
-            guard let close = endpoint.firstIndex(of: "]") else { return nil }
-            let host = String(endpoint[endpoint.index(after: endpoint.startIndex)..<close])
-            return IPv6Address(host) != nil ? host : nil
-        }
-        // v4-style host:port — split on the LAST colon to be safe with
-        // bare-IPv6 (no brackets, no port) inputs, which we then validate.
-        if let colon = endpoint.lastIndex(of: ":") {
-            let host = String(endpoint[..<colon])
-            if IPv4Address(host) != nil { return host }
-            // Could be a bare IPv6 with no port — try the whole string
-            if IPv6Address(endpoint) != nil { return endpoint }
-            return nil
-        }
-        // No port at all — assume bare host, validate as IP
-        if IPv4Address(endpoint) != nil { return endpoint }
-        if IPv6Address(endpoint) != nil { return endpoint }
-        return nil
     }
 
     // MARK: - PSK rotation (called from the main app via sendProviderMessage)
 
     /// Receives messages from the main app process.
     ///
-    /// Wire format (kept dumb on purpose so it survives across OS versions):
+    /// Wire format (kept dumb on purpose so it survives across OS
+    /// versions and matches upstream's pattern of a single first-byte
+    /// opcode):
     ///
     ///   First byte = opcode:
-    ///     0x01 = "set preshared key": the next 32 bytes are the new PSK.
+    ///     0x00 = "get runtime config" (upstream-compat; returns UAPI
+    ///            config string for diagnostics)
+    ///     0x01 = "set preshared key": the next 32 bytes are the new
+    ///            PSK from rosenpass. Response is single byte: 0 = ok,
+    ///            non-zero = error code.
     ///
-    /// Anything else is logged and dropped. We respond with a single byte:
-    /// 0 = ok, non-zero = error code.
+    /// Anything else is logged and dropped.
+    ///
+    /// NOTE: opcodes 0x02-0x04 (the Option D rosenpass UDP relay we
+    /// shipped on 2026-04-26) are temporarily removed here. They will
+    /// be re-added on top of this known-working base when PQC is
+    /// re-enabled. For now: plain WG.
     override func handleAppMessage(
         _ messageData: Data,
-        completionHandler: ((Data?) -> Void)?
+        completionHandler: ((Data?) -> Void)? = nil
     ) {
+        guard let completionHandler = completionHandler else { return }
         guard let opcode = messageData.first else {
             os_log("handleAppMessage: empty payload", log: log, type: .error)
-            completionHandler?(Data([0xFF]))
+            completionHandler(Data([0xFF]))
             return
         }
 
         switch opcode {
+        case 0x00: // GET_RUNTIME_CONFIG (upstream-compat diagnostic path)
+            adapter.getRuntimeConfiguration { settings in
+                completionHandler(settings?.data(using: .utf8))
+            }
+
         case 0x01: // SET_PSK
             let psk = messageData.dropFirst()
             guard psk.count == 32 else {
                 os_log("SET_PSK: wrong PSK length %d (want 32)",
                        log: log, type: .error, psk.count)
-                completionHandler?(Data([0xFE]))
+                completionHandler(Data([0xFE]))
                 return
             }
             applyPresharedKey(Data(psk)) { ok in
-                completionHandler?(Data([ok ? 0x00 : 0xFD]))
+                completionHandler(Data([ok ? 0x00 : 0xFD]))
             }
+
+        case 0x02: // SEND_RP_UDP
+            // payload = N rosenpass UDP bytes for the rosenpass server
+            // response = 1 byte (0x00 ok / 0xEE failed)
+            let payload = Data(messageData.dropFirst())
+            sendRosenpassUDP(payload) { [weak self] err in
+                if let err = err {
+                    os_log("SEND_RP_UDP failed: %{public}s",
+                           log: self?.log ?? .default, type: .error,
+                           String(describing: err))
+                    completionHandler(Data([0xEE]))
+                } else {
+                    completionHandler(Data([0x00]))
+                }
+            }
+
+        case 0x03: // RECV_RP_UDP
+            // payload = optional 1-byte timeoutSec (1..255), default 8s
+            // response = N bytes of one rosenpass UDP datagram, or empty
+            //            on timeout/error (host side maps to budget err)
+            let timeoutSec: Int
+            if messageData.count >= 2 {
+                timeoutSec = Int(messageData[messageData.startIndex + 1])
+            } else {
+                timeoutSec = 8
+            }
+            receiveRosenpassUDP(timeoutSeconds: timeoutSec) { [weak self] data in
+                if let data = data {
+                    completionHandler(data)
+                } else {
+                    os_log("RECV_RP_UDP timed out after %ds",
+                           log: self?.log ?? .default, type: .info, timeoutSec)
+                    completionHandler(Data())
+                }
+            }
+
+        case 0x04: // CLOSE_RP_UDP
+            // payload = (none); tear down the NE-side rosenpass socket
+            // between handshakes so each new handshake gets a fresh
+            // ephemeral source port.
+            closeRosenpassConnection()
+            completionHandler(Data([0x00]))
 
         default:
             os_log("handleAppMessage: unknown opcode 0x%02x",
                    log: log, type: .error, opcode)
-            completionHandler?(Data([0xFC]))
+            completionHandler(Data([0xFC]))
         }
     }
 
-    /// Apply a Rosenpass-derived PSK by rebuilding the tunnel config with
-    /// the new preshared key on the (single) peer and asking WireGuardKit
-    /// to swap it in. WireGuardKit reuses the underlying tun and only
-    /// reconfigures the wireguard-go session, so this is cheap (~ms) and
-    /// doesn't drop in-flight UDP.
+    // MARK: - Rosenpass UDP relay (NE-side)
+
+    /// Lazily create or return the existing UDP connection to the
+    /// rosenpass server. Combined with the `excludedRoutes` carve-out
+    /// installed by `setTunnelNetworkSettings`, this reliably routes
+    /// rosenpass UDP over the physical interface even with
+    /// `includeAllNetworks = true`.
+    private func ensureRosenpassConnection(_ done: @escaping (NWConnection?, Error?) -> Void) {
+        if let c = rosenpassUDP, c.state == .ready {
+            rosenpassQueue.async { done(c, nil) }
+            return
+        }
+        rosenpassUDP?.cancel()
+        rosenpassUDP = nil
+
+        guard let proto = protocolConfiguration as? NETunnelProviderProtocol,
+              let dict = proto.providerConfiguration,
+              let cfg = try? CloakConfig(dict: dict) else {
+            done(nil, PacketTunnelError.missingProtocol)
+            return
+        }
+        // Build NWEndpoint from rpEndpoint. Explicit `Network.` prefix
+        // because NetworkExtension also exports an NWEndpoint symbol
+        // (an older NSObject-based class) and both modules are
+        // imported in this file — without the qualification the
+        // compiler errors with "'NWEndpoint' is ambiguous".
+        let endpoint: Network.NWEndpoint
+        if cfg.rpEndpoint.hasPrefix("[") {
+            // [v6]:port form
+            guard let close = cfg.rpEndpoint.firstIndex(of: "]"),
+                  let lastColon = cfg.rpEndpoint.lastIndex(of: ":"),
+                  lastColon > close,
+                  let port = UInt16(cfg.rpEndpoint[cfg.rpEndpoint.index(after: lastColon)...])
+            else {
+                done(nil, PacketTunnelError.badField("rpEndpoint", cfg.rpEndpoint))
+                return
+            }
+            let host = String(cfg.rpEndpoint[cfg.rpEndpoint.index(after: cfg.rpEndpoint.startIndex)..<close])
+            endpoint = Network.NWEndpoint.hostPort(
+                host: Network.NWEndpoint.Host(host),
+                port: Network.NWEndpoint.Port(rawValue: port)!
+            )
+        } else {
+            guard let lastColon = cfg.rpEndpoint.lastIndex(of: ":"),
+                  let port = UInt16(cfg.rpEndpoint[cfg.rpEndpoint.index(after: lastColon)...])
+            else {
+                done(nil, PacketTunnelError.badField("rpEndpoint", cfg.rpEndpoint))
+                return
+            }
+            let host = String(cfg.rpEndpoint[..<lastColon])
+            endpoint = Network.NWEndpoint.hostPort(
+                host: Network.NWEndpoint.Host(host),
+                port: Network.NWEndpoint.Port(rawValue: port)!
+            )
+        }
+
+        let params = NWParameters.udp
+        // Even though we're inside the NE (and exempt from the NECP
+        // host-app rules that ban tunnel-bypass under
+        // includeAllNetworks=true), we still need to keep this socket
+        // off utun. utun is a virtual interface owned by US; sending
+        // rosenpass UDP through it would loop the packets right back
+        // into the WG tunnel whose PSK we're trying to derive.
+        params.prohibitedInterfaceTypes = [.other]
+        let conn = NWConnection(to: endpoint, using: params)
+        self.rosenpassUDP = conn
+
+        var fired = false
+        conn.stateUpdateHandler = { [weak self, weak conn] state in
+            guard let conn = conn else { return }
+            switch state {
+            case .ready:
+                if !fired {
+                    fired = true
+                    os_log("rosenpass UDP ready (NE-side)",
+                           log: self?.log ?? .default, type: .info)
+                    done(conn, nil)
+                }
+            case .failed(let err):
+                if !fired {
+                    fired = true
+                    os_log("rosenpass UDP failed: %{public}s",
+                           log: self?.log ?? .default, type: .error,
+                           String(describing: err))
+                    done(nil, err)
+                }
+            case .cancelled:
+                if !fired {
+                    fired = true
+                    done(nil, CancellationError())
+                }
+            default:
+                break
+            }
+        }
+        conn.start(queue: rosenpassQueue)
+    }
+
+    /// Send a rosenpass UDP packet via the NE-side socket.
+    private func sendRosenpassUDP(_ data: Data, completion: @escaping (Error?) -> Void) {
+        ensureRosenpassConnection { conn, err in
+            if let err = err {
+                completion(err)
+                return
+            }
+            guard let conn = conn else {
+                completion(PacketTunnelError.missingProtocol)
+                return
+            }
+            conn.send(content: data, completion: .contentProcessed { sendErr in
+                completion(sendErr)
+            })
+        }
+    }
+
+    /// Receive a single UDP datagram from the rosenpass server, with a
+    /// timeout. Calls back with nil on timeout or error so the host
+    /// side maps it to its existing exceeded-budget error.
+    private func receiveRosenpassUDP(timeoutSeconds: Int, completion: @escaping (Data?) -> Void) {
+        ensureRosenpassConnection { [weak self] conn, _ in
+            guard let conn = conn, let self = self else {
+                completion(nil)
+                return
+            }
+            // Race the receive against a wall-clock timeout. Whichever
+            // fires first wins; the loser's callback is suppressed.
+            var settled = false
+            let lock = NSLock()
+            func tryComplete(_ data: Data?) {
+                lock.lock()
+                defer { lock.unlock() }
+                if settled { return }
+                settled = true
+                completion(data)
+            }
+            conn.receiveMessage { content, _, _, recvErr in
+                if let recvErr = recvErr {
+                    os_log("rosenpass UDP receive error: %{public}s",
+                           log: self.log, type: .error,
+                           String(describing: recvErr))
+                    tryComplete(nil)
+                    return
+                }
+                tryComplete(content)
+            }
+            self.rosenpassQueue.asyncAfter(deadline: .now() + .seconds(timeoutSeconds)) {
+                tryComplete(nil)
+            }
+        }
+    }
+
+    /// Tear down the NE-side rosenpass UDP connection. Called on
+    /// CLOSE_RP_UDP from the host app (between handshakes) and on
+    /// stopTunnel.
+    private func closeRosenpassConnection() {
+        rosenpassUDP?.cancel()
+        rosenpassUDP = nil
+    }
+
+    /// Apply a Rosenpass-derived PSK by rebuilding the tunnel config
+    /// with the new preshared key on the (single) peer and asking
+    /// WireGuardKit to swap it in. WireGuardKit reuses the underlying
+    /// utun and only reconfigures the wireguard-go session, so this is
+    /// cheap (~ms) and doesn't drop in-flight UDP.
     private func applyPresharedKey(
         _ psk: Data,
         completion: @escaping (Bool) -> Void
     ) {
         guard let current = currentConfig else {
             os_log("applyPresharedKey: no current config", log: log, type: .error)
-            completion(false)
-            return
-        }
-        guard let adapter = adapter else {
-            os_log("applyPresharedKey: no adapter", log: log, type: .error)
             completion(false)
             return
         }
@@ -325,7 +506,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         adapter.update(tunnelConfiguration: updated) { [weak self] error in
             if let error = error {
                 os_log("applyPresharedKey adapter.update failed: %{public}s",
-                       log: self?.log ?? .default, type: .error, String(describing: error))
+                       log: self?.log ?? .default, type: .error,
+                       String(describing: error))
                 completion(false)
                 return
             }
@@ -335,6 +517,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
     }
 }
+
+// MARK: - Errors
 
 enum PacketTunnelError: Error, LocalizedError {
     case missingProtocol
@@ -350,15 +534,27 @@ enum PacketTunnelError: Error, LocalizedError {
     }
 }
 
+// MARK: - WireGuardLogLevel → OSLogType
+
+private extension WireGuardLogLevel {
+    var osLogType: OSLogType {
+        switch self {
+        case .verbose: return .debug
+        case .error: return .error
+        }
+    }
+}
+
 // MARK: - CloakConfig → WireGuardKit TunnelConfiguration
 
 extension PacketTunnelProvider {
-    /// Translate our wire-format CloakConfig (raw base64 strings, "host:port"
-    /// strings, "10.0.0.1/24" strings) into the strongly-typed
-    /// WireGuardKit model that WireGuardAdapter can consume.
+    /// Translate our wire-format CloakConfig (raw base64 strings,
+    /// "host:port" strings, "10.0.0.1/24" strings) into the
+    /// strongly-typed WireGuardKit model that WireGuardAdapter can
+    /// consume.
     ///
-    /// Throws `PacketTunnelError.badField` on the first malformed input so
-    /// the user sees a precise error rather than a wg-quick parser's
+    /// Throws `PacketTunnelError.badField` on the first malformed input
+    /// so the user sees a precise error rather than a wg-quick parser's
     /// cryptic message.
     static func makeTunnelConfiguration(from cfg: CloakConfig) throws -> TunnelConfiguration {
         // ---- Interface (the local end of the tunnel) ----
@@ -377,7 +573,8 @@ extension PacketTunnelProvider {
         }
         iface.addresses = [v4, v6]
 
-        // DNS — drop any malformed entries with a log, don't fail the whole tunnel.
+        // DNS — drop any malformed entries with a log, don't fail the
+        // whole tunnel.
         iface.dns = cfg.dns.compactMap { DNSServer(from: $0) }
         iface.mtu = 1420 // safe default for WireGuard over most transports
 
@@ -405,5 +602,167 @@ extension PacketTunnelProvider {
         // be installed later via handleAppMessage → applyPresharedKey.
 
         return TunnelConfiguration(name: "Cloak", interface: iface, peers: [peer])
+    }
+}
+
+// MARK: - TunnelConfiguration → NEPacketTunnelNetworkSettings
+//
+// Port of upstream wireguard-apple's
+// PacketTunnelSettingsGenerator.generateNetworkSettings, with logic kept
+// identical so the routing/DNS behaviour matches the official WG iOS app
+// exactly. We need this because Mullvad's WireGuardAdapter doesn't call
+// setTunnelNetworkSettings on our behalf.
+//
+// SPDX-License-Identifier: MIT (the inlined logic below is © 2018-2023
+// WireGuard LLC, MIT-licensed in upstream wireguard-apple).
+extension PacketTunnelProvider {
+    static func makeNetworkSettings(
+        from tunnelCfg: TunnelConfiguration,
+        rosenpassServerIP: String? = nil
+    ) -> NEPacketTunnelNetworkSettings {
+        // iOS requires a tunnelRemoteAddress, but WG can have many or
+        // zero peers — 127.0.0.1 is the upstream-blessed placeholder.
+        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
+
+        // ---- DNS ----
+        if !tunnelCfg.interface.dnsSearch.isEmpty || !tunnelCfg.interface.dns.isEmpty {
+            let dnsServerStrings = tunnelCfg.interface.dns.map { $0.stringRepresentation }
+            let dnsSettings = NEDNSSettings(servers: dnsServerStrings)
+            dnsSettings.searchDomains = tunnelCfg.interface.dnsSearch
+            if !tunnelCfg.interface.dns.isEmpty {
+                // Force ALL DNS through the tunnel. Without this, iOS
+                // can leak DNS to the captive resolver via mDNSResponder.
+                dnsSettings.matchDomains = [""]
+            }
+            settings.dnsSettings = dnsSettings
+        }
+
+        // ---- MTU ----
+        // 1280 is upstream's chosen-by-pain default for iOS (see
+        // PacketTunnelSettingsGenerator comment about "broken networks
+        // out there"). If our config specifies a non-zero MTU, honor it.
+        let mtu = tunnelCfg.interface.mtu ?? 0
+        if mtu == 0 {
+            settings.mtu = NSNumber(value: 1280)
+        } else {
+            settings.mtu = NSNumber(value: mtu)
+        }
+
+        // ---- Local interface addresses ----
+        var ipv4Addresses: [(addr: String, mask: String)] = []
+        var ipv6Addresses: [(addr: String, prefix: NSNumber)] = []
+        for range in tunnelCfg.interface.addresses {
+            if range.address is IPv4Address {
+                ipv4Addresses.append(("\(range.address)", "\(range.subnetMask())"))
+            } else if range.address is IPv6Address {
+                ipv6Addresses.append(("\(range.address)",
+                                     NSNumber(value: range.networkPrefixLength)))
+            }
+        }
+
+        // ---- Included routes (= what gets routed INTO the tunnel) ----
+        var ipv4Routes = [NEIPv4Route]()
+        var ipv6Routes = [NEIPv6Route]()
+
+        // First: routes to our own interface subnets, with us as gateway.
+        for range in tunnelCfg.interface.addresses {
+            if range.address is IPv4Address {
+                let route = NEIPv4Route(destinationAddress: "\(range.maskedAddress())",
+                                        subnetMask: "\(range.subnetMask())")
+                route.gatewayAddress = "\(range.address)"
+                ipv4Routes.append(route)
+            } else if range.address is IPv6Address {
+                let route = NEIPv6Route(destinationAddress: "\(range.maskedAddress())",
+                                        networkPrefixLength: NSNumber(value: range.networkPrefixLength))
+                route.gatewayAddress = "\(range.address)"
+                ipv6Routes.append(route)
+            }
+        }
+
+        // Then: each peer's allowedIPs becomes an included route.
+        // For full-tunnel WG (allowedIPs = 0.0.0.0/0, ::/0) this is what
+        // installs the default route into the tunnel. THIS is the line
+        // whose absence was breaking us.
+        for peer in tunnelCfg.peers {
+            for range in peer.allowedIPs {
+                if range.address is IPv4Address {
+                    ipv4Routes.append(NEIPv4Route(destinationAddress: "\(range.address)",
+                                                  subnetMask: "\(range.subnetMask())"))
+                } else if range.address is IPv6Address {
+                    ipv6Routes.append(NEIPv6Route(destinationAddress: "\(range.address)",
+                                                  networkPrefixLength: NSNumber(value: range.networkPrefixLength)))
+                }
+            }
+        }
+
+        // ---- Excluded routes (= what gets routed AROUND the tunnel) ----
+        // Carve out the rosenpass server's IP so the NE-side rosenpass
+        // UDP socket goes over the physical interface, not utun. Without
+        // this, NE-side NWConnection traffic to the rosenpass server
+        // would loop back into our own utun (since 0.0.0.0/0 is in
+        // includedRoutes for full-tunnel mode), creating a chicken/egg
+        // where the PSK derivation tries to flow through the tunnel
+        // whose PSK it's deriving.
+        var ipv4ExcludedRoutes = [NEIPv4Route]()
+        var ipv6ExcludedRoutes = [NEIPv6Route]()
+        if let ipStr = rosenpassServerIP {
+            if let _ = IPv4Address(ipStr) {
+                ipv4ExcludedRoutes.append(NEIPv4Route(destinationAddress: ipStr,
+                                                     subnetMask: "255.255.255.255"))
+            } else if let _ = IPv6Address(ipStr) {
+                ipv6ExcludedRoutes.append(NEIPv6Route(destinationAddress: ipStr,
+                                                     networkPrefixLength: NSNumber(value: 128)))
+            }
+            // (Neither v4 nor v6 → already logged at startTunnel; skip
+            // exclusion silently here.)
+        }
+
+        // ---- IPv4 settings ----
+        let v4 = NEIPv4Settings(addresses: ipv4Addresses.map { $0.addr },
+                                subnetMasks: ipv4Addresses.map { $0.mask })
+        v4.includedRoutes = ipv4Routes
+        if !ipv4ExcludedRoutes.isEmpty {
+            v4.excludedRoutes = ipv4ExcludedRoutes
+        }
+        settings.ipv4Settings = v4
+
+        // ---- IPv6 settings ----
+        let v6 = NEIPv6Settings(addresses: ipv6Addresses.map { $0.addr },
+                                networkPrefixLengths: ipv6Addresses.map { $0.prefix })
+        v6.includedRoutes = ipv6Routes
+        if !ipv6ExcludedRoutes.isEmpty {
+            v6.excludedRoutes = ipv6ExcludedRoutes
+        }
+        settings.ipv6Settings = v6
+
+        return settings
+    }
+
+    /// Parse a "host:port" or "[v6]:port" endpoint string and return the
+    /// IP literal. Returns nil if the host part isn't a parseable IPv4
+    /// or IPv6 literal — DNS resolution is intentionally NOT done here
+    /// because excludedRoutes need a literal IP, not a hostname.
+    /// If you switch to DNS-based rpEndpoint values, you'll need to
+    /// resolve at startTunnel and re-resolve on roaming.
+    static func extractIP(from endpoint: String) -> String? {
+        // [v6]:port form
+        if endpoint.hasPrefix("[") {
+            guard let close = endpoint.firstIndex(of: "]") else { return nil }
+            let host = String(endpoint[endpoint.index(after: endpoint.startIndex)..<close])
+            return IPv6Address(host) != nil ? host : nil
+        }
+        // v4-style host:port — split on the LAST colon to be safe with
+        // bare-IPv6 (no brackets, no port) inputs, which we then validate.
+        if let colon = endpoint.lastIndex(of: ":") {
+            let host = String(endpoint[..<colon])
+            if IPv4Address(host) != nil { return host }
+            // Could be a bare IPv6 with no port — try the whole string.
+            if IPv6Address(endpoint) != nil { return endpoint }
+            return nil
+        }
+        // No colon at all — try parsing the whole thing as a literal.
+        if IPv4Address(endpoint) != nil { return endpoint }
+        if IPv6Address(endpoint) != nil { return endpoint }
+        return nil
     }
 }

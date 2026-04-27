@@ -50,7 +50,8 @@ apt-get install -y -qq \
   curl ca-certificates gnupg ufw \
   wireguard wireguard-tools \
   qrencode jq iproute2 \
-  build-essential pkg-config
+  build-essential pkg-config \
+  inotify-tools
 
 # ---------- Install Rosenpass --------------------------------------------
 # CRITICAL: the rosenpass binary on the server MUST match the rosenpass
@@ -213,6 +214,101 @@ if [[ -x /usr/bin/rosenpass ]]; then
   sed -i 's|/usr/local/bin/rosenpass|/usr/bin/rosenpass|' /etc/systemd/system/cloak-rosenpass.service
 fi
 
+# ---------- PSK installer (rosenpass → wg0 bridge) -----------------------
+# The rosenpass daemon emits a fresh 32-byte PSK to /run/rosenpass/psk-<peer>
+# every ~120s after a successful PQ key exchange — but rosenpass does NOT
+# itself install that PSK into wg0. Without this watcher service the PQ
+# handshake completes server-side but the new PSK never reaches the
+# WireGuard interface, so after rotation #1 the server's wg PSK and the
+# client's wg PSK diverge → all encrypted packets fail to decrypt → the
+# tunnel silently goes black.
+#
+# The watcher is generic over peers: it derives the peer name from the
+# psk-<name> filename and looks up the WG pubkey at /etc/wireguard/<name>.pub.
+# Adding a new peer via add-peer.sh "just works" — no per-peer service.
+
+log "Cleaning up any pre-generic per-peer psk-installer scripts (us-west-1 manual deployment)"
+find /usr/local/bin -maxdepth 1 -name 'cloak-psk-installer-*.sh' -delete 2>/dev/null || true
+
+log "Installing /usr/local/bin/cloak-psk-installer.sh"
+cat >/usr/local/bin/cloak-psk-installer.sh <<'PSK_INSTALLER_EOF'
+#!/usr/bin/env bash
+# Cloak VPN — Post-quantum PSK installer.
+# Watches /run/rosenpass/psk-<peer> via inotify, applies each new PSK to
+# the matching wg peer via `wg set <iface> peer <pubkey> preshared-key
+# <psk-file>`. Peer-name → WG pubkey lookup: /etc/wireguard/<peer>.pub.
+# Generic over peers; install once per server. See repo's
+# server/scripts/cloak-psk-installer.sh for the canonical (commented)
+# version — this heredoc copy is kept in sync at deploy time.
+
+set -euo pipefail
+
+WG_IFACE="${WG_IFACE:-wg0}"
+PSK_DIR="${PSK_DIR:-/run/rosenpass}"
+PUBKEY_DIR="${PUBKEY_DIR:-/etc/wireguard}"
+
+log() { printf "[psk-installer] %s\n" "$*"; }
+
+apply_psk() {
+  local psk_file="$1"
+  local fname
+  fname=$(basename "$psk_file")
+  if [[ ! "$fname" =~ ^psk-(.+)$ ]]; then
+    return 0
+  fi
+  local peer_name="${BASH_REMATCH[1]}"
+  local pubkey_file="$PUBKEY_DIR/$peer_name.pub"
+  if [[ ! -f "$pubkey_file" ]]; then
+    log "no WG pubkey at $pubkey_file for peer '$peer_name' — skipping"
+    return 0
+  fi
+  local pubkey
+  pubkey=$(<"$pubkey_file")
+  if wg set "$WG_IFACE" peer "$pubkey" preshared-key "$psk_file"; then
+    log "PSK rotated for $peer_name"
+  else
+    log "ERROR: wg set failed for peer '$peer_name' (pubkey=$pubkey)"
+    return 1
+  fi
+}
+
+log "scanning $PSK_DIR for existing PSK files"
+shopt -s nullglob
+for f in "$PSK_DIR"/psk-*; do
+  apply_psk "$f" || true
+done
+shopt -u nullglob
+
+log "watching $PSK_DIR for new PSK files"
+exec inotifywait -m \
+  -e close_write \
+  -e moved_to \
+  --format '%w%f' \
+  "$PSK_DIR" \
+  | while read -r path; do
+      apply_psk "$path" || true
+    done
+PSK_INSTALLER_EOF
+chmod 755 /usr/local/bin/cloak-psk-installer.sh
+
+log "Installing /etc/systemd/system/cloak-psk-installer.service"
+cat >/etc/systemd/system/cloak-psk-installer.service <<EOF
+[Unit]
+Description=Cloak VPN — PSK installer (rosenpass → wg$WG_IFACE bridge)
+After=network-online.target wg-quick@$WG_IFACE.service cloak-rosenpass.service
+Requires=wg-quick@$WG_IFACE.service
+PartOf=cloak-rosenpass.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloak-psk-installer.sh
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 # ---------- UFW firewall --------------------------------------------------
 log "Configuring UFW firewall (deny-by-default, forward wg0 → eth0)"
 ufw --force reset >/dev/null
@@ -253,10 +349,15 @@ systemctl reset-failed cloak-rosenpass.service 2>/dev/null || true
 
 systemctl enable --now wg-quick@$WG_IFACE.service
 systemctl enable --now cloak-rosenpass.service
+# psk-installer is PartOf= cloak-rosenpass, so it'll come and go with the
+# rosenpass daemon — but we still enable it explicitly so a manual
+# `systemctl start cloak-psk-installer` works as expected.
+systemctl enable --now cloak-psk-installer.service
 
 sleep 2
-systemctl --no-pager --full status wg-quick@$WG_IFACE.service | head -n 12 || true
-systemctl --no-pager --full status cloak-rosenpass.service  | head -n 12 || true
+systemctl --no-pager --full status wg-quick@$WG_IFACE.service     | head -n 12 || true
+systemctl --no-pager --full status cloak-rosenpass.service        | head -n 12 || true
+systemctl --no-pager --full status cloak-psk-installer.service    | head -n 12 || true
 
 # ---------- Emit client config -------------------------------------------
 RP_SERVER_PUB_FILE="$ETC_RP/server.rosenpass-public"
