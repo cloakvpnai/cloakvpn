@@ -709,6 +709,30 @@ struct ContentView: View {
                                    value: r.formatted(date: .long, time: .omitted))
                 }
             }
+
+            // Tier toggle — until real IAP / receipt validation ships,
+            // the user can flip Basic ↔ Pro themselves to preview both
+            // app icons. Each tap re-applies the matching alternate
+            // icon (Basic = primary CLOAKVPN logo, Pro = CLOAKVPN PRO
+            // logo). iOS shows its mandatory "icon changed" system
+            // alert once per real change.
+            Section {
+                Picker("Tier", selection: Binding(
+                    get: { SubscriptionInfo.current.tier },
+                    set: { SubscriptionInfo.setTier($0) }
+                )) {
+                    ForEach([SubscriptionTier.basic, .pro], id: \.self) { t in
+                        Text(t.displayName).tag(t)
+                    }
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                Text("Plan preview")
+            } footer: {
+                Text("Switching tier updates the home-screen app icon (Basic = CLOAKVPN, Pro = CLOAKVPN PRO). iOS shows a one-time system alert when the icon actually changes.")
+                    .font(.caption)
+            }
+
             Section {
                 Button("Log out", role: .destructive) {
                     // Placeholder — clears local credentials when

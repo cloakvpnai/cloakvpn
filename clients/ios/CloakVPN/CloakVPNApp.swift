@@ -25,6 +25,12 @@ struct CloakVPNApp: App {
                     // overwrite the home-IP cache with the VPN
                     // endpoint's IP).
                     async let _ = tunnel.refreshPublicIPIfNotConnected()
+                    // Re-apply the saved subscription icon assignment
+                    // on every cold start. Cheap no-op when the icon
+                    // already matches (the inner alternateIconName
+                    // check short-circuits before iOS shows its
+                    // "icon changed" alert).
+                    SubscriptionInfo.applyIconForCurrentTier()
                 }
         }
     }

@@ -3,6 +3,39 @@
 <plist version="1.0">
 <dict>
 	<!--
+		Alternate app icons. The primary icon (CLOAKVPN logo without
+		"PRO") lives in Assets.xcassets/AppIcon.appiconset and is what
+		the app shows by default. The "Pro" variant is registered here
+		as a CFBundleAlternateIcons entry so we can switch to it at
+		runtime via UIApplication.setAlternateIconName("CloakProIcon")
+		when the user upgrades their subscription.
+
+		File-naming convention: iOS auto-resolves @2x and @3x suffixes,
+		so we ship CloakProIcon.png / @2x / @3x as loose PNGs in the
+		bundle (NOT in the asset catalog — Apple's required pattern
+		for alternate icons since iOS 11).
+
+		UIPrerenderedIcon=true: the source PNGs already have the dark
+		matte background baked in; we don't want iOS to apply its
+		default gloss-overlay on top of them.
+	-->
+	<key>CFBundleIcons</key>
+	<dict>
+		<key>CFBundleAlternateIcons</key>
+		<dict>
+			<key>CloakProIcon</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>CloakProIcon</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
+
+	<!--
 		App Transport Security exceptions for the Cloak provisioning
 		API endpoints. Each region currently runs cloak-api-server.py on
 		plain HTTP (port 8443). iOS 9+ blocks plain HTTP by default;
