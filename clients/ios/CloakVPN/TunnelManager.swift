@@ -497,7 +497,7 @@ final class TunnelManager: ObservableObject {
         // worse. Stripping back to the upstream minimum.
 
         manager.protocolConfiguration = proto
-        manager.localizedDescription = "Cloak VPN"
+        manager.localizedDescription = "CLOAK VPN"
         manager.isEnabled = true
 
         Task {
@@ -722,7 +722,7 @@ final class TunnelManager: ObservableObject {
         proto.passwordReference = nil
         proto.includeAllNetworks = true
         manager.protocolConfiguration = proto
-        manager.localizedDescription = "Cloak VPN"
+        manager.localizedDescription = "CLOAK VPN"
         manager.isEnabled = true
 
         // 6. Save (triggers iOS permission prompt the first time after

@@ -106,15 +106,15 @@ struct ContentView: View {
                 bottomToolbar
             }
             .padding()
-            .navigationTitle("Cloak VPN")
+            .navigationTitle("CLOAK VPN")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 // Custom serif title for premium-tech brand feel.
                 // Replaces SwiftUI's default sans-serif navigation title.
                 ToolbarItem(placement: .principal) {
-                    Text("Cloak VPN")
+                    Text("CLOAK VPN")
                         .font(CloakDesign.headline(size: 18, weight: .semibold))
-                        .tracking(0.8)
+                        .tracking(1.6)
                 }
                 // Hamburger button — opens the PIA-style Settings drawer
                 // with account info, region selection link, settings,
@@ -143,7 +143,7 @@ struct ContentView: View {
                 }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("This deletes and recreates the iOS VPN profile, then reconnects. iOS will ask you to allow Cloak VPN to add VPN configurations again. Use this only when normal disconnect+reconnect doesn't recover the tunnel.")
+                Text("This deletes and recreates the iOS VPN profile, then reconnects. iOS will ask you to allow CLOAK VPN to add VPN configurations again. Use this only when normal disconnect+reconnect doesn't recover the tunnel.")
             }
             .sheet(isPresented: $showingImport) {
                 importSheet
@@ -581,8 +581,9 @@ struct ContentView: View {
                 Section {
                     HStack {
                         Spacer()
-                        Text("Cloak VPN \(appVersionDisplay)")
+                        Text("CLOAK VPN \(appVersionDisplay)")
                             .font(.caption)
+                            .tracking(1.0)
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
@@ -649,7 +650,7 @@ struct ContentView: View {
                 LabeledContent("Build", value: appBuildDisplay)
             }
             Section {
-                Text("Cloak VPN combines WireGuard with the post-quantum Rosenpass key-exchange protocol. Your traffic is protected against both classical and quantum-capable adversaries.")
+                Text("CLOAK VPN combines WireGuard with the post-quantum Rosenpass key-exchange protocol. Your traffic is protected against both classical and quantum-capable adversaries.")
                     .font(.footnote)
             }
         }
@@ -723,7 +724,7 @@ struct ContentView: View {
                 if let url = try? tunnel.makeLocalPubkeyShareFile() {
                     ShareLink(
                         item: url,
-                        subject: Text("Cloak VPN PQC public key"),
+                        subject: Text("CLOAK VPN PQC public key"),
                         message: Text("Register this with `sudo add-peer.sh <peer-name> <this-file>` on your Cloak server.")
                     ) {
                         Label("Share my public key…", systemImage: "square.and.arrow.up")
