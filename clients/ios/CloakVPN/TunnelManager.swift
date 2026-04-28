@@ -301,7 +301,6 @@ final class TunnelManager: ObservableObject {
         do {
             let configText = try await provisionFromAPIRaw(
                 serverBase: region.serverURL,
-                apiKey: CloakRegion.bundledAPIKey,
                 peerName: nil  // server auto-derives from rp pubkey hash
             )
             try await importConfig(configText)
@@ -504,7 +503,6 @@ final class TunnelManager: ObservableObject {
         do {
             let configText = try await provisionFromAPIRaw(
                 serverBase: target.serverURL,
-                apiKey: CloakRegion.bundledAPIKey,
                 peerName: nil
             )
             // Stash in the cache. Do NOT auto-import or set selectedRegion —
@@ -724,21 +722,16 @@ final class TunnelManager: ObservableObject {
     ///
     /// - Parameters:
     ///   - serverBase: full base URL of the API, e.g.
-    ///     "http://5.78.203.171:8443" (production should be HTTPS via
-    ///     the operator's nginx + Let's Encrypt).
-    ///   - apiKey: shared-secret token configured at
-    ///     /etc/cloak/api-token on the server. The operator distributes
-    ///     this to authorized users out-of-band.
+    ///     "https://cloak-de1.cloakvpn.ai" — must serve our regions'
+    ///     nginx + Let's Encrypt HTTPS endpoint.
     ///   - peerName: optional human-readable peer name. If absent, the
     ///     server auto-generates one from a hash of the rosenpass pubkey.
     func provisionFromAPI(
         serverBase: String,
-        apiKey: String,
         peerName: String? = nil
     ) async throws {
         let configText = try await provisionFromAPIRaw(
             serverBase: serverBase,
-            apiKey: apiKey,
             peerName: peerName
         )
         debugLog("provisionFromAPI: got config (\(configText.count) chars), importing…")
@@ -751,7 +744,6 @@ final class TunnelManager: ObservableObject {
     /// round-trip and just call `importConfig` directly.
     func provisionFromAPIRaw(
         serverBase: String,
-        apiKey: String,
         peerName: String? = nil
     ) async throws -> String {
         // 1. Make sure we have both keypairs locally before talking to
@@ -787,11 +779,6 @@ final class TunnelManager: ObservableObject {
         var req = URLRequest(url: endpoint)
         req.httpMethod = "POST"
         req.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
-        // LEGACY: keep API-key header during transition window. Server
-        // accepts either; once the iOS app at this commit has been on
-        // every install for a while, drop this line and the server's
-        // legacy fallback path simultaneously.
-        req.setValue(apiKey, forHTTPHeaderField: "X-Cloak-API-Key")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = bodyData
         // Provisioning involves running add-peer.sh + restarting

@@ -73,31 +73,44 @@ struct CloakRegion: Identifiable, Equatable, Codable {
         ),
     ]
 
-    /// Bundled bootstrap key — used ONLY to authenticate the
-    /// /api/v1/auth/exchange call which mints a per-install JWT.
-    /// Provisioning calls (POST /api/v1/peers) authorize via the
+    /// Bootstrap key — used ONLY to authenticate the
+    /// `/api/v1/auth/exchange` call which mints a per-install JWT.
+    /// Provisioning calls (POST `/api/v1/peers`) authorize via the
     /// minted JWT, NOT this key.
     ///
-    /// Trust model: same install bundle = same key, but compromise
-    /// impact is bounded — an attacker who extracts this from the
-    /// binary can mint JWTs for arbitrary install UUIDs, but each
-    /// JWT is short-lived (24h) and ratelimitable per-subject. When
-    /// StoreKit IAP ships, this entire path is replaced by a real
-    /// Apple-signed transaction JWS, and bootstrap-key support gets
-    /// torn out of cloak-api-server.
+    /// Loaded at build time from `Secrets.xcconfig` (gitignored — never
+    /// committed) and exposed via `Info.plist[CLOAK_BOOTSTRAP_KEY]`.
+    /// Server-side counterpart: `/etc/cloak/bootstrap-key` on every
+    /// region (identical so a JWT minted by one region authorizes
+    /// calls to any).
     ///
-    /// Server-side counterpart: /etc/cloak/bootstrap-key (identical
-    /// across all 4 regions so the iPhone can bootstrap against any
-    /// region; the JWT is then valid for all of them).
-    static let bootstrapKey = "<REDACTED-OLD-BOOTSTRAP-KEY>"
-
-    /// LEGACY — old shared API key path, retained for one transition
-    /// build so the iOS app can still talk to a region whose server
-    /// hasn't been updated to accept JWTs yet. Will be removed once
-    /// every region is on the new auth path. Server-side reads
-    /// /etc/cloak/api-token; if both an Authorization: Bearer JWT
-    /// AND this header are present, JWT wins.
-    static let bundledAPIKey = "<REDACTED-OLD-API-KEY>"
+    /// Trust model: same install bundle = same key. Compromise impact
+    /// is bounded — an attacker who extracts this from the binary can
+    /// mint JWTs for arbitrary install UUIDs, but each JWT is short-
+    /// lived (24h) and rate-limitable per-subject. When StoreKit IAP
+    /// ships, this path is replaced by Apple-signed transaction JWS
+    /// and the bootstrap key path gets torn out entirely.
+    ///
+    /// Why bundled-but-not-committed: keeps the secret out of git
+    /// history while still embedding it in the shipped binary. A
+    /// determined attacker can still extract it via `strings` on the
+    /// .ipa, but they don't get it from a `git clone` — and rotation
+    /// becomes a non-history-rewriting operation.
+    static var bootstrapKey: String {
+        guard let v = Bundle.main.infoDictionary?["CLOAK_BOOTSTRAP_KEY"] as? String,
+              !v.isEmpty,
+              !v.contains("$(") // unresolved xcconfig placeholder
+        else {
+            fatalError("""
+            CLOAK_BOOTSTRAP_KEY missing from Info.plist.
+            Build is misconfigured: copy Secrets.xcconfig.example to
+            Secrets.xcconfig, fill in the live key, and ensure both
+            Debug and Release configurations have "Based on Configuration
+            File" set to Secrets in the project's Info tab.
+            """)
+        }
+        return v
+    }
 
     static func byID(_ id: String) -> CloakRegion? {
         all.first { $0.id == id }

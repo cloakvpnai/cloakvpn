@@ -22,6 +22,22 @@
 	-->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<true/>
+
+	<!--
+		Bootstrap key for /api/v1/auth/exchange. Loaded at build time
+		from Secrets.xcconfig (gitignored — never committed). Read at
+		runtime via Bundle.main.infoDictionary["CLOAK_BOOTSTRAP_KEY"].
+		Server-side counterpart is /etc/cloak/bootstrap-key on every
+		region. To rotate:
+		  1. openssl rand -base64 32 > new-bootstrap-key
+		  2. scp to /etc/cloak/bootstrap-key on all 4 regions
+		  3. systemctl restart cloak-api-server on each
+		  4. Update CLOAK_BOOTSTRAP_KEY in clients/ios/CloakVPN/Secrets.xcconfig
+		  5. Build + ship new TestFlight / App Store version
+	-->
+	<key>CLOAK_BOOTSTRAP_KEY</key>
+	<string>$(CLOAK_BOOTSTRAP_KEY)</string>
+
 	<!--
 		Alternate app icons. The primary icon (CLOAKVPN logo without
 		"PRO") lives in Assets.xcassets/AppIcon.appiconset and is what

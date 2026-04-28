@@ -1048,9 +1048,13 @@ struct ContentView: View {
         addRegionInProgress = true
         defer { addRegionInProgress = false }
         do {
+            // The custom-URL flow uses the bundled bootstrap key just
+            // like the standard region taps. The "API Key" field in
+            // the form is no longer used — kept around in the UI for
+            // a release or two so anyone with muscle memory doesn't
+            // get confused, then removed.
             try await tunnel.provisionFromAPI(
                 serverBase: addRegionURL.trimmingCharacters(in: .whitespacesAndNewlines),
-                apiKey: addRegionAPIKey.trimmingCharacters(in: .whitespacesAndNewlines),
                 peerName: addRegionPeerName.isEmpty
                     ? nil
                     : addRegionPeerName.trimmingCharacters(in: .whitespacesAndNewlines)
