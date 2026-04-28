@@ -78,6 +78,27 @@ final class RosenpassBridge: ObservableObject {
     private var loopTask: Task<Void, Never>?
     private var config: SessionConfig?
 
+    // MARK: - App Group status polling (post task #17 — NE drives the loop)
+    //
+    // The actual rosenpass rotation loop now runs in the NE process via
+    // RosenpassDriver (clients/ios/CloakTunnel/RosenpassDriver.swift). We
+    // poll the App Group UserDefaults where it writes rotation count and
+    // last-success epoch, and update self.status so the existing UI
+    // (ContentView's infoPanel) keeps showing live "PQC: N rotations"
+    // without requiring any UI refactor.
+
+    private var statusPollTimer: Timer?
+
+    private static let appGroupID = "group.ai.cloakvpn.CloakVPN"
+    private static let neRotationCountKey = "ne.rosenpass.rotationCount"
+    private static let neLastSuccessEpochKey = "ne.rosenpass.lastSuccessEpoch"
+
+    /// Threshold past which we surface a degraded "stale" status to the
+    /// user. Matches the NE-side health monitor's wedgePSKAgeSec — if
+    /// the NE hasn't reported a successful rotation in 5 minutes,
+    /// something's wrong even though Layer 2 may not have fired yet.
+    private static let staleThresholdSec: TimeInterval = 300
+
     // MARK: - Public API
 
     /// Start the periodic Rosenpass handshake loop. Idempotent — calling
@@ -127,7 +148,69 @@ final class RosenpassBridge: ObservableObject {
         loopTask?.cancel()
         loopTask = nil
         config = nil
+        stopStatusPolling()
         status = .idle
+    }
+
+    // MARK: - App Group status polling
+
+    /// Start a 3-second poll of App Group UserDefaults for the NE-driven
+    /// rotation count. Call from TunnelManager.connect when the in-NE
+    /// RosenpassDriver becomes responsible for the rotation loop. The
+    /// poll updates self.status so the existing ContentView indicator
+    /// stays live ("PQC: N rotations ✓") without any UI refactor.
+    func startStatusPolling() {
+        stopStatusPolling()
+        // Show .connecting until the first rotation completes; the
+        // NE driver typically gets a fresh PSK within 30-60 seconds.
+        status = .connecting
+        // Fire once immediately so any cached values from a prior session
+        // surface right away rather than waiting up to 3s.
+        refreshStatusFromAppGroup()
+        let timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            // Timer callback runs on the main run loop; bridge to MainActor
+            // explicitly because RosenpassBridge is @MainActor-isolated.
+            Task { @MainActor [weak self] in
+                self?.refreshStatusFromAppGroup()
+            }
+        }
+        self.statusPollTimer = timer
+    }
+
+    /// Stop the status poll timer. Idempotent.
+    func stopStatusPolling() {
+        statusPollTimer?.invalidate()
+        statusPollTimer = nil
+    }
+
+    private func refreshStatusFromAppGroup() {
+        guard let ud = UserDefaults(suiteName: Self.appGroupID) else {
+            status = .error("App Group unavailable")
+            return
+        }
+        let rotations = ud.integer(forKey: Self.neRotationCountKey)
+        let lastSuccessEpoch = ud.double(forKey: Self.neLastSuccessEpochKey)
+
+        guard rotations > 0 else {
+            // No rotations have been published yet — driver is still
+            // doing its first handshake. Keep the user informed without
+            // looking idle.
+            status = .handshaking
+            return
+        }
+
+        // Detect stale state: NE driver has stopped successfully rotating.
+        // Means the driver is failing repeatedly OR the NE process is
+        // somehow not getting CPU. Either way, surface it visually.
+        if lastSuccessEpoch > 0 {
+            let age = Date().timeIntervalSince1970 - lastSuccessEpoch
+            if age > Self.staleThresholdSec {
+                status = .error("PSK stale (\(Int(age))s old)")
+                return
+            }
+        }
+
+        status = .established(rotations: rotations)
     }
 
     // MARK: - Internal loop

@@ -273,24 +273,15 @@ final class TunnelManager: ObservableObject {
         debugLog("connect(): starting VPN tunnel via NETunnelProviderManager")
         try m.connection.startVPNTunnel()
 
-        // The rosenpass rotation loop USED TO live here in the host app.
-        // It was moved into the NE process (CloakTunnel) as part of
-        // task #17 because iOS suspends the host app within ~30s of
-        // backgrounding, killing the loop and causing PSK desync ->
-        // tunnel wedge. The NE keeps running for as long as the VPN
-        // is active, so the loop now runs there uninterrupted via
-        // RosenpassDriver — see clients/ios/CloakTunnel/RosenpassDriver.swift.
-        //
-        // We deliberately leave the RosenpassBridge property on this
-        // class instantiated (so its UI status reads still work for
-        // existing call sites), but no longer start its loop. Eventually
-        // the host-app rosenpass plumbing will be ripped out entirely.
-        //
-        // The ContentView UI's "PQC: rotation N" indicator will be
-        // updated in a follow-up commit to read from the App Group
-        // UserDefaults that RosenpassDriver writes to (keys
-        // ne.rosenpass.rotationCount + ne.rosenpass.lastSuccessEpoch).
-        // Until then the indicator may show stale "PQC: idle".
+        // Rotation loop now runs IN the NE (task #17). The host-app
+        // RosenpassBridge is repurposed: instead of running the loop, it
+        // polls the App Group UserDefaults that the NE-side
+        // RosenpassDriver writes to, and updates its `status` for the
+        // existing ContentView UI to consume. Net effect: the user keeps
+        // seeing "PQC: N rotations ✓" in the app, but the actual key
+        // exchange happens in the NE which iOS never suspends.
+        guard let cfg = config, cfg.pqEnabled else { return }
+        rosenpass.startStatusPolling()
     }
 
     /// Async wrapper around NETunnelProviderSession.sendProviderMessage.
