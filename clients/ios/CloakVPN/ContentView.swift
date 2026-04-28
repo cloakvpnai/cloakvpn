@@ -27,6 +27,14 @@ enum CloakDesign {
     /// reads bright on both light and dark backgrounds.
     static let brandGold = Color(red: 1.0, green: 0.84, blue: 0.0)
 
+    /// Neutral steel grey — replaces SwiftUI's default blue tint
+    /// throughout the app. Used for tappable affordances that are
+    /// secondary to the brand-green Connect path (toolbar buttons,
+    /// settings rows, "Manage subscription" link, etc.). #86898F
+    /// reads clearly on both light and dark mode without competing
+    /// with the green brand color.
+    static let brandGrey = Color(red: 0.525, green: 0.537, blue: 0.561)
+
     /// Headline font — serif design, semibold weight. Apple's serif
     /// face on iOS is "New York"; using it here for the brand title
     /// + Connect button gives the app a premium-tech feel (think
@@ -166,6 +174,14 @@ struct ContentView: View {
                 handleFileImport(result)
             }
         }
+        // Global tint override — replaces SwiftUI's default blue with
+        // CLOAK VPN's neutral steel grey for all toolbar buttons,
+        // NavigationLink chevrons, default-styled buttons, and
+        // any Image/Text using `.tint` or `.accentColor`.
+        // Brand-green elements (Connect button, region selection ring,
+        // QUICK CONNECT box) explicitly set their color and aren't
+        // affected by this.
+        .tint(CloakDesign.brandGrey)
     }
 
     /// Read a peer config file the user picked from Files / iCloud Drive /
@@ -493,7 +509,7 @@ struct ContentView: View {
                         Image(systemName: "lock.shield.fill")
                             .resizable()
                             .frame(width: 44, height: 44)
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(CloakDesign.brandGrey)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(sub.accountID)
                                 .font(.headline)
@@ -710,7 +726,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Image(systemName: "key.fill")
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(CloakDesign.brandGrey)
                 Text("Your PQC Identity")
                     .font(.subheadline.bold())
             }
