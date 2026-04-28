@@ -657,8 +657,18 @@ final class TunnelManager: ObservableObject {
         }
         let bodyData = try JSONSerialization.data(withJSONObject: body)
 
+        // 2a. Bootstrap a JWT against this same region. Cached if still
+        // valid; refreshed if expiring soon. Cross-region valid because
+        // every region shares /etc/cloak/jwt-secret.
+        let jwt = try await CloakAuthClient.fetchAuthToken(regionServerBase: url)
+
         var req = URLRequest(url: endpoint)
         req.httpMethod = "POST"
+        req.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
+        // LEGACY: keep API-key header during transition window. Server
+        // accepts either; once the iOS app at this commit has been on
+        // every install for a while, drop this line and the server's
+        // legacy fallback path simultaneously.
         req.setValue(apiKey, forHTTPHeaderField: "X-Cloak-API-Key")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = bodyData
@@ -667,12 +677,19 @@ final class TunnelManager: ObservableObject {
         // headroom but cap to keep the UI responsive.
         req.timeoutInterval = 30
 
-        debugLog("provisionFromAPIRaw: POST \(endpoint.absoluteString) (wg_pub=\(wgKeys.publicB64.prefix(8))…, rp_pub=\(rpKeys.publicB64.prefix(12))…)")
+        debugLog("provisionFromAPIRaw: POST \(endpoint.absoluteString) (wg_pub=\(wgKeys.publicB64.prefix(8))…, rp_pub=\(rpKeys.publicB64.prefix(12))…, jwt=\(jwt.prefix(20))…)")
 
         // 3. Hit the API.
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse else {
             throw TunnelError.parse("non-HTTP response from server")
+        }
+        if http.statusCode == 401 {
+            // JWT was rejected — likely a token in the cache that the
+            // server lost trust in (e.g. JWT secret rotated server-side).
+            // Drop the cache and let the next call re-bootstrap.
+            CloakAuthClient.invalidateCache()
+            throw TunnelError.parse("API returned 401 (auth rejected); cleared JWT cache, please retry")
         }
         if http.statusCode != 200 {
             let msg = String(data: data, encoding: .utf8) ?? "<binary>"

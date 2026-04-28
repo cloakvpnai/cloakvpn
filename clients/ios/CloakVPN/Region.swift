@@ -73,13 +73,30 @@ struct CloakRegion: Identifiable, Equatable, Codable {
         ),
     ]
 
-    /// Bundled API key. See file-level comment about the trust model
-    /// — this gets replaced with per-customer auth before public
-    /// launch. Compromise impact today: an attacker with the binary
-    /// can register peers freely on any region (resource exhaustion,
-    /// free tunneling). Mitigations in place: rate limiting (TODO),
-    /// IP allocation per /32 (subnet caps usage at ~250 peers per
-    /// region before we need add-peer.sh GC).
+    /// Bundled bootstrap key — used ONLY to authenticate the
+    /// /api/v1/auth/exchange call which mints a per-install JWT.
+    /// Provisioning calls (POST /api/v1/peers) authorize via the
+    /// minted JWT, NOT this key.
+    ///
+    /// Trust model: same install bundle = same key, but compromise
+    /// impact is bounded — an attacker who extracts this from the
+    /// binary can mint JWTs for arbitrary install UUIDs, but each
+    /// JWT is short-lived (24h) and ratelimitable per-subject. When
+    /// StoreKit IAP ships, this entire path is replaced by a real
+    /// Apple-signed transaction JWS, and bootstrap-key support gets
+    /// torn out of cloak-api-server.
+    ///
+    /// Server-side counterpart: /etc/cloak/bootstrap-key (identical
+    /// across all 4 regions so the iPhone can bootstrap against any
+    /// region; the JWT is then valid for all of them).
+    static let bootstrapKey = "<REDACTED-OLD-BOOTSTRAP-KEY>"
+
+    /// LEGACY — old shared API key path, retained for one transition
+    /// build so the iOS app can still talk to a region whose server
+    /// hasn't been updated to accept JWTs yet. Will be removed once
+    /// every region is on the new auth path. Server-side reads
+    /// /etc/cloak/api-token; if both an Authorization: Bearer JWT
+    /// AND this header are present, JWT wins.
     static let bundledAPIKey = "<REDACTED-OLD-API-KEY>"
 
     static func byID(_ id: String) -> CloakRegion? {

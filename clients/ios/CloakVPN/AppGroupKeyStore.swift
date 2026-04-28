@@ -57,6 +57,16 @@ enum AppGroupKeyStore {
         // every install has migrated to the local keypair design.
         case clientRPSecretKey = "rp_client_seckey.b64"  // legacy
         case clientRPPublicKey = "rp_client_pubkey.b64"  // legacy
+
+        // -- Per-customer auth: cached JWT + install UUID --
+        // installUUID is generated once per app install, persisted, and
+        // used as the bootstrap subject when exchanging for a JWT. The
+        // JWT itself is short-lived (24h) and replaceable on demand.
+        // Both files have the same protection class as the keypairs
+        // (.completeUntilFirstUserAuthentication) so the NE can read
+        // them after first-unlock without needing the user to be active.
+        case authJWT      = "auth_jwt.json"        // {jwt, exp_unix}
+        case installUUID  = "auth_install.uuid"    // hex UUID, plain text
     }
 
     enum StoreError: LocalizedError {
@@ -165,6 +175,62 @@ enum AppGroupKeyStore {
         for f in [Filename.localWGSecretKey, .localWGPublicKey] {
             try? fm.removeItem(at: dir.appendingPathComponent(f.rawValue))
         }
+    }
+
+    // MARK: - Public API — Auth: install UUID + cached JWT
+    //
+    // installUUID is a stable per-install identifier generated on first
+    // launch. Sent to /api/v1/auth/exchange to bootstrap a JWT.
+    // The JWT itself is cached with its expiry — when checking whether
+    // we need to refresh, callers compare exp against the current time.
+    //
+    // Both are read by the host app only (NE doesn't talk to the auth
+    // endpoint). Stored in the App Group container for visibility into
+    // future use cases (e.g., NE-side observability calls).
+
+    /// Read the existing install UUID, or create + persist a new one
+    /// if this is the first call. Idempotent and safe to call repeatedly.
+    static func loadOrCreateInstallUUID() -> String {
+        if let existing = try? read(.installUUID), !existing.isEmpty {
+            return existing
+        }
+        // 36-char canonical UUID string with hyphens
+        let fresh = UUID().uuidString
+        try? writeAtomic(fresh, to: .installUUID)
+        return fresh
+    }
+
+    /// Persist a freshly-issued JWT plus its expiry (Unix epoch seconds).
+    static func saveJWT(_ jwt: String, expUnix: Int) throws {
+        let json = try JSONSerialization.data(withJSONObject: ["jwt": jwt, "exp": expUnix])
+        guard let s = String(data: json, encoding: .utf8) else {
+            throw StoreError.writeFailed(Filename.authJWT.rawValue,
+                                         underlying: NSError(domain: "AppGroupKeyStore",
+                                                             code: -1))
+        }
+        try writeAtomic(s, to: .authJWT)
+    }
+
+    /// Load the cached JWT + expiry. Returns nil if no cache or unparseable.
+    /// Callers MUST check expUnix against current time; this loader doesn't
+    /// auto-invalidate stale entries (so a debug UI can show "expired N
+    /// minutes ago").
+    static func loadJWT() -> (jwt: String, expUnix: Int)? {
+        guard let raw = try? read(.authJWT),
+              let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let jwt = obj["jwt"] as? String,
+              let exp = obj["exp"] as? Int
+        else { return nil }
+        return (jwt, exp)
+    }
+
+    /// Drop the cached JWT (force a re-fetch on next provision call).
+    static func clearJWT() {
+        guard let dir = containerURL else { return }
+        try? FileManager.default.removeItem(
+            at: dir.appendingPathComponent(Filename.authJWT.rawValue)
+        )
     }
 
     // MARK: - Public API — Server pubkey (from imported config)

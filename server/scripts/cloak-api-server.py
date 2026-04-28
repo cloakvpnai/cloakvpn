@@ -15,11 +15,42 @@ private key live exclusively on the device. Server compromise here does
 not retroactively decrypt any session.
 
 Endpoints:
-    POST  /api/v1/peers   — register a new peer
-    GET   /api/v1/health  — liveness probe (no auth required)
+    POST  /api/v1/auth/exchange  — exchange a device-installation
+                                   token (or, in future, a StoreKit
+                                   transaction JWS) for a short-lived
+                                   JWT used to authorize provisioning
+                                   calls. Returns {"jwt": "...",
+                                                  "exp": <unix-ts>}.
+                                   Auth: X-Cloak-Bootstrap-Key header
+                                   matches the per-install bootstrap
+                                   secret in /etc/cloak/bootstrap-key.
+    POST  /api/v1/peers   — register a new peer.
+                                   Auth: Authorization: Bearer <jwt>
+    GET   /api/v1/health  — liveness probe (no auth required).
 
-Auth:
-    X-Cloak-API-Key: <token>   (must match /etc/cloak/api-token)
+Auth model:
+    Phase 1 (current — pre-IAP):
+        iOS app has a hardcoded bootstrap key (per-install will
+        replace this when StoreKit is wired). It POSTs that key
+        to /api/v1/auth/exchange with an installation UUID and
+        gets back a JWT signed with HS256 against
+        /etc/cloak/jwt-secret. JWT lifetime = 24 hours.
+
+    Phase 2 (when IAP ships):
+        iOS app drops bootstrap key path. Instead grabs the
+        StoreKit 2 transaction JWS from
+        Transaction.currentEntitlements, sends it to
+        /api/v1/auth/exchange, server verifies the JWS signature
+        against Apple's published public key, then issues a JWT
+        bound to the originalTransactionID.
+
+    Either way, downstream provisioning uses Authorization: Bearer
+    <jwt> — there's only one validation path for /api/v1/peers
+    regardless of how the JWT was obtained.
+
+    LEGACY: X-Cloak-API-Key header still accepted on /api/v1/peers
+    for one transition window. Will be removed in a follow-up
+    commit once iOS app is fully on JWT auth.
 
 Request body (POST /api/v1/peers):
     {
@@ -57,6 +88,7 @@ the API key in the header IS sent in the clear, so use TLS in production.
 
 import base64
 import hashlib
+import hmac
 import http.server
 import json
 import os
@@ -66,6 +98,7 @@ import socketserver
 import subprocess
 import sys
 import threading
+import time
 import traceback
 from typing import Optional
 
@@ -75,6 +108,27 @@ API_TOKEN_FILE = os.environ.get("CLOAK_API_TOKEN_FILE", "/etc/cloak/api-token")
 LISTEN_HOST = os.environ.get("CLOAK_API_HOST", "0.0.0.0")
 LISTEN_PORT = int(os.environ.get("CLOAK_API_PORT", "8443"))
 ADD_PEER_SCRIPT = os.environ.get("CLOAK_API_ADD_PEER", "/usr/local/bin/add-peer.sh")
+
+# JWT signing secret — used to mint and verify JWTs for the auth path.
+# Generated once per region by setup_https.sh (or by hand:
+#   openssl rand -base64 64 > /etc/cloak/jwt-secret
+#   chmod 600 /etc/cloak/jwt-secret
+# ) and READ at startup. Must be IDENTICAL across all regions if you
+# want a JWT issued by region A to be valid for region B (so the iOS
+# app doesn't have to re-bootstrap when switching regions). Generate
+# once on us-west-1 and rsync to the other 3.
+JWT_SECRET_FILE = os.environ.get("CLOAK_JWT_SECRET_FILE", "/etc/cloak/jwt-secret")
+JWT_LIFETIME_SECONDS = int(os.environ.get("CLOAK_JWT_LIFETIME_SECONDS", str(24 * 3600)))
+JWT_ISSUER = "cloak-auth"
+
+# Bootstrap key — the per-install secret iOS uses to authenticate the
+# /api/v1/auth/exchange call BEFORE it has a JWT. This is a transition
+# mechanism until StoreKit IAP is wired (at which point the iOS app
+# will send a real Apple-signed transaction JWS instead). Same secret
+# across all installs in this phase; a leak gives an attacker the
+# ability to mint JWTs (which are still rate-limit-able later) but
+# can't bypass per-customer revocation once IAP is live.
+BOOTSTRAP_KEY_FILE = os.environ.get("CLOAK_BOOTSTRAP_KEY_FILE", "/etc/cloak/bootstrap-key")
 
 # Format constraints — keep loose enough that we don't need to crack
 # open base64 ourselves but tight enough that obvious bad input gets a
@@ -124,6 +178,104 @@ def auto_peer_name(rp_pubkey_b64: str) -> str:
     return f"cloak-{h[:8]}"
 
 
+def load_secret_file(path: str, label: str, generate_hint: str) -> bytes:
+    """Generic secret-file loader. Returns the bytes; exits if missing
+    or empty. The label/hint go into the error message."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read().strip()
+        if not data:
+            print(f"ERROR: {path} is empty (need {label})", file=sys.stderr)
+            sys.exit(2)
+        return data
+    except FileNotFoundError:
+        print(f"ERROR: {label} file {path} not found.", file=sys.stderr)
+        print(f"Generate with: {generate_hint}", file=sys.stderr)
+        sys.exit(2)
+
+
+# ---------- JWT (HS256, pure stdlib) -----------------------------------------
+#
+# Implements just enough of RFC 7519 + RFC 7515 (JWS HS256) to mint and
+# verify our own tokens. We deliberately don't depend on PyJWT to keep
+# this server stdlib-only (matches cloak-api-server's existing posture
+# and avoids `pip install` surprises during region rebuilds).
+#
+# Token shape:
+#   header  = {"alg":"HS256","typ":"JWT"}
+#   payload = {
+#       "sub": "<install-uuid OR originalTransactionID>",
+#       "iat": <unix-ts>,
+#       "exp": <unix-ts>,
+#       "iss": "cloak-auth",
+#       "tier": "basic" | "pro" | "dev",
+#       "aud": "cloak-api"
+#   }
+#   signature = HMAC-SHA256(secret, base64url(header) + "." + base64url(payload))
+#
+# Cross-region note: as long as JWT_SECRET_FILE is identical on every
+# region, a JWT issued by region A authorizes calls to region B.
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _b64url_decode(s: str) -> bytes:
+    pad = -len(s) % 4
+    return base64.urlsafe_b64decode(s + ("=" * pad))
+
+
+def jwt_sign(payload: dict, secret: bytes) -> str:
+    header = {"alg": "HS256", "typ": "JWT"}
+    h = _b64url(json.dumps(header, separators=(",", ":")).encode())
+    p = _b64url(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode())
+    msg = f"{h}.{p}".encode()
+    sig = hmac.new(secret, msg, hashlib.sha256).digest()
+    return f"{h}.{p}.{_b64url(sig)}"
+
+
+def jwt_verify(token: str, secret: bytes) -> dict:
+    """Returns the decoded payload if the token is valid + unexpired.
+    Raises ValueError otherwise."""
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise ValueError("malformed JWT (need 3 parts)")
+    h_b64, p_b64, sig_b64 = parts
+    expected = hmac.new(secret, f"{h_b64}.{p_b64}".encode(), hashlib.sha256).digest()
+    try:
+        actual = _b64url_decode(sig_b64)
+    except Exception:
+        raise ValueError("malformed JWT signature")
+    if not hmac.compare_digest(expected, actual):
+        raise ValueError("invalid JWT signature")
+    try:
+        payload = json.loads(_b64url_decode(p_b64))
+    except Exception:
+        raise ValueError("malformed JWT payload")
+    now = int(time.time())
+    if int(payload.get("exp", 0)) < now:
+        raise ValueError("JWT expired")
+    if payload.get("iss") != JWT_ISSUER:
+        raise ValueError(f"unexpected iss: {payload.get('iss')}")
+    return payload
+
+
+def mint_jwt_for(subject: str, tier: str = "dev") -> tuple[str, int]:
+    """Issue a fresh JWT for the given subject (install UUID or Apple
+    originalTransactionID). Returns (token, exp_unix_ts)."""
+    iat = int(time.time())
+    exp = iat + JWT_LIFETIME_SECONDS
+    payload = {
+        "sub": subject,
+        "iat": iat,
+        "exp": exp,
+        "iss": JWT_ISSUER,
+        "aud": "cloak-api",
+        "tier": tier,
+    }
+    return jwt_sign(payload, JWT_SECRET), exp
+
+
 # ---------- HTTP handler ------------------------------------------------------
 
 class CloakHandler(http.server.BaseHTTPRequestHandler):
@@ -158,16 +310,80 @@ class CloakHandler(http.server.BaseHTTPRequestHandler):
             return
         self._json_error(404, "not found")
 
+    # ---- POST /api/v1/auth/exchange -------------------------------------
+
+    def _handle_auth_exchange(self):
+        """Exchange a bootstrap secret + install UUID for a fresh JWT."""
+        provided = self.headers.get("X-Cloak-Bootstrap-Key", "")
+        if not constant_time_eq(provided, BOOTSTRAP_KEY):
+            self._json_error(401, "unauthorized")
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self._json_error(400, "bad Content-Length")
+            return
+        if length <= 0 or length > 4096:
+            self._json_error(400, "bad body length")
+            return
+        try:
+            body = json.loads(self.rfile.read(length))
+        except json.JSONDecodeError:
+            self._json_error(400, "body is not valid JSON")
+            return
+
+        # Phase 1: install_uuid path. Phase 2: storekit_jws path goes here.
+        install_uuid = (body.get("install_uuid") or "").strip()
+        if install_uuid and re.match(r"^[A-Fa-f0-9-]{8,72}$", install_uuid):
+            jwt, exp = mint_jwt_for(f"install:{install_uuid}", tier="dev")
+            payload = json.dumps({"jwt": jwt, "exp": exp}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+
+        # storekit_jws = body.get("storekit_jws") — TODO Phase 2
+        self._json_error(400, "missing or malformed install_uuid (Phase 2 storekit_jws not yet implemented)")
+
     # ---- POST /api/v1/peers ---------------------------------------------
 
+    def _check_provision_auth(self) -> bool:
+        """Authorize a /api/v1/peers call. Accepts either:
+           1. NEW: Authorization: Bearer <jwt>  (HS256 against JWT_SECRET)
+           2. LEGACY: X-Cloak-API-Key: <token>  (transition path; will
+              be removed in a follow-up commit)
+        Returns True if authorized."""
+        # Path 1: JWT
+        bearer = self.headers.get("Authorization", "")
+        if bearer.startswith("Bearer "):
+            try:
+                payload = jwt_verify(bearer[7:].strip(), JWT_SECRET)
+                # Stash on the request for logging
+                self._jwt_subject = payload.get("sub", "?")
+                return True
+            except ValueError as e:
+                sys.stdout.write(f"[cloak-api] JWT rejected: {e}\n")
+                sys.stdout.flush()
+                # Fall through to legacy check; if THAT also fails we 401
+        # Path 2: legacy API key
+        provided_token = self.headers.get("X-Cloak-API-Key", "")
+        if provided_token and constant_time_eq(provided_token, API_TOKEN):
+            self._jwt_subject = "legacy-api-key"
+            return True
+        return False
+
     def do_POST(self):
+        if self.path == "/api/v1/auth/exchange":
+            self._handle_auth_exchange()
+            return
         if self.path != "/api/v1/peers":
             self._json_error(404, "not found")
             return
 
-        # Auth
-        provided_token = self.headers.get("X-Cloak-API-Key", "")
-        if not constant_time_eq(provided_token, API_TOKEN):
+        # Auth (JWT preferred, legacy API key still accepted)
+        if not self._check_provision_auth():
             self._json_error(401, "unauthorized")
             return
 
@@ -299,9 +515,19 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 # ---------- Entry point -------------------------------------------------------
 
 def main():
-    global API_TOKEN
+    global API_TOKEN, JWT_SECRET, BOOTSTRAP_KEY
     API_TOKEN = load_api_token()
-    print(f"[cloak-api] loaded API token from {API_TOKEN_FILE} (len={len(API_TOKEN)})",
+    JWT_SECRET = load_secret_file(
+        JWT_SECRET_FILE, "JWT signing secret",
+        f"openssl rand -base64 64 > {JWT_SECRET_FILE} && chmod 600 {JWT_SECRET_FILE}"
+    )
+    BOOTSTRAP_KEY = load_secret_file(
+        BOOTSTRAP_KEY_FILE, "iOS bootstrap key",
+        f"openssl rand -base64 32 > {BOOTSTRAP_KEY_FILE} && chmod 600 {BOOTSTRAP_KEY_FILE}"
+    ).decode("ascii", errors="replace").strip()
+    print(f"[cloak-api] loaded API token (len={len(API_TOKEN)}), "
+          f"JWT secret (len={len(JWT_SECRET)}), "
+          f"bootstrap key (len={len(BOOTSTRAP_KEY)})",
           flush=True)
 
     # IPv6-and-IPv4 dual stack: bind to AF_INET6 and let the kernel handle
