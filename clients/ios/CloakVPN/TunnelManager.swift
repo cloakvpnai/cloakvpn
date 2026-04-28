@@ -273,42 +273,24 @@ final class TunnelManager: ObservableObject {
         debugLog("connect(): starting VPN tunnel via NETunnelProviderManager")
         try m.connection.startVPNTunnel()
 
-        // Kick off the Rosenpass loop in parallel. The first PSK can
-        // arrive while WireGuard is still doing its classical handshake;
-        // either way the NE applies it on receipt and re-keys without
-        // dropping in-flight UDP.
+        // The rosenpass rotation loop USED TO live here in the host app.
+        // It was moved into the NE process (CloakTunnel) as part of
+        // task #17 because iOS suspends the host app within ~30s of
+        // backgrounding, killing the loop and causing PSK desync ->
+        // tunnel wedge. The NE keeps running for as long as the VPN
+        // is active, so the loop now runs there uninterrupted via
+        // RosenpassDriver — see clients/ios/CloakTunnel/RosenpassDriver.swift.
         //
-        // Load the device's local rosenpass keypair (generated on first
-        // launch) and the server's pubkey (from the imported config) from
-        // the App Group container. If either is missing, skip rosenpass —
-        // the tunnel still comes up classically (no PQ protection) so the
-        // user isn't stranded; the UI can warn about the missing PQC
-        // identity separately.
-        guard let cfg = config, cfg.pqEnabled else { return }
-        do {
-            let local = try AppGroupKeyStore.loadLocalKeypair()
-            let serverPub = try AppGroupKeyStore.loadServerPublicKey()
-
-            // Wire the NE relay closure BEFORE start(): runLoop checks
-            // sendNE != nil at the top of every rotation iteration and
-            // errors out with neSessionUnavailable if it's missing.
-            // The closure captures the session weakly via the manager
-            // and hops to the MainActor for the actual API call (NE
-            // session methods are MainActor-bound).
-            rosenpass.sendNE = { [weak m] payload in
-                try await Self.sendProviderMessageAsync(payload, manager: m)
-            }
-
-            rosenpass.start(
-                clientSecretKeyB64: local.secretB64,
-                clientPublicKeyB64: local.publicB64,
-                serverPublicKeyB64: serverPub,
-                serverEndpoint: cfg.rpEndpoint,
-                rotationSeconds: cfg.pskRotationSeconds
-            )
-        } catch {
-            debugLog("connect: PQC keys unavailable, skipping rosenpass loop: \(error.localizedDescription)")
-        }
+        // We deliberately leave the RosenpassBridge property on this
+        // class instantiated (so its UI status reads still work for
+        // existing call sites), but no longer start its loop. Eventually
+        // the host-app rosenpass plumbing will be ripped out entirely.
+        //
+        // The ContentView UI's "PQC: rotation N" indicator will be
+        // updated in a follow-up commit to read from the App Group
+        // UserDefaults that RosenpassDriver writes to (keys
+        // ne.rosenpass.rotationCount + ne.rosenpass.lastSuccessEpoch).
+        // Until then the indicator may show stale "PQC: idle".
     }
 
     /// Async wrapper around NETunnelProviderSession.sendProviderMessage.

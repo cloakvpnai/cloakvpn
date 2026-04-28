@@ -361,6 +361,30 @@ final class RosenpassDriver {
     }
 }
 
+// MARK: - FfiError → LocalizedError (CloakTunnel target copy)
+//
+// The uniffi-generated FfiError carries useful `message: String` payloads
+// on every case but uniffi only adds Error conformance — not
+// LocalizedError. Without this extension, any FfiError surfaced through
+// `error.localizedDescription` collapses to the unhelpful "CloakTunnel.
+// FfiError error <N>" form, hiding the payload that explains what
+// actually went wrong (which is exactly what we hit on first deploy of
+// the in-NE driver — "handshake failed: ...FfiError error 0" with no
+// message visible). RosenpassBridge.swift in the host-app target has an
+// identical extension; we duplicate it here because rosenpassffi.swift
+// is shared between targets but extensions on FfiError are
+// target-scoped (each target gets its own).
+extension FfiError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .Rosenpass(let m):    return "rosenpass: \(m)"
+        case .InvalidInput(let m): return "invalid input: \(m)"
+        case .InvalidState(let m): return "invalid state: \(m)"
+        case .Internal(let m):     return "internal: \(m)"
+        }
+    }
+}
+
 // MARK: - Errors
 
 enum RosenpassDriverError: LocalizedError {
