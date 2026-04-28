@@ -226,20 +226,32 @@ final class RosenpassBridge: ObservableObject {
         let rotations = (obj["rotationCount"] as? Int) ?? 0
         let lastSuccessEpoch = (obj["lastSuccessEpoch"] as? Double) ?? 0
 
+        // Gate everything on the session-start epoch. If the most
+        // recent NE-side rotation predates *this* polling session,
+        // it belongs to a previous tunnel run that left its status
+        // file behind in the App Group container. Treat as
+        // "no-fresh-rotation-yet" (.handshaking) rather than
+        // surfacing the stale age — which is what the user saw as
+        // "PSK stale (4900s old)" on every fresh connect before
+        // this gate landed.
+        if lastSuccessEpoch < statusPollSessionStartEpoch {
+            status = .handshaking
+            return
+        }
+
         guard rotations > 0 else {
             status = .handshaking
             return
         }
 
-        // Detect stale state: NE driver has stopped successfully rotating.
-        // Means the driver is failing repeatedly OR the NE process is
-        // somehow not getting CPU. Either way, surface it visually.
-        if lastSuccessEpoch > 0 {
-            let age = Date().timeIntervalSince1970 - lastSuccessEpoch
-            if age > Self.staleThresholdSec {
-                status = .error("PSK stale (\(Int(age))s old)")
-                return
-            }
+        // Now lastSuccessEpoch is genuinely from this session — apply
+        // the normal stale check (NE driver appears alive but hasn't
+        // rotated in ages → something's wrong even if Layer 2 hasn't
+        // fired yet).
+        let age = Date().timeIntervalSince1970 - lastSuccessEpoch
+        if age > Self.staleThresholdSec {
+            status = .error("PSK stale (\(Int(age))s old)")
+            return
         }
 
         status = .established(rotations: rotations)

@@ -261,6 +261,19 @@ final class TunnelManager: ObservableObject {
 
         lastRegionError = nil  // clear previous error before retry
 
+        // Snapshot the current connection state BEFORE we touch the
+        // config. If the user is currently connected (or actively
+        // connecting) to a different region, swapping the underlying
+        // providerConfiguration is not enough — iOS keeps running the
+        // old NE process with the OLD config until we explicitly stop
+        // the tunnel and start it again. Without this, tapping a flag
+        // while connected silently leaves the user on the previous
+        // region's tunnel ("connected but to the wrong place").
+        let wasActivelyConnected = (status == .connected
+                                    || status == .connecting
+                                    || status == .reasserting)
+        let switchingRegions = (selectedRegion?.id != region.id)
+
         // Fast path — region already provisioned this install. Skip
         // the server round-trip entirely; just re-import the cached
         // config text. Empirically takes 200-400ms (config parse +
@@ -271,6 +284,9 @@ final class TunnelManager: ObservableObject {
                 try await importConfig(cachedText)
                 selectedRegion = region
                 UserDefaults.standard.set(region.id, forKey: Self.selectedRegionUserDefaultsKey)
+                await reconnectIfWasConnected(wasConnected: wasActivelyConnected,
+                                              switching: switchingRegions,
+                                              region: region)
                 return
             } catch {
                 // Cache entry was bad somehow — fall through to a
@@ -296,10 +312,43 @@ final class TunnelManager: ObservableObject {
             provisionedConfigsByRegionID[region.id] = configText
             persistProvisionedConfigsCache()
             debugLog("selectRegion: \(region.id) configured + cached successfully")
+            await reconnectIfWasConnected(wasConnected: wasActivelyConnected,
+                                          switching: switchingRegions,
+                                          region: region)
         } catch {
             let msg = error.localizedDescription
             debugLog("selectRegion: \(region.id) failed: \(msg)")
             lastRegionError = "\(region.displayName): \(msg)"
+        }
+    }
+
+    /// If the user tapped a flag while the tunnel was active, tear
+    /// down the existing connection and re-start it against the
+    /// freshly-imported config. iOS doesn't pick up the new
+    /// providerConfiguration mid-flight — the only way to repoint a
+    /// running tunnel is stop + start.
+    ///
+    /// `switching` guards against the no-op case where the user
+    /// re-tapped the SAME region they were already connected to —
+    /// no need to drop+restart the tunnel for that.
+    private func reconnectIfWasConnected(wasConnected: Bool,
+                                         switching: Bool,
+                                         region: CloakRegion) async {
+        guard wasConnected, switching else { return }
+        debugLog("selectRegion: was connected, switching regions — bouncing tunnel")
+        do {
+            try await disconnect()
+            // Brief settle delay so iOS finishes tearing down the old
+            // NE process before we ask it to spawn a new one. Without
+            // this, startVPNTunnel can race with the in-flight stop
+            // and either fail with "another connection in progress"
+            // or silently no-op.
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            try await connect()
+        } catch {
+            let msg = error.localizedDescription
+            debugLog("selectRegion: bounce failed: \(msg)")
+            lastRegionError = "\(region.displayName) reconnect: \(msg)"
         }
     }
 
