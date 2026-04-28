@@ -81,6 +81,13 @@ struct ContentView: View {
             .alert("Error", isPresented: .constant(errorMsg != nil), actions: {
                 Button("OK") { errorMsg = nil }
             }, message: { Text(errorMsg ?? "") })
+            // Region-selection errors get their own alert so the user
+            // immediately sees why a flag-tap didn't take effect (vs.
+            // the silent no-op we shipped initially). Tied to
+            // tunnel.lastRegionError; tapping Dismiss clears it.
+            .alert("Region select failed", isPresented: .constant(tunnel.lastRegionError != nil), actions: {
+                Button("Dismiss") { tunnel.lastRegionError = nil }
+            }, message: { Text(tunnel.lastRegionError ?? "") })
             .alert("Reset Tunnel?", isPresented: $showingResetConfirm) {
                 Button("Reset", role: .destructive) {
                     Task { await performReset() }
@@ -276,33 +283,56 @@ struct ContentView: View {
     /// without the VPN" indicator). Right column shows the VPN
     /// endpoint IP when connected, "---" otherwise. Arrow between
     /// the two reinforces the "IP → VPN IP" mental model.
+    ///
+    /// Tappable: long-tap or single-tap triggers a manual public-IP
+    /// refresh. Useful when the cache is stale (e.g. fresh install
+    /// with the VPN already on — we can't auto-detect because every
+    /// fetch goes through the tunnel and returns the VPN endpoint IP).
     private var ipDisplayPanel: some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("IP").font(.caption).foregroundStyle(.secondary)
-                Text(tunnel.publicIP ?? "—")
-                    .font(.system(.subheadline, design: .monospaced))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+        Button {
+            Task { await tunnel.refreshPublicIPIfNotConnected() }
+        } label: {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("IP").font(.caption).foregroundStyle(.secondary)
+                    Text(publicIPDisplayValue)
+                        .font(.system(.subheadline, design: .monospaced))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer()
+                Image(systemName: "arrow.right")
+                    .font(.footnote)
+                    .foregroundStyle(tunnel.status == .connected ? .green : .secondary)
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("VPN IP").font(.caption).foregroundStyle(.secondary)
+                    Text(vpnIPDisplayValue)
+                        .font(.system(.subheadline, design: .monospaced))
+                        .foregroundStyle(tunnel.status == .connected ? .primary : .secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
-            Spacer()
-            Image(systemName: "arrow.right")
-                .font(.footnote)
-                .foregroundStyle(tunnel.status == .connected ? .green : .secondary)
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("VPN IP").font(.caption).foregroundStyle(.secondary)
-                Text(vpnIPDisplayValue)
-                    .font(.system(.subheadline, design: .monospaced))
-                    .foregroundStyle(tunnel.status == .connected ? .primary : .secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
+            .padding(.horizontal)
+            .padding(.vertical, 10)
+            .background(Color.secondary.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .background(Color.secondary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .buttonStyle(.plain)
+    }
+
+    /// Display string for the user's real public IP. Shows the
+    /// cached value when present; a hint about how to populate the
+    /// cache when nil. Cache populates automatically on transitions
+    /// to .disconnected, OR on tap of this panel while disconnected.
+    private var publicIPDisplayValue: String {
+        if let ip = tunnel.publicIP { return ip }
+        if tunnel.status == .connected {
+            return "(disconnect to detect)"
+        }
+        return "(tap to detect)"
     }
 
     /// VPN IP shown in the right column. Only populated when the tunnel

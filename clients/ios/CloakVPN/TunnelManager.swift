@@ -44,6 +44,12 @@ final class TunnelManager: ObservableObject {
     /// Drives a spinner on the region's flag tile.
     @Published private(set) var regionSelectionInProgress: Bool = false
 
+    /// Last error from a region-selection attempt. Surface via an alert
+    /// or status banner so the user actually sees provisioning
+    /// failures instead of silent no-op (which is what users observed
+    /// when an early build's selectRegion swallowed errors).
+    @Published var lastRegionError: String?
+
     /// User's actual public IP (their home / cellular IP, NOT the VPN
     /// endpoint). Fetched + cached when the VPN is OFF, so the
     /// "IP → VPN IP" display pattern works even when connected.
@@ -149,31 +155,54 @@ final class TunnelManager: ObservableObject {
         publicIP = UserDefaults.standard.string(forKey: Self.publicIPUserDefaultsKey)
     }
 
-    /// Fetch the user's actual public IP from a third-party service and
-    /// cache it. Call only when the VPN is OFF — when ON, the response
-    /// is the VPN endpoint's IP, which would overwrite the user's real
-    /// home IP cache. The status observer also calls this on transitions
-    /// to .disconnected to refresh the cache for the next session.
+    /// Fetch the user's actual public IP from a third-party service.
+    /// Always tries the fetch (regardless of VPN state) but discards
+    /// results that match any known Cloak region's VPN endpoint —
+    /// those are the VPN's IP, not the user's home IP, and caching
+    /// them would corrupt the "IP → VPN IP" UI display.
+    ///
+    /// Tries multiple providers for resilience: api.ipify.org first,
+    /// then ipinfo.io as fallback. Both return plain-text IP only.
     func refreshPublicIPIfNotConnected() async {
-        guard status == .disconnected else {
-            debugLog("refreshPublicIPIfNotConnected: VPN is up, skipping (would overwrite real-IP cache)")
-            return
-        }
-        guard let url = URL(string: "https://api.ipify.org") else { return }
-        do {
-            var req = URLRequest(url: url)
-            req.timeoutInterval = 6
-            let (data, _) = try await URLSession.shared.data(for: req)
-            if let ip = String(data: data, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-               !ip.isEmpty {
+        // Set of Cloak region endpoint IPs — we know these are VPN
+        // exits, not user home IPs, so any match means the VPN was on
+        // when the lookup ran.
+        let vpnEndpoints = Set(CloakRegion.all.map { $0.endpointIP })
+
+        let providers = [
+            "https://api.ipify.org",
+            "https://ipinfo.io/ip",
+        ]
+
+        for providerURL in providers {
+            guard let url = URL(string: providerURL) else { continue }
+            do {
+                var req = URLRequest(url: url)
+                req.timeoutInterval = 6
+                let (data, _) = try await URLSession.shared.data(for: req)
+                guard let raw = String(data: data, encoding: .utf8) else { continue }
+                let ip = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !ip.isEmpty else { continue }
+
+                if vpnEndpoints.contains(ip) {
+                    // The VPN was up when we asked; this response is
+                    // the VPN endpoint, NOT the user's real IP. Skip
+                    // updating the cache — preserves whatever real IP
+                    // we cached on a previous (VPN-off) launch.
+                    debugLog("refreshPublicIP: \(ip) matches a Cloak region; skipping cache (VPN on)")
+                    return
+                }
+
                 self.publicIP = ip
                 UserDefaults.standard.set(ip, forKey: Self.publicIPUserDefaultsKey)
-                debugLog("refreshPublicIPIfNotConnected: cached \(ip)")
+                debugLog("refreshPublicIP: cached \(ip) from \(providerURL)")
+                return  // success, stop trying more providers
+            } catch {
+                debugLog("refreshPublicIP: \(providerURL) failed: \(error.localizedDescription)")
+                continue
             }
-        } catch {
-            debugLog("refreshPublicIPIfNotConnected: fetch failed: \(error.localizedDescription)")
         }
+        debugLog("refreshPublicIP: all providers failed; publicIP stays \(publicIP ?? "nil")")
     }
 
     /// Customer-facing region selection. Called when the user taps a
@@ -193,6 +222,7 @@ final class TunnelManager: ObservableObject {
         defer { regionSelectionInProgress = false }
 
         debugLog("selectRegion: \(region.id) — provisioning via \(region.serverURL)")
+        lastRegionError = nil  // clear previous error before retry
         do {
             try await provisionFromAPI(
                 serverBase: region.serverURL,
@@ -203,15 +233,9 @@ final class TunnelManager: ObservableObject {
             UserDefaults.standard.set(region.id, forKey: Self.selectedRegionUserDefaultsKey)
             debugLog("selectRegion: \(region.id) configured successfully")
         } catch {
-            debugLog("selectRegion: \(region.id) failed: \(error.localizedDescription)")
-            // Surface to UI via the existing tunnel.config flow OR via
-            // a dedicated lastError @Published. For now the caller
-            // (ContentView) inspects regionSelectionInProgress only;
-            // we throw nothing because async funcs without throws are
-            // simpler from SwiftUI Task closures. Errors will surface
-            // when the user taps Connect against a half-provisioned
-            // state.
-            // TODO: add @Published lastRegionError for inline error UI.
+            let msg = error.localizedDescription
+            debugLog("selectRegion: \(region.id) failed: \(msg)")
+            lastRegionError = "\(region.displayName): \(msg)"
         }
     }
 
