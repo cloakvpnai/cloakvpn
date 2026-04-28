@@ -239,7 +239,7 @@ struct ContentView: View {
                 .aspectRatio(contentMode: .fit)
                 .foregroundStyle(CloakDesign.brandGrey)
                 .opacity(0.35)
-                .frame(width: geo.size.width * 1.15)
+                .frame(width: geo.size.width * 1.7)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
