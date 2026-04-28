@@ -71,9 +71,12 @@ server {
     ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
 
-    # Modern TLS only (Mozilla "intermediate" 2023). iOS 13+ supports all.
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers off;
+    # TLS 1.3 ONLY. iOS 12.2+ supports it; our app's iOS 16+ floor is
+    # well above that. Trade-off: zero compatibility cost in exchange
+    # for mandatory PFS, no legacy ciphers (no RSA kx, no static DH,
+    # no CBC-AEAD), 1-RTT handshake, built-in downgrade resistance.
+    # Clean audit / marketing story ("we accept only TLS 1.3").
+    ssl_protocols TLSv1.3;
     ssl_session_cache shared:SSL:10m;
     ssl_session_timeout 1d;
 
