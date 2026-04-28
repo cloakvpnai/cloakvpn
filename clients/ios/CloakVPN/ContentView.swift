@@ -210,9 +210,9 @@ struct ContentView: View {
                 }
             }
         }) {
-            Text(tunnel.status == .connected ? "Disconnect" : "Connect")
+            Text(tunnel.status == .connected ? "DISCONNECT" : "CONNECT")
                 .font(CloakDesign.headline(size: 30, weight: .semibold))
-                .tracking(0.8)
+                .tracking(2.0)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 22)
                 .background(
