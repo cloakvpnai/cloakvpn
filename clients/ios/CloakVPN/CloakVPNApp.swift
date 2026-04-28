@@ -9,22 +9,27 @@ struct CloakVPNApp: App {
             ContentView()
                 .environmentObject(tunnel)
                 .task {
-                    // Run startup tasks concurrently — they're
-                    // independent (loading existing VPN profile vs.
-                    // ensuring local keypairs) and we don't want any
-                    // blocking the others. The two ensure* calls each
-                    // generate one keypair on first launch (rosenpass
-                    // McEliece keygen ~50-200 ms; Curve25519 WG keygen
-                    // <1 ms) and are fast-path no-ops on subsequent
-                    // launches.
-                    async let _ = tunnel.load()
+                    // load() must complete BEFORE preCreateManagerIfNeeded
+                    // so we don't double-create on second launches. The
+                    // keypair + IP work runs in parallel since none of it
+                    // depends on the manager state.
                     async let _ = tunnel.ensureLocalKeypair()
                     async let _ = tunnel.ensureLocalWGKeypair()
-                    // Refresh the user's real public IP (only fires
-                    // when VPN is currently OFF, otherwise we'd
-                    // overwrite the home-IP cache with the VPN
-                    // endpoint's IP).
                     async let _ = tunnel.refreshPublicIPIfNotConnected()
+
+                    await tunnel.load()
+                    // CRITICAL UX: trigger the iOS "Cloak VPN Would Like
+                    // to Add VPN Configurations" prompt the MOMENT the app
+                    // opens, not later when the user taps a region (which
+                    // would force them to wait through a 3-8s server
+                    // provisioning round-trip first). Pre-creating an
+                    // approved-but-disabled placeholder profile means
+                    // every subsequent saveToPreferences (during real
+                    // region picks) silently updates that profile with
+                    // no second prompt — they tap a region and Connect,
+                    // and the tunnel just comes up.
+                    await tunnel.preCreateManagerIfNeeded()
+
                     // Re-apply the saved subscription icon assignment
                     // on every cold start. Cheap no-op when the icon
                     // already matches (the inner alternateIconName

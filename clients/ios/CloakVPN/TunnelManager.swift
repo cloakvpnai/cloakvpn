@@ -463,6 +463,72 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    /// On fresh install, pre-create a placeholder NETunnelProviderManager
+    /// so the iOS "Cloak VPN Would Like to Add VPN Configurations" prompt
+    /// fires the moment the app opens — BEFORE the user taps a region.
+    ///
+    /// Why: the prompt is only triggered by saveToPreferences() on a
+    /// not-yet-approved manager. Without this, the prompt fires later
+    /// inside selectRegion → provisionFromAPI → importConfig, AFTER the
+    /// 3-8s server provisioning round-trip. Net effect was the user
+    /// would tap a region, watch a spinner for 5 seconds, finally see
+    /// the iOS prompt. Bad first impression.
+    ///
+    /// With this pre-creation:
+    ///   - On fresh install, prompt fires within ~300ms of app launch.
+    ///   - User taps Allow once. iOS stores the approval.
+    ///   - Subsequent saveToPreferences calls (from importConfig when
+    ///     the user actually picks a region) silently update the same
+    ///     approved profile — no second prompt.
+    ///
+    /// The placeholder is configured with isEnabled=false and a
+    /// dummy server address so the user can't accidentally tap Connect
+    /// against it. importConfig replaces every field when real config
+    /// arrives.
+    ///
+    /// Idempotent — no-op when a manager already exists (load() found one).
+    func preCreateManagerIfNeeded() async {
+        if manager != nil {
+            debugLog("preCreateManager: existing manager found, skipping")
+            return
+        }
+        debugLog("preCreateManager: no existing manager — creating placeholder to trigger iOS permission prompt early")
+
+        let placeholder = NETunnelProviderManager()
+        let proto = NETunnelProviderProtocol()
+        // Bundle ID must match the real CloakTunnel target — wrong here
+        // and iOS would later need to revoke + re-prompt when we update
+        // to the correct one.
+        proto.providerBundleIdentifier = "ai.cloakvpn.CloakVPN.CloakTunnel"
+        // Placeholder server address. Real value gets set in importConfig
+        // when user picks a region. iOS doesn't validate this until
+        // startVPNTunnel() is called, which we never do on the placeholder
+        // (isEnabled=false).
+        proto.serverAddress = "placeholder"
+        proto.providerConfiguration = ["placeholder": "true"]
+        // includeAllNetworks MUST match the eventual real config to avoid
+        // re-prompting on the first real save. The real importConfig sets
+        // includeAllNetworks=true, so we set it here too.
+        proto.includeAllNetworks = true
+        placeholder.protocolConfiguration = proto
+        placeholder.localizedDescription = "CLOAK VPN"
+        placeholder.isEnabled = false  // user can't accidentally connect to nothing
+
+        do {
+            try await placeholder.saveToPreferences()
+            try await placeholder.loadFromPreferences()
+            self.manager = placeholder
+            self.observeStatus(placeholder.connection)
+            debugLog("preCreateManager: placeholder profile saved (user accepted prompt)")
+        } catch {
+            // Most likely: user tapped "Don't Allow". Fall through —
+            // the next selectRegion attempt will re-trigger via the
+            // real importConfig path, and the user will see the prompt
+            // again at that point. Nothing we can do besides retry.
+            debugLog("preCreateManager: saveToPreferences failed (user denied?): \(error)")
+        }
+    }
+
     /// Persist a new config and attach it to an NETunnelProviderManager.
     ///
     /// New (privacy-fixed) data flow:
