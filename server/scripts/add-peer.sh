@@ -106,13 +106,23 @@ else
 fi
 
 # ---------- WireGuard peer registration ----------------------------------
-cat >>"$ETC_WG/$WG_IFACE.conf" <<EOF
+#
+# Idempotency guard: if a [Peer] block with this exact PublicKey already
+# exists, skip the append. Without this guard, repeated API calls for
+# the same client (e.g. iOS app re-tapping a region the same install
+# already provisioned) accumulated duplicate [Peer] entries — relatively
+# benign for WG (it deduplicates internally) but still untidy.
+if grep -qF "PublicKey = $PEER_PUB" "$ETC_WG/$WG_IFACE.conf" 2>/dev/null; then
+  echo "[add-peer] WG [Peer] for $PEER_PUB already in $WG_IFACE.conf — skipping append"
+else
+  cat >>"$ETC_WG/$WG_IFACE.conf" <<EOF
 
 [Peer]
 # $NAME
 PublicKey = $PEER_PUB
 AllowedIPs = $PEER_V4/32, $PEER_V6/128
 EOF
+fi
 
 # ---------- Rosenpass peer registration ----------------------------------
 #
@@ -122,18 +132,32 @@ EOF
 # every InitHello fails with "No valid hash function found for InitHello"
 # at the rosenpass::protocol::CryptoServer::handle_msg dispatch. Cost us
 # multiple hours on the 2026-04-25 smoke-test debugging run; do not remove.
-cat >>"$ETC_RP/server.toml" <<EOF
+#
+# CRITICAL idempotency guard: rosenpass refuses to start when the same
+# peer ID (= hash of its public key) is registered twice. This file is
+# read fresh on every cloak-rosenpass.service restart, so duplicate
+# [[peers]] blocks crash-loop the daemon (we hit this 2026-04-27 with
+# restart counter > 1500 across all 4 regions). Skip the append if a
+# block already references this exact key file.
+RP_KEY_REF="public_key = \"$ETC_RP/$NAME.rosenpass-public\""
+if grep -qF "$RP_KEY_REF" "$ETC_RP/server.toml" 2>/dev/null; then
+  echo "[add-peer] rosenpass [[peers]] for $NAME already in server.toml — skipping append"
+else
+  cat >>"$ETC_RP/server.toml" <<EOF
 
 [[peers]]
 public_key = "$ETC_RP/$NAME.rosenpass-public"
 key_out = "/run/rosenpass/psk-$NAME"
 protocol_version = "V03"
 EOF
+fi
 
 # Hot-reload WireGuard (doesn't drop existing tunnels)
 wg syncconf "$WG_IFACE" <(wg-quick strip "$WG_IFACE")
 
-# Restart rosenpass to pick up new peer (brief handshake interruption)
+# Restart rosenpass to pick up new peer (brief handshake interruption).
+# Idempotent — if no peer was actually added above, the restart is just
+# a no-op in terms of state, but still cycles the connection briefly.
 systemctl restart cloak-rosenpass.service
 
 # ---------- Output the client config block -------------------------------

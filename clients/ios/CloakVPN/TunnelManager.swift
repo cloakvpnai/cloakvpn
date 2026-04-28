@@ -338,12 +338,35 @@ final class TunnelManager: ObservableObject {
         debugLog("selectRegion: was connected, switching regions — bouncing tunnel")
         do {
             try await disconnect()
-            // Brief settle delay so iOS finishes tearing down the old
-            // NE process before we ask it to spawn a new one. Without
-            // this, startVPNTunnel can race with the in-flight stop
-            // and either fail with "another connection in progress"
-            // or silently no-op.
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+
+            // POLL until the tunnel is actually .disconnected before
+            // calling connect(). stopVPNTunnel is fire-and-forget at
+            // the iOS layer; without polling, startVPNTunnel can race
+            // the in-flight stop and either:
+            //   - fail outright ("another connection is in progress")
+            //   - silently no-op (status flips to "connected" but the
+            //     NE process from the OLD config is still what's
+            //     actually running — the symptom the user reported
+            //     2026-04-27: PQC handshaking never completes after
+            //     a region switch because the new NE process never
+            //     actually started)
+            //
+            // Up to 8 seconds; bail out if iOS hasn't settled by then
+            // and surface as a real error rather than silently
+            // attempting a half-broken connect.
+            let deadline = Date().addingTimeInterval(8.0)
+            while Date() < deadline && status != .disconnected {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
+            if status != .disconnected {
+                debugLog("selectRegion: bounce stop didn't settle (status=\(status)) — proceeding anyway")
+            } else {
+                debugLog("selectRegion: bounce stop settled cleanly")
+            }
+
+            // One more brief beat for iOS to release the utun before
+            // we ask for a new one.
+            try? await Task.sleep(nanoseconds: 500_000_000)
             try await connect()
         } catch {
             let msg = error.localizedDescription
