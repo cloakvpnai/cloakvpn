@@ -183,6 +183,17 @@ final class RosenpassDriver {
             )
 
             try await ensureConnection()
+            // Close the UDP socket at the end of every handshake (success
+            // OR failure), exactly as the original host-app RosenpassBridge
+            // / NETunnelTransport.close() does. Without this, stale rosenpass
+            // response packets from a PREVIOUS handshake remain buffered in
+            // the kernel UDP receive queue, get consumed by the NEXT
+            // handshake's receiveUDP() call, and fail to validate against
+            // the new session's ID — producing the "handle_msg: Got
+            // RespHello packet for non-existent session [...]" error
+            // pattern. Each handshake gets a fresh ephemeral source port +
+            // empty receive buffer.
+            defer { closeConnection() }
 
             let firstMsg = try session.initiate()
             try await sendUDP(firstMsg)
