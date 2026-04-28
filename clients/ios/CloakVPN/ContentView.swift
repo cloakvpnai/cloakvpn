@@ -276,14 +276,11 @@ struct ContentView: View {
             Text(tunnel.status == .connected ? "DISCONNECT" : "CONNECT")
                 .font(CloakDesign.headline(size: 30, weight: .semibold))
                 .tracking(2.0)
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.35), radius: 2, x: 0, y: 1)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 22)
-                .background(
-                    tunnel.status == .connected
-                        ? Color.red
-                        : CloakDesign.brandGreen
-                )
-                .foregroundStyle(.white)
+                .background(connectButtonHoloGlass)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14)
@@ -295,6 +292,47 @@ struct ContentView: View {
                 )
         }
         .disabled(tunnel.config == nil)
+    }
+
+    /// Holo-glass background for the Connect button — same visual
+    /// language as the QUICK CONNECT section (translucent, tinted, the
+    /// world-map background bleeds through subtly) but layered with
+    /// extra material + gradient sheen for a "premium glass chip" feel.
+    ///
+    /// Layers (bottom → top):
+    /// 1. `.ultraThinMaterial` — frosted-glass base; the world map
+    ///    behind shows through softly.
+    /// 2. Brand-color wash (green when disconnected, red when
+    ///    connected) — diagonal gradient gives depth.
+    /// 3. White-to-clear top sheen — the "glass highlight" that sells
+    ///    the holographic look.
+    @ViewBuilder
+    private var connectButtonHoloGlass: some View {
+        let base = tunnel.status == .connected
+            ? Color.red
+            : CloakDesign.brandGreen
+        ZStack {
+            Rectangle().fill(.ultraThinMaterial)
+            LinearGradient(
+                colors: [
+                    base.opacity(0.60),
+                    base.opacity(0.40),
+                    base.opacity(0.60),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.45),
+                    Color.white.opacity(0.05),
+                    Color.clear,
+                    Color.white.opacity(0.12),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
     }
 
     /// Currently-selected region card. Shows the chosen region's flag
