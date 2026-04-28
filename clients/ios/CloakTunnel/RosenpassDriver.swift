@@ -81,13 +81,22 @@ final class RosenpassDriver {
     private var rotationCount: Int = 0
     private var lastSuccessAt: Date?
 
-    /// App Group container key for exposing rotation state to the host
+    /// App Group container path for exposing rotation state to the host
     /// app. The host app's UI polls this so the user still sees a live
     /// "PQC: N rotations" indicator even though the actual loop is now
     /// in the NE.
+    ///
+    /// File-based, NOT UserDefaults: iOS doesn't reliably propagate
+    /// UserDefaults across processes in real time — the first cross-
+    /// process write tends to land, but subsequent writes get stuck in
+    /// the reader's UserDefaults cache and never become visible to the
+    /// host app's poll. App Group file writes have well-defined cross-
+    /// process semantics (kernel-level shared filesystem; mtime + read
+    /// always reflect the latest write). Originally surfaced 2026-04-27
+    /// as "PQC: 1 rotation" frozen on the iPhone UI even though the
+    /// server logs showed 5+ successful exchanges.
     private static let appGroupID = "group.ai.cloakvpn.CloakVPN"
-    private static let statusKey_RotationCount = "ne.rosenpass.rotationCount"
-    private static let statusKey_LastSuccessEpoch = "ne.rosenpass.lastSuccessEpoch"
+    private static let statusFilename = "ne-rosenpass-status.json"
 
     // MARK: - Init / lifecycle
 
@@ -352,22 +361,33 @@ final class RosenpassDriver {
 
     // MARK: - App Group status export
 
-    /// Publish rotation count + last-success timestamp via App Group
-    /// UserDefaults so the host app's UI can read and display them.
-    /// Without this, the host app would have no visibility into rosen-
-    /// pass progress and the existing "PQC: N rotations" UI would
-    /// appear permanently idle. Best-effort — failures are logged but
-    /// don't abort the rotation loop (the actual key exchange is what
-    /// matters; UI freshness is cosmetic).
+    /// Publish rotation count + last-success timestamp to a shared file
+    /// in the App Group container so the host app's UI can read and
+    /// display them. Without this, the host app would have no visibility
+    /// into rosenpass progress and the existing "PQC: N rotations" UI
+    /// would appear permanently idle. Best-effort — failures are logged
+    /// but don't abort the rotation loop (the actual key exchange is
+    /// what matters; UI freshness is cosmetic).
     private func writeStatusToAppGroup() {
-        guard let ud = UserDefaults(suiteName: Self.appGroupID) else {
-            os_log("RosenpassDriver: App Group UserDefaults unavailable — UI status export skipped",
+        guard let dir = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: Self.appGroupID
+        ) else {
+            os_log("RosenpassDriver: App Group container unavailable — UI status export skipped",
                    log: log, type: .error)
             return
         }
-        ud.set(rotationCount, forKey: Self.statusKey_RotationCount)
-        if let last = lastSuccessAt {
-            ud.set(last.timeIntervalSince1970, forKey: Self.statusKey_LastSuccessEpoch)
+        let target = dir.appendingPathComponent(Self.statusFilename)
+
+        // Tiny JSON: one line, predictable shape, easy to parse on
+        // host-app side without pulling in JSONDecoder ceremony.
+        let lastEpoch = lastSuccessAt?.timeIntervalSince1970 ?? 0
+        let json = "{\"rotationCount\":\(rotationCount),\"lastSuccessEpoch\":\(lastEpoch)}"
+        guard let data = json.data(using: .utf8) else { return }
+        do {
+            try data.write(to: target, options: [.atomic])
+        } catch {
+            os_log("RosenpassDriver: failed to write status file: %{public}s",
+                   log: log, type: .error, String(describing: error))
         }
     }
 }

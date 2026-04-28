@@ -90,8 +90,7 @@ final class RosenpassBridge: ObservableObject {
     private var statusPollTimer: Timer?
 
     private static let appGroupID = "group.ai.cloakvpn.CloakVPN"
-    private static let neRotationCountKey = "ne.rosenpass.rotationCount"
-    private static let neLastSuccessEpochKey = "ne.rosenpass.lastSuccessEpoch"
+    private static let neStatusFilename = "ne-rosenpass-status.json"
 
     /// Threshold past which we surface a degraded "stale" status to the
     /// user. Matches the NE-side health monitor's wedgePSKAgeSec — if
@@ -184,17 +183,33 @@ final class RosenpassBridge: ObservableObject {
     }
 
     private func refreshStatusFromAppGroup() {
-        guard let ud = UserDefaults(suiteName: Self.appGroupID) else {
-            status = .error("App Group unavailable")
+        // File-based status read. UserDefaults was unreliable across
+        // processes — first write would propagate to the host app, but
+        // subsequent writes got stuck in the host app's UserDefaults
+        // cache and never surfaced. App Group container files have
+        // well-defined cross-process semantics: kernel-level shared
+        // filesystem; reads always reflect the latest atomic write.
+        guard let dir = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: Self.appGroupID
+        ) else {
+            status = .error("App Group container unavailable")
             return
         }
-        let rotations = ud.integer(forKey: Self.neRotationCountKey)
-        let lastSuccessEpoch = ud.double(forKey: Self.neLastSuccessEpochKey)
+        let path = dir.appendingPathComponent(Self.neStatusFilename)
+
+        guard let data = try? Data(contentsOf: path),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            // No status file yet → NE driver hasn't completed its first
+            // handshake. Show "handshaking…" for visibility while we
+            // wait. (idle would suggest nothing is happening.)
+            status = .handshaking
+            return
+        }
+
+        let rotations = (obj["rotationCount"] as? Int) ?? 0
+        let lastSuccessEpoch = (obj["lastSuccessEpoch"] as? Double) ?? 0
 
         guard rotations > 0 else {
-            // No rotations have been published yet — driver is still
-            // doing its first handshake. Keep the user informed without
-            // looking idle.
             status = .handshaking
             return
         }
