@@ -8,6 +8,42 @@ import UniformTypeIdentifiers
 // `import rosenpassffiFFI` (the C module from the xcframework) under
 // the hood; that's the only module name in this build.
 
+/// Cloak VPN design system — single source of truth for brand color
+/// and typography choices. Centralized here so we can rev the visual
+/// language in one place rather than chasing magic constants across
+/// the view tree.
+enum CloakDesign {
+    /// Brand green — used for the Connect button, the QUICK CONNECT
+    /// section accent, and connected-state status indicators. Sits
+    /// just below pure neon (#00FF66) for a confident-but-not-loud
+    /// look. Comparable to PIA's connected green.
+    static let brandGreen = Color(red: 0.12, green: 0.74, blue: 0.36)
+
+    /// Slightly deeper green for pressed / disabled states.
+    static let brandGreenDeep = Color(red: 0.08, green: 0.58, blue: 0.28)
+
+    /// Headline font — serif design, semibold weight. Apple's serif
+    /// face on iOS is "New York"; using it here for the brand title
+    /// + Connect button gives the app a premium-tech feel (think
+    /// Linear's web type, Stripe's brand) without bundling a custom
+    /// font. Sans-serif body keeps reading speed unaffected.
+    static func headline(size: CGFloat, weight: Font.Weight = .semibold) -> Font {
+        .system(size: size, weight: weight, design: .serif)
+    }
+
+    /// Body font — default SF Pro, refined weight. Avoids the chunky
+    /// feel of `.bold()` in favor of `.semibold` with letter-tracking
+    /// for premium polish.
+    static func body(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: .default)
+    }
+
+    /// Small-caps style label (for section headers like "QUICK CONNECT").
+    static func sectionLabel() -> Font {
+        .system(size: 11, weight: .semibold, design: .default)
+    }
+}
+
 struct ContentView: View {
     @EnvironmentObject var tunnel: TunnelManager
     @State private var configText: String = ""
@@ -66,7 +102,15 @@ struct ContentView: View {
             }
             .padding()
             .navigationTitle("Cloak VPN")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // Custom serif title for premium-tech brand feel.
+                // Replaces SwiftUI's default sans-serif navigation title.
+                ToolbarItem(placement: .principal) {
+                    Text("Cloak VPN")
+                        .font(CloakDesign.headline(size: 18, weight: .semibold))
+                        .tracking(0.8)
+                }
                 // Hamburger button — opens the PIA-style Settings drawer
                 // with account info, region selection link, settings,
                 // about, etc.
@@ -149,7 +193,9 @@ struct ContentView: View {
     private var statusBadge: some View {
         HStack(spacing: 8) {
             Circle().fill(tunnel.status.color).frame(width: 10, height: 10)
-            Text(tunnel.status.description).font(.headline)
+            Text(tunnel.status.description)
+                .font(CloakDesign.headline(size: 17, weight: .semibold))
+                .tracking(0.3)
         }
     }
 
@@ -165,12 +211,23 @@ struct ContentView: View {
             }
         }) {
             Text(tunnel.status == .connected ? "Disconnect" : "Connect")
-                .font(.title2).bold()
+                .font(CloakDesign.headline(size: 22, weight: .semibold))
+                .tracking(0.6)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 18)
-                .background(tunnel.status == .connected ? Color.red : Color.blue)
+                .background(
+                    tunnel.status == .connected
+                        ? Color.red
+                        : CloakDesign.brandGreen
+                )
                 .foregroundStyle(.white)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
+                .shadow(
+                    color: (tunnel.status == .connected
+                            ? Color.red
+                            : CloakDesign.brandGreen).opacity(0.25),
+                    radius: 8, x: 0, y: 4
+                )
         }
         .disabled(tunnel.config == nil)
     }
@@ -186,26 +243,28 @@ struct ContentView: View {
                 Text(r.countryFlag).font(.system(size: 32))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(r.displayName)
-                        .font(.headline)
+                        .font(CloakDesign.headline(size: 16, weight: .semibold))
                     Text(r.endpointIP)
-                        .font(.system(.caption, design: .monospaced))
+                        .font(.system(size: 12, weight: .regular, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
             } else {
                 Image(systemName: "globe")
                     .font(.system(size: 28))
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(CloakDesign.brandGreen)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Choose a region")
-                        .font(.headline)
+                        .font(CloakDesign.headline(size: 16, weight: .semibold))
                     Text("Tap a flag below to provision")
-                        .font(.caption)
+                        .font(CloakDesign.body(size: 12))
                         .foregroundStyle(.secondary)
                 }
             }
             Spacer()
             if tunnel.regionSelectionInProgress {
-                ProgressView().scaleEffect(0.9)
+                ProgressView()
+                    .scaleEffect(0.9)
+                    .tint(CloakDesign.brandGreen)
             }
         }
         .padding()
@@ -219,19 +278,34 @@ struct ContentView: View {
     /// cloak-api-server) and auto-import the resulting config. PIA-style
     /// quick-connect pattern.
     private var quickConnectStrip: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("QUICK CONNECT")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(CloakDesign.brandGreen)
+                    .frame(width: 6, height: 6)
+                Text("QUICK CONNECT")
+                    .font(CloakDesign.sectionLabel())
+                    .tracking(1.4)
+                    .foregroundStyle(CloakDesign.brandGreen)
+            }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 14) {
                     ForEach(CloakRegion.all) { region in
                         regionTile(region)
                     }
                 }
-                .padding(.horizontal, 2) // breathing room for selection ring
+                .padding(.horizontal, 4)  // breathing room for selection ring
+                .padding(.vertical, 8)
             }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(CloakDesign.brandGreen.opacity(0.10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(CloakDesign.brandGreen.opacity(0.35), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
     @ViewBuilder
@@ -247,11 +321,15 @@ struct ContentView: View {
                     .padding(.vertical, 4)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+                            .stroke(
+                                isSelected ? CloakDesign.brandGreen : Color.clear,
+                                lineWidth: 2
+                            )
                     )
                 Text(region.shortLabel)
-                    .font(.caption.weight(isSelected ? .bold : .regular))
-                    .foregroundStyle(isSelected ? .primary : .secondary)
+                    .font(CloakDesign.body(size: 11, weight: isSelected ? .semibold : .regular))
+                    .tracking(0.4)
+                    .foregroundStyle(isSelected ? CloakDesign.brandGreen : .secondary)
             }
         }
         .buttonStyle(.plain)
@@ -292,30 +370,49 @@ struct ContentView: View {
         Button {
             Task { await tunnel.refreshPublicIPIfNotConnected() }
         } label: {
-            HStack(spacing: 8) {
+            HStack(alignment: .center, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("IP").font(.caption).foregroundStyle(.secondary)
+                    Text("IP")
+                        .font(.system(size: 10, weight: .semibold))
+                        .tracking(0.6)
+                        .foregroundStyle(.secondary)
                     Text(publicIPDisplayValue)
-                        .font(.system(.subheadline, design: .monospaced))
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                         .truncationMode(.middle)
                 }
-                Spacer()
+                .frame(maxWidth: .infinity, alignment: .leading)
+
                 Image(systemName: "arrow.right")
-                    .font(.footnote)
-                    .foregroundStyle(tunnel.status == .connected ? .green : .secondary)
-                Spacer()
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(
+                        tunnel.status == .connected
+                            ? CloakDesign.brandGreen
+                            : Color.secondary
+                    )
+                    .layoutPriority(1)
+
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("VPN IP").font(.caption).foregroundStyle(.secondary)
+                    Text("VPN IP")
+                        .font(.system(size: 10, weight: .semibold))
+                        .tracking(0.6)
+                        .foregroundStyle(.secondary)
                     Text(vpnIPDisplayValue)
-                        .font(.system(.subheadline, design: .monospaced))
-                        .foregroundStyle(tunnel.status == .connected ? .primary : .secondary)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundStyle(
+                            tunnel.status == .connected
+                                ? CloakDesign.brandGreen
+                                : Color.secondary
+                        )
                         .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                         .truncationMode(.middle)
                 }
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(Color.secondary.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 10))

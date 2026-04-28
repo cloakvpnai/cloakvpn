@@ -50,6 +50,29 @@ final class TunnelManager: ObservableObject {
     /// when an early build's selectRegion swallowed errors).
     @Published var lastRegionError: String?
 
+    /// Cache of already-provisioned region configs, keyed by region.id.
+    /// Populated on first successful selectRegion call for a given
+    /// region; subsequent taps on the same region (e.g. user toggles
+    /// US-W → DE → US-W) skip the server round-trip entirely and just
+    /// swap the active config locally — empirically takes 200-400ms
+    /// vs 3-8s for the full provisioning round-trip (which includes
+    /// add-peer.sh + cloak-rosenpass.service restart on the server).
+    ///
+    /// Persisted to UserDefaults so the cache survives app restarts —
+    /// once the user has provisioned each region once, switching is
+    /// effectively instant for the lifetime of the install.
+    ///
+    /// Cache invalidation: not needed in steady state. The server's
+    /// add-peer.sh is idempotent (peer name derived from rp pubkey
+    /// hash); if the user's local keys are deleted (factory reset of
+    /// the App Group container, full app reinstall), the cached
+    /// configs are still valid — they reference the server's pubkey
+    /// + endpoint, both of which are stable. The wgPrivateKey gets
+    /// re-filled at importConfig time from the local WG keypair, so
+    /// even a fresh keypair will produce a working config.
+    private var provisionedConfigsByRegionID: [String: String] = [:]
+    private static let provisionedConfigsCacheKey = "provisionedRegionConfigsV1"
+
     /// User's actual public IP (their home / cellular IP, NOT the VPN
     /// endpoint). Fetched + cached when the VPN is OFF, so the
     /// "IP → VPN IP" display pattern works even when connected.
@@ -153,6 +176,21 @@ final class TunnelManager: ObservableObject {
         // show immediately on cold start, even if the user launches
         // the app with the VPN already connected.
         publicIP = UserDefaults.standard.string(forKey: Self.publicIPUserDefaultsKey)
+
+        // Restore the per-region provisioned-config cache. Lets repeat
+        // taps on a previously-provisioned region skip the server
+        // round-trip entirely.
+        if let cached = UserDefaults.standard.dictionary(forKey: Self.provisionedConfigsCacheKey)
+            as? [String: String] {
+            provisionedConfigsByRegionID = cached
+        }
+    }
+
+    /// Persist the in-memory provisioned-config cache to UserDefaults.
+    /// Called whenever a new region is provisioned successfully.
+    private func persistProvisionedConfigsCache() {
+        UserDefaults.standard.set(provisionedConfigsByRegionID,
+                                  forKey: Self.provisionedConfigsCacheKey)
     }
 
     /// Fetch the user's actual public IP from a third-party service.
@@ -221,17 +259,43 @@ final class TunnelManager: ObservableObject {
         regionSelectionInProgress = true
         defer { regionSelectionInProgress = false }
 
-        debugLog("selectRegion: \(region.id) — provisioning via \(region.serverURL)")
         lastRegionError = nil  // clear previous error before retry
+
+        // Fast path — region already provisioned this install. Skip
+        // the server round-trip entirely; just re-import the cached
+        // config text. Empirically takes 200-400ms (config parse +
+        // saveToPreferences) vs 3-8s for full provisioning.
+        if let cachedText = provisionedConfigsByRegionID[region.id] {
+            debugLog("selectRegion: \(region.id) — cache hit, instant swap")
+            do {
+                try importConfig(cachedText)
+                selectedRegion = region
+                UserDefaults.standard.set(region.id, forKey: Self.selectedRegionUserDefaultsKey)
+                return
+            } catch {
+                // Cache entry was bad somehow — fall through to a
+                // full re-provision rather than failing the tap.
+                debugLog("selectRegion: cache import failed (\(error)), falling back to provisioning")
+                provisionedConfigsByRegionID.removeValue(forKey: region.id)
+                persistProvisionedConfigsCache()
+            }
+        }
+
+        debugLog("selectRegion: \(region.id) — provisioning via \(region.serverURL)")
         do {
-            try await provisionFromAPI(
+            let configText = try await provisionFromAPIRaw(
                 serverBase: region.serverURL,
                 apiKey: CloakRegion.bundledAPIKey,
                 peerName: nil  // server auto-derives from rp pubkey hash
             )
+            try importConfig(configText)
             selectedRegion = region
             UserDefaults.standard.set(region.id, forKey: Self.selectedRegionUserDefaultsKey)
-            debugLog("selectRegion: \(region.id) configured successfully")
+            // Cache the raw config text for instant subsequent switches
+            // back to this region.
+            provisionedConfigsByRegionID[region.id] = configText
+            persistProvisionedConfigsCache()
+            debugLog("selectRegion: \(region.id) configured + cached successfully")
         } catch {
             let msg = error.localizedDescription
             debugLog("selectRegion: \(region.id) failed: \(msg)")
@@ -472,6 +536,24 @@ final class TunnelManager: ObservableObject {
         apiKey: String,
         peerName: String? = nil
     ) async throws {
+        let configText = try await provisionFromAPIRaw(
+            serverBase: serverBase,
+            apiKey: apiKey,
+            peerName: peerName
+        )
+        debugLog("provisionFromAPI: got config (\(configText.count) chars), importing…")
+        try importConfig(configText)
+    }
+
+    /// Same as `provisionFromAPI` but returns the raw config text instead
+    /// of also importing it. Lets `selectRegion` cache the API response
+    /// per region.id so subsequent taps can short-circuit the network
+    /// round-trip and just call `importConfig` directly.
+    func provisionFromAPIRaw(
+        serverBase: String,
+        apiKey: String,
+        peerName: String? = nil
+    ) async throws -> String {
         // 1. Make sure we have both keypairs locally before talking to
         // the server. ensureLocalKeypair handles rosenpass; the new
         // ensureLocalWGKeypair handles WG. Both are idempotent.
@@ -507,7 +589,7 @@ final class TunnelManager: ObservableObject {
         // headroom but cap to keep the UI responsive.
         req.timeoutInterval = 30
 
-        debugLog("provisionFromAPI: POST \(endpoint.absoluteString) (wg_pub=\(wgKeys.publicB64.prefix(8))…, rp_pub=\(rpKeys.publicB64.prefix(12))…)")
+        debugLog("provisionFromAPIRaw: POST \(endpoint.absoluteString) (wg_pub=\(wgKeys.publicB64.prefix(8))…, rp_pub=\(rpKeys.publicB64.prefix(12))…)")
 
         // 3. Hit the API.
         let (data, resp) = try await URLSession.shared.data(for: req)
@@ -523,14 +605,7 @@ final class TunnelManager: ObservableObject {
             throw TunnelError.parse("API response not valid UTF-8")
         }
 
-        debugLog("provisionFromAPI: got config (\(configText.count) chars), importing…")
-
-        // 4. Import the returned config. The config block omits
-        // private_key (the server doesn't have ours and doesn't need
-        // to send it back); the parser tolerates that and importConfig
-        // picks up the locally-stored WG private key when wgPrivateKey
-        // is empty.
-        try importConfig(configText)
+        return configText
     }
 
     func connect() async throws {
