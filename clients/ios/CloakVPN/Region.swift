@@ -33,12 +33,18 @@ struct CloakRegion: Identifiable, Equatable, Codable {
     let endpointIP: String      // for the IP display block
 
     static let all: [CloakRegion] = [
+        // serverURL points at the per-region HTTPS endpoint terminated
+        // by nginx (Let's Encrypt cert via Cloudflare DNS-01 challenge,
+        // auto-renewed via certbot.timer). nginx proxies 443 -> 127.0.0.1:8443
+        // where cloak-api-server.py listens. endpointIP is the WireGuard
+        // tunnel endpoint — independent of where the provisioning API
+        // lives (could in theory split if we ever shard regions).
         CloakRegion(
             id: "us-west-1",
             displayName: "US West (Oregon)",
             shortLabel: "US-W",
             countryFlag: "🇺🇸",
-            serverURL: "http://5.78.203.171:8443",
+            serverURL: "https://cloak-us-west-1.cloakvpn.ai",
             endpointIP: "5.78.203.171"
         ),
         CloakRegion(
@@ -46,7 +52,7 @@ struct CloakRegion: Identifiable, Equatable, Codable {
             displayName: "US East (Virginia)",
             shortLabel: "US-E",
             countryFlag: "🇺🇸",
-            serverURL: "http://5.161.198.227:8443",
+            serverURL: "https://cloak-us-east-1.cloakvpn.ai",
             endpointIP: "5.161.198.227"
         ),
         CloakRegion(
@@ -54,7 +60,7 @@ struct CloakRegion: Identifiable, Equatable, Codable {
             displayName: "Germany (Falkenstein)",
             shortLabel: "DE",
             countryFlag: "🇩🇪",
-            serverURL: "http://91.98.65.98:8443",
+            serverURL: "https://cloak-de1.cloakvpn.ai",
             endpointIP: "91.98.65.98"
         ),
         CloakRegion(
@@ -62,7 +68,7 @@ struct CloakRegion: Identifiable, Equatable, Codable {
             displayName: "Finland (Helsinki)",
             shortLabel: "FI",
             countryFlag: "🇫🇮",
-            serverURL: "http://204.168.252.70:8443",
+            serverURL: "https://cloak-fi1.cloakvpn.ai",
             endpointIP: "204.168.252.70"
         ),
     ]
