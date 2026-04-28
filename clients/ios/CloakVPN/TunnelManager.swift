@@ -463,6 +463,62 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    /// Background pre-provision: warm up the per-region config cache for
+    /// the user's most-likely-to-pick region BEFORE they tap anything.
+    /// Each first-time provision is bottlenecked by ~1.4 MB of HTTPS
+    /// transfer (700 KB upload of the iPhone's rosenpass pubkey + 700 KB
+    /// download of the server's pubkey) which takes 2.5-4.5 seconds
+    /// depending on region distance. By doing that work eagerly during
+    /// the moments the user is reading the UI / accepting the iOS VPN
+    /// prompt, the eventual region tap becomes a local cache hit (~200 ms)
+    /// instead of a network round-trip.
+    ///
+    /// Heuristic: pre-provision the LAST-USED region (most likely tap
+    /// target). Falls back to us-west-1 on first launch. Only one region
+    /// is pre-provisioned to keep background bandwidth + server load
+    /// bounded — provisioning all 4 in parallel would be 4 × 1.4 MB =
+    /// 5.6 MB of background traffic per app launch and 4× the load on
+    /// our region API.
+    ///
+    /// Failures are silent (logged only) — the user will hit the normal
+    /// provision path when they tap if the warmup didn't land.
+    func warmUpPreferredRegion() async {
+        let target: CloakRegion
+        if let preferred = selectedRegion {
+            target = preferred
+        } else {
+            // First launch — pick the region whose endpoint IP is geographically
+            // closest based on a quick reverse-lookup of our public IP would
+            // be ideal but is overkill for now. Default to us-west-1 (covers
+            // the largest user demographic for a US-headquartered launch).
+            target = CloakRegion.byID("us-west-1") ?? CloakRegion.all[0]
+        }
+
+        // Skip if already cached this install
+        if provisionedConfigsByRegionID[target.id] != nil {
+            debugLog("warmUp: \(target.id) already cached — skipping")
+            return
+        }
+
+        debugLog("warmUp: pre-provisioning \(target.id) in background")
+        do {
+            let configText = try await provisionFromAPIRaw(
+                serverBase: target.serverURL,
+                apiKey: CloakRegion.bundledAPIKey,
+                peerName: nil
+            )
+            // Stash in the cache. Do NOT auto-import or set selectedRegion —
+            // the user hasn't actually picked anything yet, so we don't want
+            // to mutate any UI-visible state. The cache hit at selectRegion
+            // time will trigger the normal import path.
+            provisionedConfigsByRegionID[target.id] = configText
+            persistProvisionedConfigsCache()
+            debugLog("warmUp: \(target.id) cached successfully (\(configText.count) chars)")
+        } catch {
+            debugLog("warmUp: \(target.id) failed silently: \(error.localizedDescription)")
+        }
+    }
+
     /// On fresh install, pre-create a placeholder NETunnelProviderManager
     /// so the iOS "Cloak VPN Would Like to Add VPN Configurations" prompt
     /// fires the moment the app opens — BEFORE the user taps a region.

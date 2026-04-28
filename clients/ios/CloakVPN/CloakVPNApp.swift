@@ -36,6 +36,18 @@ struct CloakVPNApp: App {
                     // check short-circuits before iOS shows its
                     // "icon changed" alert).
                     SubscriptionInfo.applyIconForCurrentTier()
+
+                    // Warm-up: kick off a background provision call for
+                    // the user's most-likely-to-tap region (last-used or
+                    // default). Doesn't block UI — by the time the user
+                    // accepts the VPN prompt and taps a region, the
+                    // network round-trip is complete and the cache is
+                    // populated. Their tap is then a local cache hit
+                    // (~200ms) instead of waiting 2.5-4.5s for the
+                    // server round-trip to complete in the foreground.
+                    Task.detached(priority: .background) { [tunnel] in
+                        await tunnel.warmUpPreferredRegion()
+                    }
                 }
         }
     }
