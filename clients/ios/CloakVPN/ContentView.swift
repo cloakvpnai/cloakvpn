@@ -22,6 +22,11 @@ enum CloakDesign {
     /// Slightly deeper green for pressed / disabled states.
     static let brandGreenDeep = Color(red: 0.08, green: 0.58, blue: 0.28)
 
+    /// Bright gold accent — used to outline the primary Connect button
+    /// for premium "VIP / first-class" framing. #FFD700 classic gold;
+    /// reads bright on both light and dark backgrounds.
+    static let brandGold = Color(red: 1.0, green: 0.84, blue: 0.0)
+
     /// Headline font — serif design, semibold weight. Apple's serif
     /// face on iOS is "New York"; using it here for the brand title
     /// + Connect button gives the app a premium-tech feel (think
@@ -222,11 +227,13 @@ struct ContentView: View {
                 )
                 .foregroundStyle(.white)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(CloakDesign.brandGold, lineWidth: 2.5)
+                )
                 .shadow(
-                    color: (tunnel.status == .connected
-                            ? Color.red
-                            : CloakDesign.brandGreen).opacity(0.25),
-                    radius: 8, x: 0, y: 4
+                    color: CloakDesign.brandGold.opacity(0.45),
+                    radius: 10, x: 0, y: 0
                 )
         }
         .disabled(tunnel.config == nil)
