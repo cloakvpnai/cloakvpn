@@ -260,7 +260,7 @@ struct ContentView: View {
                 .foregroundStyle(CloakDesign.brandGrey)
                 .opacity(0.35)
                 .frame(
-                    width: geo.size.width * 2.0,
+                    width: geo.size.width * 2.5,
                     height: geo.size.height * 0.65
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
