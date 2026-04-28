@@ -101,19 +101,29 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 18) {
-                statusBadge
-                bigConnectButton
-                currentRegionCard
-                quickConnectStrip
-                pqcStatusLine
-                ipDisplayPanel
+            ZStack {
+                // World map background — bundled vector PDF in
+                // Assets.xcassets/WorldMap.imageset, rendered as a
+                // template so foregroundStyle controls the tint. Sits
+                // at low opacity behind everything so it frames the
+                // UI without competing with foreground content.
+                worldMapBackground
+                    .ignoresSafeArea()
 
-                Spacer(minLength: 8)
+                VStack(spacing: 18) {
+                    statusBadge
+                    bigConnectButton
+                    currentRegionCard
+                    quickConnectStrip
+                    pqcStatusLine
+                    ipDisplayPanel
 
-                bottomToolbar
+                    Spacer(minLength: 8)
+
+                    bottomToolbar
+                }
+                .padding()
             }
-            .padding()
             .navigationTitle("CLOAK VPN")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -208,6 +218,29 @@ struct ContentView: View {
             } catch {
                 errorMsg = "Read failed: \(error.localizedDescription)"
             }
+        }
+    }
+
+    /// World-map outline background — bundled vector PDF rendered as
+    /// a template image so we can tint it via foregroundStyle. Sits at
+    /// low opacity (8%) tinted with the brand grey, behind everything,
+    /// scaled to fill the screen and centered. The PDF is the Natural
+    /// Earth low-res countries dataset rendered as outlines only with
+    /// Antarctica dropped (visually dominates without adding meaning
+    /// for a VPN UI).
+    ///
+    /// Performance: PDF asset gets rasterized once on first use and
+    /// cached by UIKit; subsequent renders are free. ~88 KB on disk.
+    private var worldMapBackground: some View {
+        GeometryReader { geo in
+            Image("WorldMap")
+                .renderingMode(.template)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .foregroundStyle(CloakDesign.brandGrey)
+                .opacity(0.10)
+                .frame(width: geo.size.width * 1.15)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
