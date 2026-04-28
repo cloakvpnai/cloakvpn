@@ -9,12 +9,45 @@ struct CloakVPNApp: App {
             ContentView()
                 .environmentObject(tunnel)
                 .task {
-                    // Run both startup tasks concurrently — they're
-                    // independent (loading existing VPN profile vs. ensuring
-                    // a local rosenpass keypair) and we don't want either
-                    // blocking the other.
-                    async let _ = tunnel.load()
+                    // load() must complete BEFORE preCreateManagerIfNeeded
+                    // so we don't double-create on second launches. The
+                    // keypair + IP work runs in parallel since none of it
+                    // depends on the manager state.
                     async let _ = tunnel.ensureLocalKeypair()
+                    async let _ = tunnel.ensureLocalWGKeypair()
+                    async let _ = tunnel.refreshPublicIPIfNotConnected()
+
+                    await tunnel.load()
+                    // CRITICAL UX: trigger the iOS "Cloak VPN Would Like
+                    // to Add VPN Configurations" prompt the MOMENT the app
+                    // opens, not later when the user taps a region (which
+                    // would force them to wait through a 3-8s server
+                    // provisioning round-trip first). Pre-creating an
+                    // approved-but-disabled placeholder profile means
+                    // every subsequent saveToPreferences (during real
+                    // region picks) silently updates that profile with
+                    // no second prompt — they tap a region and Connect,
+                    // and the tunnel just comes up.
+                    await tunnel.preCreateManagerIfNeeded()
+
+                    // Re-apply the saved subscription icon assignment
+                    // on every cold start. Cheap no-op when the icon
+                    // already matches (the inner alternateIconName
+                    // check short-circuits before iOS shows its
+                    // "icon changed" alert).
+                    SubscriptionInfo.applyIconForCurrentTier()
+
+                    // Warm-up: kick off a background provision call for
+                    // the user's most-likely-to-tap region (last-used or
+                    // default). Doesn't block UI — by the time the user
+                    // accepts the VPN prompt and taps a region, the
+                    // network round-trip is complete and the cache is
+                    // populated. Their tap is then a local cache hit
+                    // (~200ms) instead of waiting 2.5-4.5s for the
+                    // server round-trip to complete in the foreground.
+                    Task.detached(priority: .background) { [tunnel] in
+                        await tunnel.warmUpPreferredRegion()
+                    }
                 }
         }
     }

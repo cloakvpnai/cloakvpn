@@ -155,7 +155,14 @@ enum ConfigParser {
         let rp = "rosenpass"
 
         return CloakConfig(
-            wgPrivateKey: try v(wg, "private_key"),
+            // private_key is now OPTIONAL: configs returned by
+            // cloak-api-server omit it (the iPhone holds its own
+            // locally-generated keypair). When this field is absent,
+            // TunnelManager fills it in from
+            // AppGroupKeyStore.loadLocalWGKeypair() before passing
+            // the dictionary to NETunnelProviderProtocol. Legacy
+            // configs that include private_key still work unchanged.
+            wgPrivateKey: (try? v(wg, "private_key")) ?? "",
             addressV4: try v(wg, "address_v4"),
             addressV6: try v(wg, "address_v6"),
             dns: try list(wg, "dns"),

@@ -61,6 +61,27 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// but a fresh preshared key, then call adapter.update().
     private var currentConfig: TunnelConfiguration?
 
+    /// PSK from a SET_PSK message that arrived before adapter.start
+    /// finished. WireGuardKit's adapter rejects update() calls with
+    /// `.invalidState` until start completes — so a fast rosenpass
+    /// exchange that fires during the brief startTunnel → adapter.start
+    /// window would otherwise have its first PSK silently dropped, leaving
+    /// iPhone-side wg-go with zero PSK while the server already has the
+    /// derived PSK from the exchange. Result: every WG handshake fails
+    /// with "Received invalid response message" until the next rotation
+    /// cycle. We buffer the PSK here and apply it as soon as adapter.start
+    /// completes. Cleared after successful apply.
+    private var pendingPresharedKey: Data?
+
+    /// In-process rosenpass driver. Replaces the old host-app
+    /// RosenpassBridge ↔ NE IPC dance with a direct UDP socket + direct
+    /// PSK application. Critical fix for the host-app-suspension wedge —
+    /// see RosenpassDriver.swift for the full rationale. Lifecycle:
+    /// instantiated and started inside the adapter.start success
+    /// callback in startTunnel (so we know wg-go is ready to receive
+    /// PSK updates); stopped in stopTunnel.
+    private var rosenpassDriver: RosenpassDriver?
+
     /// IP literal of the rosenpass server, parsed from
     /// CloakConfig.rpEndpoint at startTunnel. Used for two things:
     ///   (1) Adding an `excludedRoute` in `makeNetworkSettings` so iOS
@@ -84,6 +105,87 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// callbacks. Separate from the NE's main queue so a slow rosenpass
     /// receive can't stall WG packet shovelling.
     private let rosenpassQueue = DispatchQueue(label: "ai.cloakvpn.tunnel.rosenpass")
+
+    // MARK: - Health monitoring (Layer 1 — instrumentation only)
+    //
+    // Polls WireGuardKit's getRuntimeConfiguration every 15s and emits an
+    // os_log line per tick with rx/tx byte deltas, last-handshake age, and
+    // last-PSK-applied age. Also tracks a "would-be-wedged" heuristic and
+    // logs "WEDGE SUSPECTED" when it trips, but takes NO ACTION yet — Layer
+    // 2 (calling self.cancelTunnelWithError to force-respawn the NE) will
+    // be wired up after we have ~24h of real-device telemetry to threshold-
+    // tune. See HANDOFF_2026-04-27_session4.md for the full architecture.
+
+    /// Repeating timer that drives health checks. Lives for the duration
+    /// of the active tunnel; cancelled in stopTunnel.
+    private var healthCheckTimer: DispatchSourceTimer?
+
+    /// Dedicated serial queue for health-check state mutations so the
+    /// timer fire path and the getRuntimeConfiguration callback never
+    /// race on the cached counters.
+    private let healthCheckQueue = DispatchQueue(label: "ai.cloakvpn.tunnel.health")
+
+    /// Previous tick's WG transfer counters, for delta computation.
+    private var lastRxBytes: UInt64 = 0
+    private var lastTxBytes: UInt64 = 0
+
+    /// Wallclock timestamp of the last successful PSK application
+    /// (= last successful rosenpass exchange the NE has heard about).
+    /// Set by applyPresharedKey on success. Read by performHealthCheck.
+    private var lastPSKAppliedAt: Date?
+
+    /// Wallclock timestamp of when the tunnel came up. Used to suppress
+    /// spurious wedge warnings during the first 60s of warm-up while
+    /// the initial WG handshake completes and the first PQ exchange
+    /// runs.
+    private var tunnelUpAt: Date?
+
+    /// Consecutive ticks where the stall heuristic tripped. Reset to 0
+    /// the moment a tick sees rx growth. Logged each tick so we can see
+    /// patterns in Console.app without needing to correlate timestamps.
+    private var consecutiveStallTicks: Int = 0
+
+    /// Health-check tick interval. 15s is short enough to surface a
+    /// wedge well before keepalive timeout (180s in WG protocol) but
+    /// long enough that getRuntimeConfiguration overhead stays
+    /// negligible.
+    private static let healthCheckIntervalSec: Int = 15
+
+    /// Stall detection thresholds. When tripped, Layer 2 calls
+    /// self.cancelTunnelWithError to terminate the NE process; iOS
+    /// re-spawns it on the next user-initiated connect (or via the host
+    /// app's auto-reconnect when Layer 3 ships). Thresholds tuned from
+    /// real-device telemetry captured 2026-04-27 — stall_ticks=4 +
+    /// handshake_age>=120s correlated cleanly with observed wedge events.
+    /// Bumped from the original Layer-1-only stall_ticks>=3 to >=4 to
+    /// avoid spurious recoveries on transient single-tick rx-zero
+    /// fluctuations.
+    private static let wedgeStallTickThreshold: Int = 4
+    private static let wedgeHandshakeAgeSec: Int = 120
+    private static let wedgePSKAgeSec: Int = 300
+    private static let warmupSuppressionSec: TimeInterval = 60
+
+    // MARK: - Layer 2 — wedge auto-recovery state
+
+    /// Sliding window of recent self-kill (cancelTunnelWithError) timestamps.
+    /// Prevents an infinite restart loop if the wedge condition is itself
+    /// caused by an unrecoverable factor (server unreachable, bad PSK
+    /// state on server, etc.) — after maxSelfKillsPerWindow attempts in
+    /// selfKillWindowSec, we stop self-killing and just log; user must
+    /// intervene manually.
+    private var selfKillTimestamps: [Date] = []
+
+    /// Set to true between cancelTunnelWithError invocation and the iOS
+    /// stopTunnel callback that follows. Suppresses repeat-firing on
+    /// subsequent timer ticks during the brief shutdown window.
+    private var selfKillInFlight: Bool = false
+
+    /// Layer 2 thresholds. Three self-kills per 5 min = at most one
+    /// every 100s on average. Past that, the issue is likely environ-
+    /// mental (server PSK desync, network outage, etc.) and more
+    /// restarts won't help.
+    private static let maxSelfKillsPerWindow: Int = 3
+    private static let selfKillWindowSec: TimeInterval = 300
 
     // MARK: - Lifecycle
 
@@ -190,6 +292,44 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 let ifaceName = self.adapter.interfaceName ?? "unknown"
                 os_log("tunnel up on interface %{public}s",
                        log: self.log, type: .info, ifaceName)
+                self.tunnelUpAt = Date()
+                self.startHealthMonitoring()
+
+                // If a SET_PSK arrived during the startTunnel → adapter.start
+                // window (the race condition that surfaced 2026-04-27), it
+                // was buffered into self.pendingPresharedKey instead of
+                // being silently dropped. Apply it now that the adapter
+                // is ready. Without this drain, iPhone-side wg-go would
+                // have zero PSK while the server already holds the
+                // rosenpass-derived PSK → every WG handshake fails with
+                // "Received invalid response message" until the host app's
+                // rosenpass loop runs its NEXT rotation (~120s later).
+                if let pending = self.pendingPresharedKey {
+                    self.pendingPresharedKey = nil
+                    os_log("startTunnel: applying buffered PSK that arrived before adapter was ready",
+                           log: self.log, type: .info)
+                    self.applyPresharedKey(pending) { [weak self] ok in
+                        os_log("startTunnel: buffered PSK apply: %{public}s",
+                               log: self?.log ?? .default, type: ok ? .info : .error,
+                               ok ? "ok" : "failed")
+                    }
+                }
+
+                // Task #17 — start the in-NE rosenpass driver. This
+                // replaces the host-app RosenpassBridge for the rotation
+                // loop. Critical because host-app RosenpassBridge stops
+                // running whenever iOS suspends the host app (every time
+                // the user backgrounds Cloak), causing PSK desync ->
+                // tunnel wedge. The NE-side driver runs as long as the
+                // tunnel is up regardless of host-app state. The host
+                // app's RosenpassBridge can keep running (when not
+                // suspended) without harm — they're idempotent and the
+                // last successful exchange wins; eventually we'll
+                // disable RosenpassBridge entirely for cleanliness.
+                if cloakCfg.pqEnabled {
+                    self.startRosenpassDriverIfPossible(cloakCfg: cloakCfg)
+                }
+
                 completionHandler(nil)
             }
         }
@@ -200,6 +340,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler: @escaping () -> Void
     ) {
         os_log("stopTunnel reason=%d", log: log, type: .info, reason.rawValue)
+        // Stop the health monitor first so its callbacks can't fire
+        // mid-teardown and try to inspect a stopped adapter.
+        stopHealthMonitoring()
+        // Stop the in-NE rosenpass driver (task #17) — cancels the
+        // rotation loop and tears down its UDP socket.
+        rosenpassDriver?.stop()
+        rosenpassDriver = nil
         // Tear down the rosenpass UDP socket BEFORE stopping the
         // adapter — otherwise its callback queue could fire after the
         // NE process has been told to terminate.
@@ -505,16 +652,366 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
         adapter.update(tunnelConfiguration: updated) { [weak self] error in
             if let error = error {
+                let errStr = String(describing: error)
+                // The .invalidState case means adapter.start hasn't
+                // completed yet. Buffer the PSK; we'll apply it as soon
+                // as startTunnel's adapter.start callback fires success.
+                // This is the race that caused the "PSK silently dropped
+                // on first rotation after connect" bug surfaced 2026-04-27:
+                // host app's rosenpass loop completes its first exchange
+                // out-of-band (rosenpass UDP doesn't depend on WG) and
+                // pushes SET_PSK to the NE before adapter.start finishes
+                // (~600ms gap on iPhone 17 Pro Max). Without this buffer,
+                // every reconnect leaves iPhone-side wg-go with zero PSK
+                // while the server has the derived PSK → handshakes fail
+                // until next rotation (~120s) at minimum, often longer
+                // because Layer 2 may self-kill before the next rotation
+                // can push a fresh PSK.
+                if errStr.contains("invalidState") {
+                    os_log("applyPresharedKey: adapter not yet ready (race with startTunnel) — buffering PSK; will apply on adapter.start completion",
+                           log: self?.log ?? .default, type: .info)
+                    self?.pendingPresharedKey = psk
+                    // Optimistic success response: the buffered apply
+                    // fires reliably from startTunnel's adapter.start
+                    // callback within ~600ms. Returning false here would
+                    // make the host app's UI show "NE rejected rosenpass"
+                    // even though we're going to apply the PSK shortly.
+                    // If the deferred apply ever fails, the host app's
+                    // next rotation (~120s) will push a fresh PSK and
+                    // the system self-corrects. Net: better UX, no
+                    // correctness regression.
+                    completion(true)
+                    return
+                }
                 os_log("applyPresharedKey adapter.update failed: %{public}s",
-                       log: self?.log ?? .default, type: .error,
-                       String(describing: error))
+                       log: self?.log ?? .default, type: .error, errStr)
                 completion(false)
                 return
             }
             self?.currentConfig = updated
+            // Stamp the rosenpass-success wallclock so the health monitor
+            // can compute "psk_age" — distinguishes "stopped getting
+            // PSK rotations" (stuck rosenpass loop) from "stopped getting
+            // bytes" (network-layer wedge).
+            self?.healthCheckQueue.async {
+                self?.lastPSKAppliedAt = Date()
+            }
             os_log("PSK rotated", log: self?.log ?? .default, type: .info)
             completion(true)
         }
+    }
+
+    // MARK: - In-NE rosenpass driver (task #17 — host-app suspension fix)
+
+    /// Read the device's rosenpass keys from the App Group container,
+    /// parse the rosenpass server endpoint from the active CloakConfig,
+    /// instantiate a RosenpassDriver, wire its onPSKDerived callback to
+    /// applyPresharedKey, and start the rotation loop. Silent no-op (with
+    /// log line) on any error — the tunnel will still come up classically
+    /// without PQ in that case, rather than the user being stranded.
+    private func startRosenpassDriverIfPossible(cloakCfg: CloakConfig) {
+        let clientKeys: (secretB64: String, publicB64: String)
+        let serverPubB64: String
+        do {
+            clientKeys = try AppGroupKeyStore.loadLocalKeypair()
+            serverPubB64 = try AppGroupKeyStore.loadServerPublicKey()
+        } catch {
+            os_log("RosenpassDriver: keys unavailable in App Group, skipping (%{public}s)",
+                   log: log, type: .error, String(describing: error))
+            return
+        }
+
+        guard let clientSecret = Data(base64Encoded: clientKeys.secretB64),
+              let clientPublic = Data(base64Encoded: clientKeys.publicB64),
+              let serverPublic = Data(base64Encoded: serverPubB64) else {
+            os_log("RosenpassDriver: bad base64 in stored keys, skipping",
+                   log: log, type: .error)
+            return
+        }
+
+        // Parse "host:port" from rpEndpoint. We only support v4 here for
+        // now — the four current regions all use v4 rosenpass endpoints.
+        // V6 / bracketed-form parsing lives in ensureRosenpassConnection
+        // for the legacy IPC path; if we ever need v6 here we can lift
+        // that helper into the driver.
+        let parts = cloakCfg.rpEndpoint.split(separator: ":", maxSplits: 1)
+        guard parts.count == 2,
+              let port = UInt16(parts[1]) else {
+            os_log("RosenpassDriver: malformed rpEndpoint %{public}s, skipping",
+                   log: log, type: .error, cloakCfg.rpEndpoint)
+            return
+        }
+
+        let driver = RosenpassDriver(
+            clientSecret: clientSecret,
+            clientPublic: clientPublic,
+            serverPublic: serverPublic,
+            serverHost: String(parts[0]),
+            serverPort: port,
+            rotationSeconds: cloakCfg.pskRotationSeconds,
+            log: log
+        )
+
+        // Direct PSK application — no IPC, no opcode 0x01 round-trip,
+        // no race with adapter.start (we're already past adapter.start
+        // success when this is called from startTunnel's callback). PSK
+        // tracking for the Layer 1 health monitor happens automatically
+        // because applyPresharedKey stamps lastPSKAppliedAt on success.
+        driver.onPSKDerived = { [weak self] psk in
+            guard let self = self else { return }
+            self.applyPresharedKey(psk) { ok in
+                os_log("RosenpassDriver: PSK apply: %{public}s",
+                       log: self.log, type: ok ? .info : .error,
+                       ok ? "ok" : "failed")
+            }
+        }
+
+        self.rosenpassDriver = driver
+        driver.start()
+        os_log("RosenpassDriver: instantiated and started", log: log, type: .info)
+    }
+
+    // MARK: - Health monitoring implementation
+
+    /// Spin up the recurring health-check timer. Idempotent — if a
+    /// timer is already running, it's cancelled and replaced.
+    private func startHealthMonitoring() {
+        healthCheckQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.healthCheckTimer?.cancel()
+            // Reset state so a previous tunnel session's counters don't
+            // bleed into this one (stopTunnel + startTunnel reuses the
+            // same NE process between iOS toggle cycles).
+            self.lastRxBytes = 0
+            self.lastTxBytes = 0
+            self.consecutiveStallTicks = 0
+
+            let timer = DispatchSource.makeTimerSource(queue: self.healthCheckQueue)
+            timer.schedule(
+                deadline: .now() + .seconds(Self.healthCheckIntervalSec),
+                repeating: .seconds(Self.healthCheckIntervalSec),
+                leeway: .seconds(2)
+            )
+            timer.setEventHandler { [weak self] in
+                self?.performHealthCheck()
+            }
+            timer.resume()
+            self.healthCheckTimer = timer
+            os_log("health: monitor started (interval=%ds)",
+                   log: self.log, type: .info, Self.healthCheckIntervalSec)
+        }
+    }
+
+    /// Cancel the health-check timer. Safe to call when no timer is
+    /// running (e.g. stopTunnel after a startTunnel that errored out).
+    private func stopHealthMonitoring() {
+        healthCheckQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.healthCheckTimer?.cancel()
+            self.healthCheckTimer = nil
+            os_log("health: monitor stopped", log: self.log, type: .info)
+        }
+    }
+
+    /// One health-check tick. Pulls the wg UAPI runtime config, parses
+    /// the byte counters and last-handshake timestamp, computes the
+    /// stall heuristic, logs everything. Layer 1 takes no action on
+    /// "WEDGE SUSPECTED" — it just logs. Layer 2 will replace the log
+    /// line with a self.cancelTunnelWithError(...) call once thresholds
+    /// are validated against real-device telemetry.
+    private func performHealthCheck() {
+        // adapter.getRuntimeConfiguration is async with its own callback
+        // queue; bounce results back onto healthCheckQueue so all state
+        // mutations stay serialized on one queue.
+        adapter.getRuntimeConfiguration { [weak self] settings in
+            guard let self = self else { return }
+            self.healthCheckQueue.async {
+                self.parseAndLogHealth(settings: settings)
+            }
+        }
+    }
+
+    /// Parse the wg UAPI runtime config string and emit one os_log line
+    /// summarising the tunnel's health for this tick. Runs on
+    /// healthCheckQueue.
+    ///
+    /// Expected wg UAPI format (subset we care about):
+    ///
+    ///   private_key=...            (interface, ignored)
+    ///   public_key=<peer>          (start of peer block)
+    ///   preshared_key=...
+    ///   endpoint=ip:port
+    ///   last_handshake_time_sec=<unix-seconds>
+    ///   last_handshake_time_nsec=<nanos>
+    ///   rx_bytes=<count>
+    ///   tx_bytes=<count>
+    ///   persistent_keepalive_interval=<n>
+    ///
+    /// We aggregate across all peers (currently always 1 in CloakVPN)
+    /// so this code is robust if a future multi-peer config arrives.
+    private func parseAndLogHealth(settings: String?) {
+        guard let settings = settings, !settings.isEmpty else {
+            os_log("health: getRuntimeConfiguration returned nil/empty (adapter not ready?)",
+                   log: log, type: .error)
+            return
+        }
+
+        var rxTotal: UInt64 = 0
+        var txTotal: UInt64 = 0
+        var lastHandshakeSec: UInt64 = 0  // max across peers — we want the freshest
+
+        for line in settings.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard let eq = line.firstIndex(of: "=") else { continue }
+            let key = String(line[..<eq])
+            let val = String(line[line.index(after: eq)...])
+            switch key {
+            case "rx_bytes":
+                if let n = UInt64(val) { rxTotal &+= n }
+            case "tx_bytes":
+                if let n = UInt64(val) { txTotal &+= n }
+            case "last_handshake_time_sec":
+                if let n = UInt64(val), n > lastHandshakeSec { lastHandshakeSec = n }
+            default:
+                break
+            }
+        }
+
+        let now = Date()
+        let nowEpoch = UInt64(now.timeIntervalSince1970)
+
+        // Deltas. Counters monotonically increase in WG (only reset on
+        // wg-go session restart inside the NE) so subtraction is safe
+        // unless wg-go reset; in that case rxTotal < lastRxBytes and we
+        // treat the delta as 0 (next tick will catch up).
+        let rxDelta = rxTotal >= lastRxBytes ? rxTotal - lastRxBytes : 0
+        let txDelta = txTotal >= lastTxBytes ? txTotal - lastTxBytes : 0
+        lastRxBytes = rxTotal
+        lastTxBytes = txTotal
+
+        // Handshake age. last_handshake_time_sec=0 means "never
+        // handshook" — different from "old handshake".
+        let handshakeAgeStr: String
+        let handshakeAgeSec: Int
+        if lastHandshakeSec == 0 {
+            handshakeAgeStr = "never"
+            handshakeAgeSec = Int.max
+        } else {
+            // Guard against clock skew (handshake in the future would
+            // produce a negative age; clamp to 0).
+            handshakeAgeSec = max(0, Int(nowEpoch) - Int(lastHandshakeSec))
+            handshakeAgeStr = "\(handshakeAgeSec)s"
+        }
+
+        // PSK age. Tracks the rosenpass success path independently of
+        // WG's own handshake (they're different layers — WG handshake
+        // can succeed without a fresh PQ exchange if the peer already
+        // has the current PSK).
+        let pskAgeStr: String
+        let pskAgeSec: Int
+        if let lastPSK = lastPSKAppliedAt {
+            pskAgeSec = max(0, Int(now.timeIntervalSince(lastPSK)))
+            pskAgeStr = "\(pskAgeSec)s"
+        } else {
+            pskAgeStr = "never"
+            pskAgeSec = Int.max
+        }
+
+        // Stall heuristic: zero rx for this tick AND handshake older
+        // than wedgeHandshakeAgeSec. (Tx-only flows still count as
+        // healthy because the iPhone might be uploading — what matters
+        // is whether the server is responding.) This is the same logic
+        // Layer 2 will use to decide whether to cancelTunnelWithError.
+        let isStalled = (rxDelta == 0) &&
+            (handshakeAgeSec >= Self.wedgeHandshakeAgeSec)
+        if isStalled {
+            consecutiveStallTicks += 1
+        } else {
+            consecutiveStallTicks = 0
+        }
+
+        // Suppress wedge warnings during the warmup window — the first
+        // ~60s after tunnel-up has no rx/handshake yet and would
+        // otherwise spam false positives.
+        let suppressWarning: Bool
+        if let upAt = tunnelUpAt {
+            suppressWarning = now.timeIntervalSince(upAt) < Self.warmupSuppressionSec
+        } else {
+            suppressWarning = false
+        }
+
+        os_log("health: rx_delta=%llu tx_delta=%llu rx_total=%llu tx_total=%llu handshake_age=%{public}s psk_age=%{public}s stall_ticks=%d",
+               log: log, type: .info,
+               rxDelta, txDelta, rxTotal, txTotal,
+               handshakeAgeStr, pskAgeStr, consecutiveStallTicks)
+
+        // Wedge detection — same condition Layer 2 acts on.
+        let wedgeByStall = consecutiveStallTicks >= Self.wedgeStallTickThreshold
+        let wedgeByPSK = pskAgeSec >= Self.wedgePSKAgeSec && lastPSKAppliedAt != nil
+        if (wedgeByStall || wedgeByPSK) && !suppressWarning {
+            let reason: String
+            if wedgeByStall {
+                reason = "stall_ticks=\(consecutiveStallTicks), handshake_age=\(handshakeAgeStr)"
+            } else {
+                reason = "psk_age=\(pskAgeStr)"
+            }
+            os_log("health: WEDGE DETECTED — %{public}s",
+                   log: log, type: .fault, reason)
+            attemptWedgeRecovery(reason: reason)
+        }
+    }
+
+    /// Layer 2 — Force-restart the NE process on detected wedge.
+    ///
+    /// `cancelTunnelWithError` signals to iOS that the NE cannot continue.
+    /// iOS responds by:
+    ///   1. Marking NETunnelProviderManager status as `.disconnected` with
+    ///      our supplied error attached (visible to host app via
+    ///      `connection.fetchLastDisconnectError`).
+    ///   2. Calling our `stopTunnel(with:.userInitiated)` to clean up.
+    ///   3. Terminating the NE process.
+    ///
+    /// On the NEXT user-initiated connect (or, when Layer 3 ships, an
+    /// auto-restart from the host app on `NEVPNStatusDidChange`), iOS
+    /// spawns a fresh NE process. The fresh process has clean
+    /// wireguard-go state, no stale PSK, no wedged sockets — equivalent
+    /// to the manual "delete VPN profile + re-import" recovery the user
+    /// has been doing all session, but with one tap instead of seven.
+    ///
+    /// Rate-limited via `selfKillTimestamps` to avoid pathological loops:
+    /// after maxSelfKillsPerWindow recoveries in selfKillWindowSec, we
+    /// stop killing and require manual intervention. This protects
+    /// against environmental causes (server-side PSK desync, network
+    /// outage) where killing won't help.
+    private func attemptWedgeRecovery(reason: String) {
+        if selfKillInFlight { return }
+
+        let now = Date()
+        // Drop timestamps older than the rolling window
+        selfKillTimestamps.removeAll { now.timeIntervalSince($0) > Self.selfKillWindowSec }
+
+        if selfKillTimestamps.count >= Self.maxSelfKillsPerWindow {
+            os_log("health: rate-limited (%d self-kills in last %.0fs window) — refusing to cancel; manual intervention required",
+                   log: log, type: .fault,
+                   selfKillTimestamps.count, Self.selfKillWindowSec)
+            return
+        }
+
+        selfKillTimestamps.append(now)
+        selfKillInFlight = true
+
+        os_log("health: TRIGGERING WEDGE RECOVERY (kill #%d in last %.0fs window) — reason: %{public}s",
+               log: log, type: .fault,
+               selfKillTimestamps.count, Self.selfKillWindowSec, reason)
+
+        let err = NSError(
+            domain: "ai.cloakvpn.CloakTunnel",
+            code: -1001,
+            userInfo: [
+                NSLocalizedDescriptionKey:
+                    "Tunnel wedge auto-recovery (\(reason)). NE process restarting; reconnect via the Cloak app."
+            ]
+        )
+        cancelTunnelWithError(err)
     }
 }
 

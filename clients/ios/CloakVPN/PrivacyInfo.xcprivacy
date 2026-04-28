@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Cloak VPN — Apple Privacy Manifest.
+
+        Required by Apple for all new App Store submissions and significant
+        updates as of Q1 2024. Declares:
+          - whether the app does cross-app tracking (we don't),
+          - what data categories we collect and why,
+          - which "required reason" APIs we use, and
+          - any third-party tracking domains we contact (none).
+
+        See: https://developer.apple.com/documentation/bundleresources/privacy_manifest_files
+
+        This file is read by Apple's App Store review tooling AND surfaced
+        in the in-store "App Privacy" panel that users see before install.
+        Mismatches between this file and the declared App Privacy details
+        in App Store Connect will block release.
+    -->
+
+    <!-- We do NOT track users across apps or websites. -->
+    <key>NSPrivacyTracking</key>
+    <false/>
+
+    <!-- No third-party SDKs that contact tracking domains. -->
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+
+    <!--
+        Data we collect:
+          1. Device identifier (per-install UUID, generated locally,
+             not linked to Apple ID or any real-world identity).
+          2. Purchases (StoreKit subscription transaction ID).
+
+        Both are used SOLELY for app functionality (authenticating
+        provisioning calls, validating subscription tier). Neither is
+        used for tracking or marketing.
+    -->
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeDeviceID</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypePurchaseHistory</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+    </array>
+
+    <!--
+        Required-reason API declarations.
+
+        We use UserDefaults to cache the user's selected region, last
+        known public IP, JWT auth token, and provisioned-region config
+        cache. All for app functionality, no analytics, no tracking.
+
+        File-timestamp APIs are used implicitly by URLSession for
+        cache validation; declare to be safe.
+
+        See: https://developer.apple.com/documentation/bundleresources/privacy_manifest_files/describing_use_of_required_reason_api
+    -->
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <!-- CA92.1: "Access info about itself or the same group
+                     of apps" — covers App Group container UserDefaults
+                     used to share state with the NetworkExtension. -->
+                <string>CA92.1</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <!-- C617.1: "Display file timestamps to the user." We
+                     don't display them, but URLSession + Foundation
+                     cache code paths read attributes implicitly. -->
+                <string>C617.1</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <!-- 35F9.1: "Measure time elapsed for in-app events".
+                     Used for the wedge-recovery rate limiter and JWT
+                     refresh-buffer arithmetic. -->
+                <string>35F9.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

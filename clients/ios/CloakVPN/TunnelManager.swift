@@ -33,6 +33,54 @@ final class TunnelManager: ObservableObject {
     @Published private(set) var status: Status = .disconnected
     @Published private(set) var config: CloakConfig?
 
+    /// Currently-selected Cloak region. Driven by the in-app region
+    /// picker (ContentView's flag strip). Persisted in UserDefaults so
+    /// the user's last region survives app restarts. Nil before the
+    /// first selection.
+    @Published private(set) var selectedRegion: CloakRegion?
+    private static let selectedRegionUserDefaultsKey = "selectedCloakRegionID"
+
+    /// True while a region selection (provisioning + import) is in flight.
+    /// Drives a spinner on the region's flag tile.
+    @Published private(set) var regionSelectionInProgress: Bool = false
+
+    /// Last error from a region-selection attempt. Surface via an alert
+    /// or status banner so the user actually sees provisioning
+    /// failures instead of silent no-op (which is what users observed
+    /// when an early build's selectRegion swallowed errors).
+    @Published var lastRegionError: String?
+
+    /// Cache of already-provisioned region configs, keyed by region.id.
+    /// Populated on first successful selectRegion call for a given
+    /// region; subsequent taps on the same region (e.g. user toggles
+    /// US-W → DE → US-W) skip the server round-trip entirely and just
+    /// swap the active config locally — empirically takes 200-400ms
+    /// vs 3-8s for the full provisioning round-trip (which includes
+    /// add-peer.sh + cloak-rosenpass.service restart on the server).
+    ///
+    /// Persisted to UserDefaults so the cache survives app restarts —
+    /// once the user has provisioned each region once, switching is
+    /// effectively instant for the lifetime of the install.
+    ///
+    /// Cache invalidation: not needed in steady state. The server's
+    /// add-peer.sh is idempotent (peer name derived from rp pubkey
+    /// hash); if the user's local keys are deleted (factory reset of
+    /// the App Group container, full app reinstall), the cached
+    /// configs are still valid — they reference the server's pubkey
+    /// + endpoint, both of which are stable. The wgPrivateKey gets
+    /// re-filled at importConfig time from the local WG keypair, so
+    /// even a fresh keypair will produce a working config.
+    private var provisionedConfigsByRegionID: [String: String] = [:]
+    private static let provisionedConfigsCacheKey = "provisionedRegionConfigsV1"
+
+    /// User's actual public IP (their home / cellular IP, NOT the VPN
+    /// endpoint). Fetched + cached when the VPN is OFF, so the
+    /// "IP → VPN IP" display pattern works even when connected.
+    /// Persists across launches via UserDefaults so the user sees their
+    /// real IP immediately even if launching with VPN already up.
+    @Published private(set) var publicIP: String?
+    private static let publicIPUserDefaultsKey = "lastKnownPublicIP"
+
     /// The post-quantum key exchange driver. Owned by the main app
     /// (never the NE — see docs/IOS_PQC.md). Bridges PSKs into the NE
     /// via `sendProviderMessage` opcode 0x01.
@@ -48,6 +96,53 @@ final class TunnelManager: ObservableObject {
     private var manager: NETunnelProviderManager?
     private var statusObserver: NSObjectProtocol?
 
+    /// Forwards nested-ObservableObject change notifications from
+    /// `rosenpass` (a let property of this class) up to TunnelManager's
+    /// own publisher chain. Without this, SwiftUI views observing
+    /// `tunnel: TunnelManager` via @EnvironmentObject don't redraw when
+    /// `tunnel.rosenpass.status` changes — they only redraw when one of
+    /// TunnelManager's own @Published properties changes. Surfaced today
+    /// 2026-04-27 as the "PQC: rotation N" UI text not updating until
+    /// the user tapped Test PQC FFI (which mutated a @State and forced a
+    /// re-render that then read the fresh rosenpass.status).
+    private var rosenpassChangeForwarder: AnyCancellable?
+
+    // MARK: - Layer 3 — auto-reconnect on detected wedge recovery
+    //
+    // When the NE calls `cancelTunnelWithError` from Layer 2, iOS marks
+    // the tunnel as disconnected with our specific error attached
+    // (domain="ai.cloakvpn.CloakTunnel", code=-1001). We watch for that
+    // signature in the status-change notification and auto-fire a fresh
+    // connect, bridging the gap between Layer 2 (NE self-kills) and full
+    // transparent customer-facing recovery. Without this, the user has
+    // to manually tap Connect after every wedge — better than the
+    // pre-Layer-2 state (delete VPN profile in iOS Settings) but still
+    // unshippable as the steady-state UX.
+
+    /// Sliding window of auto-reconnect timestamps for rate limiting.
+    /// Mirrors the Layer 2 self-kill rate limiter on the NE side: if
+    /// recovery keeps failing (server outage, persistent state desync,
+    /// etc.) we eventually stop trying and surface to the user.
+    private var autoReconnectTimestamps: [Date] = []
+    private static let maxAutoReconnectsPerWindow: Int = 3
+    private static let autoReconnectWindowSec: TimeInterval = 300
+
+    /// Brief delay between detecting the wedge-recovery disconnect and
+    /// firing the new connect. Lets iOS finish tearing down the old NE
+    /// process and releasing the utun before we ask for a new one.
+    /// Empirically 1-2s is enough; below ~500ms iOS can refuse the new
+    /// startVPNTunnel with "another connection is in progress".
+    private static let autoReconnectDelaySec: TimeInterval = 1.5
+
+    /// Specific error code we use when calling cancelTunnelWithError
+    /// from the NE's Layer 2 wedge recovery. Matched against
+    /// `connection.fetchLastDisconnectError` to distinguish recoverable
+    /// wedges from user-initiated disconnects, server-side disconnects,
+    /// network unavailability, etc. Must stay in sync with the constant
+    /// in PacketTunnelProvider.swift's attemptWedgeRecovery.
+    private static let ne_wedgeRecoveryErrorDomain = "ai.cloakvpn.CloakTunnel"
+    private static let ne_wedgeRecoveryErrorCode = -1001
+
     init() {
         // Forward derived PSKs into the NE.
         rosenpass.onPSKDerived = { [weak self] psk in
@@ -58,6 +153,249 @@ final class TunnelManager: ObservableObject {
         // launch. New code path never reads them, but no point letting
         // stale files linger in the App Group container.
         AppGroupKeyStore.deleteLegacyClientKeys()
+
+        // Re-publish rosenpass.objectWillChange events as our own. Without
+        // this, SwiftUI views observing TunnelManager via @EnvironmentObject
+        // don't see updates when rosenpass.status changes (because
+        // `rosenpass` is a `let` property, not @Published — and SwiftUI
+        // doesn't traverse nested ObservableObjects automatically).
+        rosenpassChangeForwarder = rosenpass.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+
+        // Restore last-selected region from UserDefaults so the picker
+        // shows the user's chosen flag highlighted on app relaunch.
+        if let savedID = UserDefaults.standard.string(forKey: Self.selectedRegionUserDefaultsKey) {
+            selectedRegion = CloakRegion.byID(savedID)
+        }
+
+        // Restore last-known public IP (cached from a previous launch
+        // while VPN was off) so the "IP" display has something to
+        // show immediately on cold start, even if the user launches
+        // the app with the VPN already connected.
+        publicIP = UserDefaults.standard.string(forKey: Self.publicIPUserDefaultsKey)
+
+        // Restore the per-region provisioned-config cache. Lets repeat
+        // taps on a previously-provisioned region skip the server
+        // round-trip entirely.
+        if let cached = UserDefaults.standard.dictionary(forKey: Self.provisionedConfigsCacheKey)
+            as? [String: String] {
+            provisionedConfigsByRegionID = cached
+        }
+    }
+
+    /// Persist the in-memory provisioned-config cache to UserDefaults.
+    /// Called whenever a new region is provisioned successfully.
+    private func persistProvisionedConfigsCache() {
+        UserDefaults.standard.set(provisionedConfigsByRegionID,
+                                  forKey: Self.provisionedConfigsCacheKey)
+    }
+
+    /// Fetch the user's actual public IP from a third-party service.
+    /// Always tries the fetch (regardless of VPN state) but discards
+    /// results that match any known Cloak region's VPN endpoint —
+    /// those are the VPN's IP, not the user's home IP, and caching
+    /// them would corrupt the "IP → VPN IP" UI display.
+    ///
+    /// Tries multiple providers for resilience: api.ipify.org first,
+    /// then ipinfo.io as fallback. Both return plain-text IP only.
+    func refreshPublicIPIfNotConnected() async {
+        // Set of Cloak region endpoint IPs — we know these are VPN
+        // exits, not user home IPs, so any match means the VPN was on
+        // when the lookup ran.
+        let vpnEndpoints = Set(CloakRegion.all.map { $0.endpointIP })
+
+        let providers = [
+            "https://api.ipify.org",
+            "https://ipinfo.io/ip",
+        ]
+
+        for providerURL in providers {
+            guard let url = URL(string: providerURL) else { continue }
+            do {
+                var req = URLRequest(url: url)
+                req.timeoutInterval = 6
+                let (data, _) = try await URLSession.shared.data(for: req)
+                guard let raw = String(data: data, encoding: .utf8) else { continue }
+                let ip = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !ip.isEmpty else { continue }
+
+                if vpnEndpoints.contains(ip) {
+                    // The VPN was up when we asked; this response is
+                    // the VPN endpoint, NOT the user's real IP. Skip
+                    // updating the cache — preserves whatever real IP
+                    // we cached on a previous (VPN-off) launch.
+                    debugLog("refreshPublicIP: \(ip) matches a Cloak region; skipping cache (VPN on)")
+                    return
+                }
+
+                self.publicIP = ip
+                UserDefaults.standard.set(ip, forKey: Self.publicIPUserDefaultsKey)
+                debugLog("refreshPublicIP: cached \(ip) from \(providerURL)")
+                return  // success, stop trying more providers
+            } catch {
+                debugLog("refreshPublicIP: \(providerURL) failed: \(error.localizedDescription)")
+                continue
+            }
+        }
+        debugLog("refreshPublicIP: all providers failed; publicIP stays \(publicIP ?? "nil")")
+    }
+
+    /// Customer-facing region selection. Called when the user taps a
+    /// flag in ContentView's quick-connect strip. Runs the provisioning
+    /// API for that region (POST /api/v1/peers with our local public
+    /// keys), imports the returned config, and persists the choice.
+    /// The user can then tap the big Connect button to bring up the
+    /// tunnel.
+    ///
+    /// Idempotent: tapping the same region multiple times is safe (the
+    /// server's add-peer.sh derives peer name from the rosenpass pubkey
+    /// hash, so we just re-register the same peer; existing peer entry
+    /// in wg0.conf is preserved).
+    func selectRegion(_ region: CloakRegion) async {
+        guard !regionSelectionInProgress else { return }
+        regionSelectionInProgress = true
+        defer { regionSelectionInProgress = false }
+
+        lastRegionError = nil  // clear previous error before retry
+
+        // Snapshot the current connection state BEFORE we touch the
+        // config. If the user is currently connected (or actively
+        // connecting) to a different region, swapping the underlying
+        // providerConfiguration is not enough — iOS keeps running the
+        // old NE process with the OLD config until we explicitly stop
+        // the tunnel and start it again. Without this, tapping a flag
+        // while connected silently leaves the user on the previous
+        // region's tunnel ("connected but to the wrong place").
+        let wasActivelyConnected = (status == .connected
+                                    || status == .connecting
+                                    || status == .reasserting)
+        let switchingRegions = (selectedRegion?.id != region.id)
+
+        // Fast path — region already provisioned this install. Skip
+        // the server round-trip entirely; just re-import the cached
+        // config text. Empirically takes 200-400ms (config parse +
+        // saveToPreferences) vs 3-8s for full provisioning.
+        if let cachedText = provisionedConfigsByRegionID[region.id] {
+            debugLog("selectRegion: \(region.id) — cache hit, instant swap")
+            do {
+                try await importConfig(cachedText)
+                selectedRegion = region
+                UserDefaults.standard.set(region.id, forKey: Self.selectedRegionUserDefaultsKey)
+                await reconnectIfWasConnected(wasConnected: wasActivelyConnected,
+                                              switching: switchingRegions,
+                                              region: region)
+                return
+            } catch {
+                // Cache entry was bad somehow — fall through to a
+                // full re-provision rather than failing the tap.
+                debugLog("selectRegion: cache import failed (\(error)), falling back to provisioning")
+                provisionedConfigsByRegionID.removeValue(forKey: region.id)
+                persistProvisionedConfigsCache()
+            }
+        }
+
+        debugLog("selectRegion: \(region.id) — provisioning via \(region.serverURL)")
+        do {
+            let configText = try await provisionFromAPIRaw(
+                serverBase: region.serverURL,
+                peerName: nil  // server auto-derives from rp pubkey hash
+            )
+            try await importConfig(configText)
+            selectedRegion = region
+            UserDefaults.standard.set(region.id, forKey: Self.selectedRegionUserDefaultsKey)
+            // Cache the raw config text for instant subsequent switches
+            // back to this region.
+            provisionedConfigsByRegionID[region.id] = configText
+            persistProvisionedConfigsCache()
+            debugLog("selectRegion: \(region.id) configured + cached successfully")
+            await reconnectIfWasConnected(wasConnected: wasActivelyConnected,
+                                          switching: switchingRegions,
+                                          region: region)
+        } catch {
+            let msg = error.localizedDescription
+            debugLog("selectRegion: \(region.id) failed: \(msg)")
+            lastRegionError = "\(region.displayName): \(msg)"
+        }
+    }
+
+    /// If the user tapped a flag while the tunnel was active, tear
+    /// down the existing connection and re-start it against the
+    /// freshly-imported config. iOS doesn't pick up the new
+    /// providerConfiguration mid-flight — the only way to repoint a
+    /// running tunnel is stop + start.
+    ///
+    /// `switching` guards against the no-op case where the user
+    /// re-tapped the SAME region they were already connected to —
+    /// no need to drop+restart the tunnel for that.
+    private func reconnectIfWasConnected(wasConnected: Bool,
+                                         switching: Bool,
+                                         region: CloakRegion) async {
+        guard wasConnected, switching else { return }
+        debugLog("selectRegion: was connected, switching regions — bouncing tunnel")
+        do {
+            try await disconnect()
+
+            // POLL until the tunnel is actually .disconnected before
+            // calling connect(). stopVPNTunnel is fire-and-forget at
+            // the iOS layer; without polling, startVPNTunnel can race
+            // the in-flight stop and either:
+            //   - fail outright ("another connection is in progress")
+            //   - silently no-op (status flips to "connected" but the
+            //     NE process from the OLD config is still what's
+            //     actually running — the symptom the user reported
+            //     2026-04-27: PQC handshaking never completes after
+            //     a region switch because the new NE process never
+            //     actually started)
+            //
+            // Up to 8 seconds; bail out if iOS hasn't settled by then
+            // and surface as a real error rather than silently
+            // attempting a half-broken connect.
+            let deadline = Date().addingTimeInterval(8.0)
+            while Date() < deadline && status != .disconnected {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
+            if status != .disconnected {
+                debugLog("selectRegion: bounce stop didn't settle (status=\(status)) — proceeding anyway")
+            } else {
+                debugLog("selectRegion: bounce stop settled cleanly")
+            }
+
+            // One more brief beat for iOS to release the utun before
+            // we ask for a new one.
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            try await connect()
+        } catch {
+            let msg = error.localizedDescription
+            debugLog("selectRegion: bounce failed: \(msg)")
+            lastRegionError = "\(region.displayName) reconnect: \(msg)"
+        }
+    }
+
+    /// Ensure this device has a locally-generated WireGuard keypair
+    /// persisted in the App Group container. Idempotent — if a keypair
+    /// already exists from a prior launch, no-op. Otherwise generates a
+    /// fresh Curve25519 keypair via CryptoKit (instant on any iPhone)
+    /// and persists. Used by the cloak-api-server provisioning flow,
+    /// which sends only the public key to the server. The private key
+    /// never leaves the device.
+    func ensureLocalWGKeypair() async {
+        if AppGroupKeyStore.hasLocalWGKeypair() { return }
+        do {
+            // CryptoKit's Curve25519.KeyAgreement.PrivateKey uses X25519
+            // semantics with RFC 7748 clamping — wire-compatible with
+            // WireGuard's `wg genkey`. rawRepresentation yields the 32
+            // raw bytes; base64 yields the 44-char form WG expects.
+            let privKey = Curve25519.KeyAgreement.PrivateKey()
+            let secretB64 = privKey.rawRepresentation.base64EncodedString()
+            let publicB64 = privKey.publicKey.rawRepresentation.base64EncodedString()
+            try AppGroupKeyStore.saveLocalWGKeypair(secretB64: secretB64, publicB64: publicB64)
+            debugLog("ensureLocalWGKeypair: generated & persisted (pub=\(publicB64.prefix(16))…)")
+        } catch {
+            debugLog("ensureLocalWGKeypair: persistence failed: \(error)")
+        }
     }
 
     /// Ensure this device has a locally-generated rosenpass keypair
@@ -124,6 +462,127 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    /// Background pre-provision: warm up the per-region config cache for
+    /// the user's most-likely-to-pick region BEFORE they tap anything.
+    /// Each first-time provision is bottlenecked by ~1.4 MB of HTTPS
+    /// transfer (700 KB upload of the iPhone's rosenpass pubkey + 700 KB
+    /// download of the server's pubkey) which takes 2.5-4.5 seconds
+    /// depending on region distance. By doing that work eagerly during
+    /// the moments the user is reading the UI / accepting the iOS VPN
+    /// prompt, the eventual region tap becomes a local cache hit (~200 ms)
+    /// instead of a network round-trip.
+    ///
+    /// Heuristic: pre-provision the LAST-USED region (most likely tap
+    /// target). Falls back to us-west-1 on first launch. Only one region
+    /// is pre-provisioned to keep background bandwidth + server load
+    /// bounded — provisioning all 4 in parallel would be 4 × 1.4 MB =
+    /// 5.6 MB of background traffic per app launch and 4× the load on
+    /// our region API.
+    ///
+    /// Failures are silent (logged only) — the user will hit the normal
+    /// provision path when they tap if the warmup didn't land.
+    func warmUpPreferredRegion() async {
+        let target: CloakRegion
+        if let preferred = selectedRegion {
+            target = preferred
+        } else {
+            // First launch — pick the region whose endpoint IP is geographically
+            // closest based on a quick reverse-lookup of our public IP would
+            // be ideal but is overkill for now. Default to us-west-1 (covers
+            // the largest user demographic for a US-headquartered launch).
+            target = CloakRegion.byID("us-west-1") ?? CloakRegion.all[0]
+        }
+
+        // Skip if already cached this install
+        if provisionedConfigsByRegionID[target.id] != nil {
+            debugLog("warmUp: \(target.id) already cached — skipping")
+            return
+        }
+
+        debugLog("warmUp: pre-provisioning \(target.id) in background")
+        do {
+            let configText = try await provisionFromAPIRaw(
+                serverBase: target.serverURL,
+                peerName: nil
+            )
+            // Stash in the cache. Do NOT auto-import or set selectedRegion —
+            // the user hasn't actually picked anything yet, so we don't want
+            // to mutate any UI-visible state. The cache hit at selectRegion
+            // time will trigger the normal import path.
+            provisionedConfigsByRegionID[target.id] = configText
+            persistProvisionedConfigsCache()
+            debugLog("warmUp: \(target.id) cached successfully (\(configText.count) chars)")
+        } catch {
+            debugLog("warmUp: \(target.id) failed silently: \(error.localizedDescription)")
+        }
+    }
+
+    /// On fresh install, pre-create a placeholder NETunnelProviderManager
+    /// so the iOS "Cloak VPN Would Like to Add VPN Configurations" prompt
+    /// fires the moment the app opens — BEFORE the user taps a region.
+    ///
+    /// Why: the prompt is only triggered by saveToPreferences() on a
+    /// not-yet-approved manager. Without this, the prompt fires later
+    /// inside selectRegion → provisionFromAPI → importConfig, AFTER the
+    /// 3-8s server provisioning round-trip. Net effect was the user
+    /// would tap a region, watch a spinner for 5 seconds, finally see
+    /// the iOS prompt. Bad first impression.
+    ///
+    /// With this pre-creation:
+    ///   - On fresh install, prompt fires within ~300ms of app launch.
+    ///   - User taps Allow once. iOS stores the approval.
+    ///   - Subsequent saveToPreferences calls (from importConfig when
+    ///     the user actually picks a region) silently update the same
+    ///     approved profile — no second prompt.
+    ///
+    /// The placeholder is configured with isEnabled=false and a
+    /// dummy server address so the user can't accidentally tap Connect
+    /// against it. importConfig replaces every field when real config
+    /// arrives.
+    ///
+    /// Idempotent — no-op when a manager already exists (load() found one).
+    func preCreateManagerIfNeeded() async {
+        if manager != nil {
+            debugLog("preCreateManager: existing manager found, skipping")
+            return
+        }
+        debugLog("preCreateManager: no existing manager — creating placeholder to trigger iOS permission prompt early")
+
+        let placeholder = NETunnelProviderManager()
+        let proto = NETunnelProviderProtocol()
+        // Bundle ID must match the real CloakTunnel target — wrong here
+        // and iOS would later need to revoke + re-prompt when we update
+        // to the correct one.
+        proto.providerBundleIdentifier = "ai.cloakvpn.CloakVPN.CloakTunnel"
+        // Placeholder server address. Real value gets set in importConfig
+        // when user picks a region. iOS doesn't validate this until
+        // startVPNTunnel() is called, which we never do on the placeholder
+        // (isEnabled=false).
+        proto.serverAddress = "placeholder"
+        proto.providerConfiguration = ["placeholder": "true"]
+        // includeAllNetworks MUST match the eventual real config to avoid
+        // re-prompting on the first real save. The real importConfig sets
+        // includeAllNetworks=true, so we set it here too.
+        proto.includeAllNetworks = true
+        placeholder.protocolConfiguration = proto
+        placeholder.localizedDescription = "CLOAK VPN"
+        placeholder.isEnabled = false  // user can't accidentally connect to nothing
+
+        do {
+            try await placeholder.saveToPreferences()
+            try await placeholder.loadFromPreferences()
+            self.manager = placeholder
+            self.observeStatus(placeholder.connection)
+            debugLog("preCreateManager: placeholder profile saved (user accepted prompt)")
+        } catch {
+            // Most likely: user tapped "Don't Allow". Fall through —
+            // the next selectRegion attempt will re-trigger via the
+            // real importConfig path, and the user will see the prompt
+            // again at that point. Nothing we can do besides retry.
+            debugLog("preCreateManager: saveToPreferences failed (user denied?): \(error)")
+        }
+    }
+
     /// Persist a new config and attach it to an NETunnelProviderManager.
     ///
     /// New (privacy-fixed) data flow:
@@ -142,8 +601,26 @@ final class TunnelManager: ObservableObject {
     /// whole import — saving an `NETunnelProviderManager` without the
     /// pubkey on disk would put the user in a state where Connect appears
     /// to work but PQC silently never engages. Failing loud is better.
-    func importConfig(_ text: String) throws {
-        let parsed = try ConfigParser.parse(text)
+    func importConfig(_ text: String) async throws {
+        var parsed = try ConfigParser.parse(text)
+
+        // If the config came from cloak-api-server (which omits
+        // private_key — server doesn't have ours), fill it in from
+        // the locally-stored WG keypair. provisionFromAPI ensures
+        // ensureLocalWGKeypair has run before getting here. Legacy
+        // configs that DO carry a private_key keep their existing
+        // value untouched.
+        if parsed.wgPrivateKey.isEmpty {
+            do {
+                let wg = try AppGroupKeyStore.loadLocalWGKeypair()
+                parsed.wgPrivateKey = wg.secretB64
+                debugLog("importConfig: filled in wgPrivateKey from local WG keypair")
+            } catch {
+                throw TunnelError.parse(
+                    "config has no private_key and no local WG keypair available: \(error.localizedDescription)"
+                )
+            }
+        }
 
         // Stash just the server's pubkey (the only PQC blob we still
         // accept from the config). If this fails, abort before we touch
@@ -212,20 +689,127 @@ final class TunnelManager: ObservableObject {
         // worse. Stripping back to the upstream minimum.
 
         manager.protocolConfiguration = proto
-        manager.localizedDescription = "Cloak VPN"
+        manager.localizedDescription = "CLOAK VPN"
         manager.isEnabled = true
 
-        Task {
-            do {
-                try await manager.saveToPreferences()
-                try await manager.loadFromPreferences()
-                self.manager = manager
-                self.config = parsed
-                self.observeStatus(manager.connection)
-            } catch {
-                print("importConfig save error: \(error)")
-            }
+        // CRITICAL: await saveToPreferences inline (was fire-and-forget
+        // in a Task before). The previous design caused a race where
+        // selectRegion → importConfig → returns → user taps Connect
+        // → startVPNTunnel runs against the STALE config because the
+        // save hadn't propagated yet. Symptom (2026-04-27): every
+        // region-switch+Connect lit up the "Connected" status but the
+        // tunnel was actually pointed at whatever region was loaded
+        // BEFORE the switch (or had no fresh keys at all). For cache-
+        // miss paths the API call took 3-8 s — enough time for the
+        // fire-and-forget save to land. For cache-HIT paths (after the
+        // per-region cache landed in commit b96235a), the import was
+        // instant and the race fired every single time.
+        try await manager.saveToPreferences()
+        try await manager.loadFromPreferences()
+        self.manager = manager
+        self.config = parsed
+        self.observeStatus(manager.connection)
+    }
+
+    /// "Add Region" — provision this iPhone as a peer against a Cloak
+    /// region by POSTing both locally-generated public keys to the
+    /// region's cloak-api-server. The server returns a complete client
+    /// config block (without private_key — we already have the WG
+    /// secret locally). Auto-imports on success.
+    ///
+    /// Privacy: only public keys cross the wire. The iPhone's WG and
+    /// rosenpass private keys never leave the device.
+    ///
+    /// - Parameters:
+    ///   - serverBase: full base URL of the API, e.g.
+    ///     "https://cloak-de1.cloakvpn.ai" — must serve our regions'
+    ///     nginx + Let's Encrypt HTTPS endpoint.
+    ///   - peerName: optional human-readable peer name. If absent, the
+    ///     server auto-generates one from a hash of the rosenpass pubkey.
+    func provisionFromAPI(
+        serverBase: String,
+        peerName: String? = nil
+    ) async throws {
+        let configText = try await provisionFromAPIRaw(
+            serverBase: serverBase,
+            peerName: peerName
+        )
+        debugLog("provisionFromAPI: got config (\(configText.count) chars), importing…")
+        try await importConfig(configText)
+    }
+
+    /// Same as `provisionFromAPI` but returns the raw config text instead
+    /// of also importing it. Lets `selectRegion` cache the API response
+    /// per region.id so subsequent taps can short-circuit the network
+    /// round-trip and just call `importConfig` directly.
+    func provisionFromAPIRaw(
+        serverBase: String,
+        peerName: String? = nil
+    ) async throws -> String {
+        // 1. Make sure we have both keypairs locally before talking to
+        // the server. ensureLocalKeypair handles rosenpass; the new
+        // ensureLocalWGKeypair handles WG. Both are idempotent.
+        await ensureLocalKeypair()
+        await ensureLocalWGKeypair()
+
+        let rpKeys = try AppGroupKeyStore.loadLocalKeypair()
+        let wgKeys = try AppGroupKeyStore.loadLocalWGKeypair()
+
+        // 2. Build the request.
+        var url = serverBase.trimmingCharacters(in: .whitespacesAndNewlines)
+        if url.hasSuffix("/") { url.removeLast() }
+        guard let endpoint = URL(string: "\(url)/api/v1/peers") else {
+            throw TunnelError.parse("invalid serverBase URL: \(serverBase)")
         }
+
+        var body: [String: Any] = [
+            "wg_pubkey_b64": wgKeys.publicB64,
+            "rosenpass_pubkey_b64": rpKeys.publicB64,
+        ]
+        if let n = peerName, !n.isEmpty {
+            body["peer_name"] = n
+        }
+        let bodyData = try JSONSerialization.data(withJSONObject: body)
+
+        // 2a. Bootstrap a JWT against this same region. Cached if still
+        // valid; refreshed if expiring soon. Cross-region valid because
+        // every region shares /etc/cloak/jwt-secret.
+        let jwt = try await CloakAuthClient.fetchAuthToken(regionServerBase: url)
+
+        var req = URLRequest(url: endpoint)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = bodyData
+        // Provisioning involves running add-peer.sh + restarting
+        // cloak-rosenpass.service on the server — give it some
+        // headroom but cap to keep the UI responsive.
+        req.timeoutInterval = 30
+
+        debugLog("provisionFromAPIRaw: POST \(endpoint.absoluteString) (wg_pub=\(wgKeys.publicB64.prefix(8))…, rp_pub=\(rpKeys.publicB64.prefix(12))…, jwt=\(jwt.prefix(20))…)")
+
+        // 3. Hit the API.
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        guard let http = resp as? HTTPURLResponse else {
+            throw TunnelError.parse("non-HTTP response from server")
+        }
+        if http.statusCode == 401 {
+            // JWT was rejected — likely a token in the cache that the
+            // server lost trust in (e.g. JWT secret rotated server-side).
+            // Drop the cache and let the next call re-bootstrap.
+            CloakAuthClient.invalidateCache()
+            throw TunnelError.parse("API returned 401 (auth rejected); cleared JWT cache, please retry")
+        }
+        if http.statusCode != 200 {
+            let msg = String(data: data, encoding: .utf8) ?? "<binary>"
+            throw TunnelError.parse("API returned HTTP \(http.statusCode): \(msg.prefix(200))")
+        }
+
+        guard let configText = String(data: data, encoding: .utf8) else {
+            throw TunnelError.parse("API response not valid UTF-8")
+        }
+
+        return configText
     }
 
     func connect() async throws {
@@ -237,42 +821,15 @@ final class TunnelManager: ObservableObject {
         debugLog("connect(): starting VPN tunnel via NETunnelProviderManager")
         try m.connection.startVPNTunnel()
 
-        // Kick off the Rosenpass loop in parallel. The first PSK can
-        // arrive while WireGuard is still doing its classical handshake;
-        // either way the NE applies it on receipt and re-keys without
-        // dropping in-flight UDP.
-        //
-        // Load the device's local rosenpass keypair (generated on first
-        // launch) and the server's pubkey (from the imported config) from
-        // the App Group container. If either is missing, skip rosenpass —
-        // the tunnel still comes up classically (no PQ protection) so the
-        // user isn't stranded; the UI can warn about the missing PQC
-        // identity separately.
+        // Rotation loop now runs IN the NE (task #17). The host-app
+        // RosenpassBridge is repurposed: instead of running the loop, it
+        // polls the App Group UserDefaults that the NE-side
+        // RosenpassDriver writes to, and updates its `status` for the
+        // existing ContentView UI to consume. Net effect: the user keeps
+        // seeing "PQC: N rotations ✓" in the app, but the actual key
+        // exchange happens in the NE which iOS never suspends.
         guard let cfg = config, cfg.pqEnabled else { return }
-        do {
-            let local = try AppGroupKeyStore.loadLocalKeypair()
-            let serverPub = try AppGroupKeyStore.loadServerPublicKey()
-
-            // Wire the NE relay closure BEFORE start(): runLoop checks
-            // sendNE != nil at the top of every rotation iteration and
-            // errors out with neSessionUnavailable if it's missing.
-            // The closure captures the session weakly via the manager
-            // and hops to the MainActor for the actual API call (NE
-            // session methods are MainActor-bound).
-            rosenpass.sendNE = { [weak m] payload in
-                try await Self.sendProviderMessageAsync(payload, manager: m)
-            }
-
-            rosenpass.start(
-                clientSecretKeyB64: local.secretB64,
-                clientPublicKeyB64: local.publicB64,
-                serverPublicKeyB64: serverPub,
-                serverEndpoint: cfg.rpEndpoint,
-                rotationSeconds: cfg.pskRotationSeconds
-            )
-        } catch {
-            debugLog("connect: PQC keys unavailable, skipping rosenpass loop: \(error.localizedDescription)")
-        }
+        rosenpass.startStatusPolling()
     }
 
     /// Async wrapper around NETunnelProviderSession.sendProviderMessage.
@@ -299,6 +856,91 @@ final class TunnelManager: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Layer 4 — last-resort manual recovery escape hatch.
+    ///
+    /// Tears down the entire NETunnelProviderManager and recreates it
+    /// using the cached CloakConfig. Equivalent to "Settings → VPN →
+    /// Delete + reopen app + re-import" in one tap, except iOS will
+    /// still prompt the user once for permission to add the new VPN
+    /// configuration (Apple's hard requirement; not a UX choice we can
+    /// bypass). Used when Layers 1-3 of wedge auto-recovery have all
+    /// failed — typically because Layer 3's rate limit (3 reconnects /
+    /// 5min) was hit while the underlying issue keeps recurring, and
+    /// the only remaining option is to fully reset iOS's VPN state.
+    ///
+    /// Sequence:
+    ///   1. Stop the rosenpass loop and unwire sendNE.
+    ///   2. Stop any running tunnel cleanly.
+    ///   3. removeFromPreferences (deletes the iOS VPN profile).
+    ///   4. Wait briefly for iOS to settle.
+    ///   5. Build a fresh NETunnelProviderManager with the same config.
+    ///   6. saveToPreferences (triggers iOS permission prompt — user
+    ///      must tap Allow once).
+    ///   7. observeStatus + connect.
+    ///
+    /// Throws if there's no cached config to recreate from (user has
+    /// never imported one). Otherwise propagates errors from
+    /// removeFromPreferences / saveToPreferences / connect — the UI
+    /// should surface these in an alert.
+    func resetTunnel() async throws {
+        debugLog("resetTunnel: starting")
+
+        guard let cfg = self.config else {
+            throw TunnelError.noConfig
+        }
+
+        // 1. Stop rosenpass loop and clear NE relay closure.
+        rosenpass.stop()
+        rosenpass.sendNE = nil
+
+        // 2 + 3. Stop existing tunnel and remove the manager from prefs.
+        if let m = manager {
+            let st = m.connection.status
+            if st == .connected || st == .connecting || st == .reasserting {
+                debugLog("resetTunnel: stopping active tunnel")
+                m.connection.stopVPNTunnel()
+                // Brief wait for the stop to propagate before removeFromPreferences
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+            debugLog("resetTunnel: removeFromPreferences")
+            try await m.removeFromPreferences()
+        }
+        self.manager = nil
+
+        // 4. Settle delay. Without this, the subsequent
+        // saveToPreferences sometimes races with iOS's profile-deletion
+        // bookkeeping and either fails or silently doesn't show the
+        // permission prompt.
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+
+        // 5. Rebuild a fresh manager from the cached config. Mirrors
+        // the inner logic of importConfig but skips the parse step
+        // since we already have a CloakConfig in self.config.
+        let manager = NETunnelProviderManager()
+        let proto = NETunnelProviderProtocol()
+        proto.providerBundleIdentifier = "ai.cloakvpn.CloakVPN.CloakTunnel"
+        proto.serverAddress = cfg.endpoint
+        proto.providerConfiguration = cfg.asDictionary
+        proto.passwordReference = nil
+        proto.includeAllNetworks = true
+        manager.protocolConfiguration = proto
+        manager.localizedDescription = "CLOAK VPN"
+        manager.isEnabled = true
+
+        // 6. Save (triggers iOS permission prompt the first time after
+        // a removeFromPreferences). User must tap "Allow" — without
+        // user action this hangs.
+        debugLog("resetTunnel: saveToPreferences (iOS may prompt for permission)")
+        try await manager.saveToPreferences()
+        try await manager.loadFromPreferences()
+        self.manager = manager
+
+        // 7. Wire up status observation + connect.
+        self.observeStatus(manager.connection)
+        debugLog("resetTunnel: profile recreated, calling connect()")
+        try await connect()
     }
 
     func disconnect() async throws {
@@ -387,6 +1029,93 @@ final class TunnelManager: ObservableObject {
         @unknown default: status = .invalid
         }
         debugLog("status change: \(old) → \(status) (raw NEVPNStatus=\(s.rawValue))")
+
+        // Refresh the user's real public IP cache on transitions to
+        // .disconnected. With the VPN off, the next api.ipify.org
+        // response is the user's home/cellular IP — exactly what we
+        // want to display in the "IP → VPN IP" panel for next session.
+        if status == .disconnected, old != .disconnected {
+            Task { [weak self] in
+                await self?.refreshPublicIPIfNotConnected()
+            }
+        }
+
+        // Layer 3: detect wedge-recovery transitions and auto-reconnect.
+        // We only attempt the auto-reconnect when the previous state was
+        // an "active" tunnel state (.connected, .connecting, .reasserting)
+        // because that filters out two cases:
+        //   1. Already-disconnected -> still-disconnected idle transitions.
+        //   2. App-launch initial state read where status starts as
+        //      .disconnected and we observe it.
+        // Within those active states, we still verify the actual disconnect
+        // error matches our wedge-recovery signature before reconnecting.
+        if status == .disconnected,
+           old == .connected || old == .connecting || old == .reasserting {
+            checkForWedgeRecoveryAutoReconnect()
+        }
+    }
+
+    /// Inspect the connection's last disconnect error. If it matches our
+    /// wedge-recovery error signature (domain=ai.cloakvpn.CloakTunnel,
+    /// code=-1001), schedule an auto-reconnect. Otherwise no-op.
+    ///
+    /// `fetchLastDisconnectError` is callback-style; we bridge to the
+    /// MainActor for the actual auto-reconnect call.
+    private func checkForWedgeRecoveryAutoReconnect() {
+        guard let conn = manager?.connection else {
+            debugLog("checkForWedgeRecoveryAutoReconnect: no connection — skipping")
+            return
+        }
+        conn.fetchLastDisconnectError { [weak self] error in
+            // Hop to MainActor for state mutations and connect() call.
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                guard let nsErr = error as NSError?,
+                      nsErr.domain == Self.ne_wedgeRecoveryErrorDomain,
+                      nsErr.code == Self.ne_wedgeRecoveryErrorCode else {
+                    self.debugLog("checkForWedgeRecoveryAutoReconnect: not a wedge-recovery disconnect (err=\(String(describing: error))); skipping auto-reconnect")
+                    return
+                }
+                self.attemptAutoReconnect(reason: nsErr.localizedDescription)
+            }
+        }
+    }
+
+    /// Schedule an auto-reconnect after a brief settle delay, with rate
+    /// limiting to avoid pathological reconnect loops if recovery itself
+    /// keeps failing (e.g. server is genuinely down — after maxAutoReconnects
+    /// in window, we stop trying and require manual user intervention).
+    private func attemptAutoReconnect(reason: String) {
+        let now = Date()
+        // Drop entries older than the rolling window
+        autoReconnectTimestamps.removeAll { now.timeIntervalSince($0) > Self.autoReconnectWindowSec }
+
+        if autoReconnectTimestamps.count >= Self.maxAutoReconnectsPerWindow {
+            debugLog("autoReconnect: rate-limited (\(autoReconnectTimestamps.count) in last \(Int(Self.autoReconnectWindowSec))s) — manual reconnect required")
+            return
+        }
+
+        autoReconnectTimestamps.append(now)
+        let attemptNumber = autoReconnectTimestamps.count
+        debugLog("autoReconnect: scheduling (#\(attemptNumber) in window) after \(Self.autoReconnectDelaySec)s delay; reason=\(reason)")
+
+        // Tear down stale rosenpass loop state from before the wedge —
+        // the NE that the loop was talking to is gone. The new connect()
+        // call below re-spins it up cleanly with sendNE rebound to the
+        // freshly spawned NE process.
+        rosenpass.stop()
+        rosenpass.sendNE = nil
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.autoReconnectDelaySec * 1_000_000_000))
+            guard let self = self else { return }
+            do {
+                try await self.connect()
+                self.debugLog("autoReconnect: connect() initiated successfully (attempt #\(attemptNumber))")
+            } catch {
+                self.debugLog("autoReconnect: connect() failed: \(error)")
+            }
+        }
     }
 
     /// Debug-only logging. Stripped from release builds entirely so the

@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+		Export Compliance declaration. Cloak VPN uses non-iOS-builtin
+		encryption (WireGuard via WireGuardKitGo, Rosenpass via the
+		bundled FFI), so this MUST be true. Setting it false here would
+		be a misrepresentation to Apple's review process.
+
+		Setting it true and providing the App Encryption Documentation
+		(self-classification letter under ECCN 5D992.c, on file with
+		App Store Connect) means future TestFlight uploads skip the
+		"Missing Compliance" prompt — the declaration carries forward
+		until you change which encryption your app uses.
+
+		If you ever rotate to a different non-standard algorithm, file
+		an updated classification letter and bump this build's encryption
+		export compliance code in App Store Connect.
+
+		See: docs/legal/CloakVPN-Encryption-Compliance.pdf
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<true/>
+
+	<!--
+		Bootstrap key for /api/v1/auth/exchange. Loaded at build time
+		from Secrets.xcconfig (gitignored — never committed). Read at
+		runtime via Bundle.main.infoDictionary["CLOAK_BOOTSTRAP_KEY"].
+		Server-side counterpart is /etc/cloak/bootstrap-key on every
+		region. To rotate:
+		  1. openssl rand -base64 32 > new-bootstrap-key
+		  2. scp to /etc/cloak/bootstrap-key on all 4 regions
+		  3. systemctl restart cloak-api-server on each
+		  4. Update CLOAK_BOOTSTRAP_KEY in clients/ios/CloakVPN/Secrets.xcconfig
+		  5. Build + ship new TestFlight / App Store version
+	-->
+	<key>CLOAK_BOOTSTRAP_KEY</key>
+	<string>$(CLOAK_BOOTSTRAP_KEY)</string>
+
+	<!--
+		Alternate app icons. The primary icon (CLOAKVPN logo without
+		"PRO") lives in Assets.xcassets/AppIcon.appiconset and is what
+		the app shows by default. The "Pro" variant is registered here
+		as a CFBundleAlternateIcons entry so we can switch to it at
+		runtime via UIApplication.setAlternateIconName("CloakProIcon")
+		when the user upgrades their subscription.
+
+		File-naming convention: iOS auto-resolves @2x and @3x suffixes,
+		so we ship CloakProIcon.png / @2x / @3x as loose PNGs in the
+		bundle (NOT in the asset catalog — Apple's required pattern
+		for alternate icons since iOS 11).
+
+		UIPrerenderedIcon=true: the source PNGs already have the dark
+		matte background baked in; we don't want iOS to apply its
+		default gloss-overlay on top of them.
+	-->
+	<key>CFBundleIcons</key>
+	<dict>
+		<key>CFBundleAlternateIcons</key>
+		<dict>
+			<key>CloakProIcon</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>CloakProIcon</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
+
+	<!--
+		(Historical) — App Transport Security exceptions for plain-HTTP
+		region endpoints lived here until commit landing #19's HTTPS
+		switch. Region URLs are now https://cloak-{region}.cloakvpn.ai
+		on Let's Encrypt certs (auto-renewed via certbot.timer). iOS
+		default ATS rules accept these without any exceptions. Removing
+		the workaround eliminates a known App Store review rejection
+		vector (reviewers flag NSExceptionDomains and ask for written
+		justification).
+	-->
+</dict>
+</plist>

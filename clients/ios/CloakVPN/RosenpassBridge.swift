@@ -78,6 +78,36 @@ final class RosenpassBridge: ObservableObject {
     private var loopTask: Task<Void, Never>?
     private var config: SessionConfig?
 
+    // MARK: - App Group status polling (post task #17 — NE drives the loop)
+    //
+    // The actual rosenpass rotation loop now runs in the NE process via
+    // RosenpassDriver (clients/ios/CloakTunnel/RosenpassDriver.swift). We
+    // poll the App Group UserDefaults where it writes rotation count and
+    // last-success epoch, and update self.status so the existing UI
+    // (ContentView's infoPanel) keeps showing live "PQC: N rotations"
+    // without requiring any UI refactor.
+
+    private var statusPollTimer: Timer?
+
+    /// Timestamp (epoch seconds) when the current polling session
+    /// started. Set in `startStatusPolling`. Used to gate the
+    /// stale-PSK check: any `lastSuccessEpoch` older than this
+    /// belongs to a previous tunnel session and should be ignored
+    /// (not surfaced as "PSK stale (4400s old)" — which was the
+    /// previous behavior whenever the NE-side status file from a
+    /// prior connection was still on disk before the new NE process
+    /// got a chance to write fresh rotation data).
+    private var statusPollSessionStartEpoch: TimeInterval = 0
+
+    private static let appGroupID = "group.ai.cloakvpn.CloakVPN"
+    private static let neStatusFilename = "ne-rosenpass-status.json"
+
+    /// Threshold past which we surface a degraded "stale" status to the
+    /// user. Matches the NE-side health monitor's wedgePSKAgeSec — if
+    /// the NE hasn't reported a successful rotation in 5 minutes,
+    /// something's wrong even though Layer 2 may not have fired yet.
+    private static let staleThresholdSec: TimeInterval = 300
+
     // MARK: - Public API
 
     /// Start the periodic Rosenpass handshake loop. Idempotent — calling
@@ -127,7 +157,104 @@ final class RosenpassBridge: ObservableObject {
         loopTask?.cancel()
         loopTask = nil
         config = nil
+        stopStatusPolling()
         status = .idle
+    }
+
+    // MARK: - App Group status polling
+
+    /// Start a 3-second poll of App Group UserDefaults for the NE-driven
+    /// rotation count. Call from TunnelManager.connect when the in-NE
+    /// RosenpassDriver becomes responsible for the rotation loop. The
+    /// poll updates self.status so the existing ContentView indicator
+    /// stays live ("PQC: N rotations ✓") without any UI refactor.
+    func startStatusPolling() {
+        stopStatusPolling()
+        // Stamp the session-start epoch BEFORE the first poll so the
+        // stale-PSK check ignores any lastSuccessEpoch from a previous
+        // tunnel session (which lingered in the App Group status file
+        // because file lifetime > NE process lifetime). Without this,
+        // every fresh tunnel start surfaced "PSK stale (Xs old)" until
+        // the NE driver completed its first rotation ~30-60s later.
+        statusPollSessionStartEpoch = Date().timeIntervalSince1970
+        // Show .connecting until the first rotation completes; the
+        // NE driver typically gets a fresh PSK within 30-60 seconds.
+        status = .connecting
+        // Fire once immediately so any cached values from a prior session
+        // surface right away rather than waiting up to 3s.
+        refreshStatusFromAppGroup()
+        let timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            // Timer callback runs on the main run loop; bridge to MainActor
+            // explicitly because RosenpassBridge is @MainActor-isolated.
+            Task { @MainActor [weak self] in
+                self?.refreshStatusFromAppGroup()
+            }
+        }
+        self.statusPollTimer = timer
+    }
+
+    /// Stop the status poll timer. Idempotent.
+    func stopStatusPolling() {
+        statusPollTimer?.invalidate()
+        statusPollTimer = nil
+    }
+
+    private func refreshStatusFromAppGroup() {
+        // File-based status read. UserDefaults was unreliable across
+        // processes — first write would propagate to the host app, but
+        // subsequent writes got stuck in the host app's UserDefaults
+        // cache and never surfaced. App Group container files have
+        // well-defined cross-process semantics: kernel-level shared
+        // filesystem; reads always reflect the latest atomic write.
+        guard let dir = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: Self.appGroupID
+        ) else {
+            status = .error("App Group container unavailable")
+            return
+        }
+        let path = dir.appendingPathComponent(Self.neStatusFilename)
+
+        guard let data = try? Data(contentsOf: path),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            // No status file yet → NE driver hasn't completed its first
+            // handshake. Show "handshaking…" for visibility while we
+            // wait. (idle would suggest nothing is happening.)
+            status = .handshaking
+            return
+        }
+
+        let rotations = (obj["rotationCount"] as? Int) ?? 0
+        let lastSuccessEpoch = (obj["lastSuccessEpoch"] as? Double) ?? 0
+
+        // Gate everything on the session-start epoch. If the most
+        // recent NE-side rotation predates *this* polling session,
+        // it belongs to a previous tunnel run that left its status
+        // file behind in the App Group container. Treat as
+        // "no-fresh-rotation-yet" (.handshaking) rather than
+        // surfacing the stale age — which is what the user saw as
+        // "PSK stale (4900s old)" on every fresh connect before
+        // this gate landed.
+        if lastSuccessEpoch < statusPollSessionStartEpoch {
+            status = .handshaking
+            return
+        }
+
+        guard rotations > 0 else {
+            status = .handshaking
+            return
+        }
+
+        // Now lastSuccessEpoch is genuinely from this session — apply
+        // the normal stale check (NE driver appears alive but hasn't
+        // rotated in ages → something's wrong even if Layer 2 hasn't
+        // fired yet).
+        let age = Date().timeIntervalSince1970 - lastSuccessEpoch
+        if age > Self.staleThresholdSec {
+            status = .error("PSK stale (\(Int(age))s old)")
+            return
+        }
+
+        status = .established(rotations: rotations)
     }
 
     // MARK: - Internal loop

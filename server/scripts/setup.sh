@@ -20,6 +20,111 @@ log()  { printf "\033[1;34m[cloak]\033[0m %s\n" "$*"; }
 warn() { printf "\033[1;33m[warn]\033[0m %s\n" "$*"; }
 die()  { printf "\033[1;31m[err]\033[0m %s\n" "$*" >&2; exit 1; }
 
+# ensure_mss_clamp_in_wg_conf — back-fill MSS clamp PostUp/PostDown lines
+# into an existing wg0.conf when missing. Required because (a) earlier
+# setup.sh revisions did not include the clamp, and (b) the idempotency
+# logic below preserves an existing config verbatim — so without an
+# explicit injection step, already-deployed regions never pick up the fix
+# on a setup.sh re-run.
+#
+# Without TCP MSS clamping on the wg0 interface, TCP segments from clients
+# (negotiated against their LAN MTU of 1500) are too large for the
+# tunnel's 1420-byte MTU, causing fragmentation or PMTUD blackhole. The
+# tunnel still works (handshake completes, throughput accumulates), but
+# page loads crawl.
+#
+# We inject the lines just before the first [Peer] block in the
+# [Interface] section. A timestamped backup is kept next to the original.
+ensure_mss_clamp_in_wg_conf() {
+  local conf="$1"
+  if grep -q -- "TCPMSS --clamp-mss-to-pmtu" "$conf"; then
+    return 0
+  fi
+  log "Back-filling MSS clamp PostUp/PostDown into $conf"
+  cp "$conf" "${conf}.bak.$(date -u +%Y%m%dT%H%M%SZ)"
+  local tmp
+  tmp=$(mktemp)
+  awk -v iface="$WG_IFACE" '
+    /^\[Peer\]/ && !injected {
+      print "PostUp   = iptables  -t mangle -A FORWARD -i " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      print "PostUp   = iptables  -t mangle -A FORWARD -o " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      print "PostUp   = ip6tables -t mangle -A FORWARD -i " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      print "PostUp   = ip6tables -t mangle -A FORWARD -o " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      print "PostDown = iptables  -t mangle -D FORWARD -i " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      print "PostDown = iptables  -t mangle -D FORWARD -o " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      print "PostDown = ip6tables -t mangle -D FORWARD -i " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      print "PostDown = ip6tables -t mangle -D FORWARD -o " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      print ""
+      injected = 1
+    }
+    { print }
+    END {
+      if (!injected) {
+        # No [Peer] line — append at end (Interface-only config).
+        print "PostUp   = iptables  -t mangle -A FORWARD -i " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+        print "PostUp   = iptables  -t mangle -A FORWARD -o " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+        print "PostUp   = ip6tables -t mangle -A FORWARD -i " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+        print "PostUp   = ip6tables -t mangle -A FORWARD -o " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+        print "PostDown = iptables  -t mangle -D FORWARD -i " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+        print "PostDown = iptables  -t mangle -D FORWARD -o " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+        print "PostDown = ip6tables -t mangle -D FORWARD -i " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+        print "PostDown = ip6tables -t mangle -D FORWARD -o " iface " -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu"
+      }
+    }
+  ' "$conf" > "$tmp"
+  if [[ -s "$tmp" ]] && grep -q -- "TCPMSS --clamp-mss-to-pmtu" "$tmp"; then
+    mv "$tmp" "$conf"
+    chmod 600 "$conf"
+  else
+    rm -f "$tmp"
+    warn "MSS clamp back-fill produced unexpected output; aborting injection (backup kept)"
+  fi
+}
+
+# ---------- Argument parsing ----------------------------------------------
+# setup.sh is designed to be idempotent: re-running on an already-configured
+# server is safe and will NOT clobber peers added via add-peer.sh. The two
+# files where this matters are /etc/wireguard/$WG_IFACE.conf and
+# /etc/rosenpass/server.toml — both are append-targets for add-peer.sh, so
+# overwriting them on a re-run would silently wipe every peer beyond
+# client1. By default we skip both writes if the files already exist.
+#
+# Pass --force-reset-configs to opt into the destructive overwrite. This is
+# the right escape hatch for the rare case where the operator needs to reset
+# a region from scratch (e.g. compromised initial keys, subnet rework).
+FORCE_RESET_CONFIGS=0
+for arg in "$@"; do
+  case "$arg" in
+    --force-reset-configs)
+      FORCE_RESET_CONFIGS=1
+      ;;
+    --help|-h)
+      cat <<USAGE
+Cloak VPN — server bootstrap
+
+Usage: $0 [OPTIONS]
+
+OPTIONS:
+  --force-reset-configs   Overwrite /etc/wireguard/<iface>.conf and
+                          /etc/rosenpass/server.toml even if they already
+                          exist. WARNING: wipes every peer added via
+                          add-peer.sh. Use only when you specifically need
+                          to reset a region from a clean slate.
+  --help, -h              Show this help.
+
+By default, setup.sh is idempotent and safe to re-run on a configured
+server: it preserves existing peer entries in both config files. All
+other operations (apt installs, rosenpass build, sysctl, UFW, systemd
+units) are already idempotent and run on every invocation.
+USAGE
+      exit 0
+      ;;
+    *)
+      die "Unknown argument: $arg (use --help for usage)"
+      ;;
+  esac
+done
+
 [[ $EUID -eq 0 ]] || die "Run as root (use sudo)."
 
 # ---------- Configurable --------------------------------------------------
@@ -145,8 +250,21 @@ if [[ ! -f $ETC_RP/client1.rosenpass-secret ]]; then
 fi
 
 # ---------- WireGuard config ---------------------------------------------
-log "Writing $ETC_WG/$WG_IFACE.conf"
-cat >"$ETC_WG/$WG_IFACE.conf" <<EOF
+# Idempotency: skip writing if the file already exists and is non-empty,
+# unless --force-reset-configs was passed. add-peer.sh appends [Peer]
+# blocks here; overwriting on a re-run would silently wipe them all.
+WG_CONF="$ETC_WG/$WG_IFACE.conf"
+if [[ -s "$WG_CONF" && "$FORCE_RESET_CONFIGS" -eq 0 ]]; then
+  log "Preserving existing $WG_CONF (idempotent run; pass --force-reset-configs to overwrite)"
+  # Back-fill MSS clamp into existing configs that pre-date this fix.
+  # Safe no-op when the lines are already present.
+  ensure_mss_clamp_in_wg_conf "$WG_CONF"
+else
+  if [[ "$FORCE_RESET_CONFIGS" -eq 1 && -s "$WG_CONF" ]]; then
+    warn "Overwriting existing $WG_CONF (--force-reset-configs); existing peers will be lost"
+  fi
+  log "Writing $WG_CONF"
+  cat >"$WG_CONF" <<EOF
 # Cloak VPN — WireGuard server config
 # Generated by setup.sh. Rosenpass rotates PresharedKey every ~120s.
 [Interface]
@@ -155,8 +273,20 @@ ListenPort = $WG_PORT
 PrivateKey = $WG_SERVER_PRIV
 PostUp   = iptables  -t nat -A POSTROUTING -s $WG_NET_V4 -o $ETH_IFACE -j MASQUERADE
 PostUp   = ip6tables -t nat -A POSTROUTING -s $WG_NET_V6 -o $ETH_IFACE -j MASQUERADE
+# TCP MSS clamping: forwarded TCP segments through wg0 (MTU 1420) must be
+# sized to the tunnel's PMTU, not the client's LAN MTU. Without this,
+# pages load slowly even though the tunnel is up — the classic
+# "tunnel works but Safari is sluggish" symptom.
+PostUp   = iptables  -t mangle -A FORWARD -i $WG_IFACE -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostUp   = iptables  -t mangle -A FORWARD -o $WG_IFACE -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostUp   = ip6tables -t mangle -A FORWARD -i $WG_IFACE -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostUp   = ip6tables -t mangle -A FORWARD -o $WG_IFACE -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
 PostDown = iptables  -t nat -D POSTROUTING -s $WG_NET_V4 -o $ETH_IFACE -j MASQUERADE
 PostDown = ip6tables -t nat -D POSTROUTING -s $WG_NET_V6 -o $ETH_IFACE -j MASQUERADE
+PostDown = iptables  -t mangle -D FORWARD -i $WG_IFACE -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostDown = iptables  -t mangle -D FORWARD -o $WG_IFACE -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostDown = ip6tables -t mangle -D FORWARD -i $WG_IFACE -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostDown = ip6tables -t mangle -D FORWARD -o $WG_IFACE -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
 
 [Peer]
 # client1 (test client)
@@ -164,11 +294,23 @@ PublicKey = $WG_CLIENT_PUB
 AllowedIPs = $CLIENT_V4/32, $CLIENT_V6/128
 # PresharedKey managed by rosenpass (wg set --preshared-key /dev/stdin)
 EOF
-chmod 600 "$ETC_WG/$WG_IFACE.conf"
+  chmod 600 "$WG_CONF"
+fi
 
 # ---------- Rosenpass config ---------------------------------------------
-log "Writing $ETC_RP/server.toml"
-cat >"$ETC_RP/server.toml" <<EOF
+# Idempotency: same logic as wg0.conf above. add-peer.sh appends [[peers]]
+# blocks here; overwriting on a re-run would silently wipe every PQ peer
+# beyond client1. Skip if file exists and is non-empty unless
+# --force-reset-configs was passed.
+RP_CONF="$ETC_RP/server.toml"
+if [[ -s "$RP_CONF" && "$FORCE_RESET_CONFIGS" -eq 0 ]]; then
+  log "Preserving existing $RP_CONF (idempotent run; pass --force-reset-configs to overwrite)"
+else
+  if [[ "$FORCE_RESET_CONFIGS" -eq 1 && -s "$RP_CONF" ]]; then
+    warn "Overwriting existing $RP_CONF (--force-reset-configs); existing PQ peers will be lost"
+  fi
+  log "Writing $RP_CONF"
+  cat >"$RP_CONF" <<EOF
 # Cloak VPN — Rosenpass server config
 public_key = "$ETC_RP/server.rosenpass-public"
 secret_key = "$ETC_RP/server.rosenpass-secret"
@@ -183,7 +325,15 @@ verbosity = "Quiet"
 public_key = "$ETC_RP/client1.rosenpass-public"
 # Tell rosenpass to rotate this WireGuard peer's PSK.
 key_out = "/run/rosenpass/psk-client1"
+# protocol_version = "V03" required for V03 (SHAKE256-based) clients.
+# Without it the server entry defaults to V02 (Blake2b) and the iOS FFI's
+# InitHello will fail with "No valid hash function found for InitHello".
+# add-peer.sh sets this on every new peer; we set it on client1 too for
+# consistency (even though client1 is a placeholder that's never used in
+# production deployments).
+protocol_version = "V03"
 EOF
+fi
 
 # systemd tmpfiles directory for PSK output
 install -d -m 700 /run/rosenpass
@@ -309,6 +459,65 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
+# ---------- Cloak provisioning API server --------------------------------
+#
+# Adds a small HTTP service that wraps add-peer.sh, so the iOS app can
+# auto-provision against any region without the user having to manually
+# AirDrop pubkeys + scp + run add-peer.sh by hand. See
+# server/scripts/cloak-api-server.py for the full design + privacy
+# rationale (server never sees private keys).
+#
+# Listens on TCP/8443 by default. Production deploys should put nginx +
+# Let's Encrypt in front for TLS termination; the API key is sent in a
+# header so plaintext HTTP would expose it on hostile networks. The
+# pubkey payloads themselves are public so plain HTTP doesn't leak any
+# crypto material — but the API key auth dictates TLS in production.
+
+log "Installing Cloak provisioning API server"
+
+# Ensure the add-peer.sh script is on PATH for the service to invoke.
+install -m 755 "$(dirname "$0")/add-peer.sh" /usr/local/bin/add-peer.sh
+
+# Generate an API token if one doesn't already exist. 32 bytes of
+# random base64 = 44 chars; printed once during setup so the operator
+# can capture it for client provisioning. NOT regenerated on re-run
+# (preserves any existing token across re-deploys).
+install -d -m 700 /etc/cloak
+if [[ ! -s /etc/cloak/api-token ]]; then
+  log "Generating fresh API token at /etc/cloak/api-token"
+  openssl rand -base64 32 | tr -d '\n' > /etc/cloak/api-token
+  chmod 600 /etc/cloak/api-token
+else
+  log "Preserving existing /etc/cloak/api-token"
+fi
+
+# Install the API server script.
+install -m 755 "$(dirname "$0")/cloak-api-server.py" /usr/local/bin/cloak-api-server.py
+
+cat >/etc/systemd/system/cloak-api-server.service <<'UNIT_EOF'
+[Unit]
+Description=Cloak VPN — Provisioning API server (HTTP wrapper around add-peer.sh)
+After=network-online.target wg-quick@wg0.service cloak-rosenpass.service
+Requires=wg-quick@wg0.service
+PartOf=cloak-rosenpass.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloak-api-server.py
+Restart=on-failure
+RestartSec=3
+# Service writes to /etc/wireguard, /etc/rosenpass, and runs systemctl
+# reload — needs root. Production hardening (NoNewPrivileges, seccomp,
+# Capabilities=CAP_NET_ADMIN+CAP_NET_BIND_SERVICE only) is a follow-up.
+
+[Install]
+WantedBy=multi-user.target
+UNIT_EOF
+
+# Allow the API port through UFW. We do this BEFORE the UFW reset block
+# below so the rule lands in the post-reset state.
+CLOAK_API_PORT="${CLOAK_API_PORT:-8443}"
+
 # ---------- UFW firewall --------------------------------------------------
 log "Configuring UFW firewall (deny-by-default, forward wg0 → eth0)"
 ufw --force reset >/dev/null
@@ -323,9 +532,27 @@ sed -i 's/DEFAULT_FORWARD_POLICY="DROP"/DEFAULT_FORWARD_POLICY="ACCEPT"/' /etc/d
 ufw allow OpenSSH
 ufw allow $WG_PORT/udp  comment 'WireGuard'
 ufw allow $RP_PORT/udp  comment 'Rosenpass PQ handshake'
+ufw allow ${CLOAK_API_PORT}/tcp comment 'Cloak provisioning API'
 # Explicitly allow WG peers to exit via the main interface.
 ufw route allow in on "$WG_IFACE" out on "$ETH_IFACE"
 ufw --force enable
+
+# UFW reset above flushed every iptables table, including mangle FORWARD
+# where our TCP MSS clamping rules live. Even if wg0.conf has the MSS
+# PostUp lines, they only fire on `wg-quick up`, which we don't restart
+# here (a restart would drop the tunnel for ~120s while rosenpass
+# re-establishes a PSK — disruptive on a re-run against a live region).
+# Re-apply directly via iptables so existing tunnels get fast TCP again
+# the moment setup.sh finishes. The rules are idempotent (-C check).
+log "Re-applying TCP MSS clamp on $WG_IFACE (mangle FORWARD; survives UFW reset)"
+for cmd in iptables ip6tables; do
+  for dir in -i -o; do
+    "$cmd" -t mangle -C FORWARD $dir "$WG_IFACE" -p tcp --tcp-flags SYN,RST SYN \
+      -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \
+      || "$cmd" -t mangle -A FORWARD $dir "$WG_IFACE" -p tcp --tcp-flags SYN,RST SYN \
+        -j TCPMSS --clamp-mss-to-pmtu
+  done
+done
 
 # ---------- RAM-only /var/log --------------------------------------------
 log "Switching /var/log to tmpfs (RAM-only, wiped on reboot)"
@@ -353,6 +580,8 @@ systemctl enable --now cloak-rosenpass.service
 # rosenpass daemon — but we still enable it explicitly so a manual
 # `systemctl start cloak-psk-installer` works as expected.
 systemctl enable --now cloak-psk-installer.service
+# Provisioning API for the iOS "Add Region" flow. Same PartOf= pattern.
+systemctl enable --now cloak-api-server.service
 
 sleep 2
 systemctl --no-pager --full status wg-quick@$WG_IFACE.service     | head -n 12 || true

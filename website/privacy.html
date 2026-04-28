@@ -36,105 +36,148 @@
 
 <main class="max-w-3xl mx-auto px-6 py-12 prose prose-invert prose-slate">
   <h1>Privacy Policy</h1>
-  <p class="text-sm text-slate-400">Last updated: 24 April 2026</p>
+  <p class="text-sm text-slate-400">Last updated: 27 April 2026</p>
 
   <p>
-    Cloak VPN is built around a simple idea: the less we know, the less we can leak.
-    This page is a plain-English description of exactly what we collect, how we store it,
-    and what we hand over to third parties. If anything here changes, we will update the
-    "Last updated" date above and note the change in our warrant canary.
+    Cloak VPN is built around a simple idea: <strong>the less we know, the less we can leak.</strong>
+    This page is a plain-English description of exactly what we collect when you use the Cloak VPN
+    iOS app and service, how we store it, and what we hand over to third parties. If anything here
+    changes, we will update the &ldquo;Last updated&rdquo; date above and note the change in our
+    <a href="/canary.html">warrant canary</a>.
   </p>
 
-  <h2>What we collect</h2>
-  <p>We collect the minimum information required to charge you for a subscription and provision a VPN tunnel.</p>
+  <h2>TL;DR</h2>
   <ul>
-    <li><strong>Email address</strong> — collected by Stripe during checkout. We use it only to (a) associate a subscription with a device configuration, (b) deliver your welcome instructions and magic-link sign-in, and (c) send service-critical notices (e.g. expiring card). We do not send marketing email.</li>
-    <li><strong>Stripe customer ID</strong> — an opaque identifier that lets us check whether your subscription is currently active when you request a device configuration.</li>
-    <li><strong>Subscription tier and expiry date</strong> — so we know how many device slots you are allowed and when to revoke access if your subscription lapses.</li>
-    <li><strong>WireGuard public keys</strong> that we issue to your devices. These are not linked to you by name — only by your account record. A public key is not secret and cannot be used to decrypt traffic.</li>
-    <li><strong>Internal VPN IPs</strong> that we assign to each device (e.g. 10.99.0.5). These are private addresses inside our own subnet and are not related to your real-world IP address.</li>
+    <li>We do not log, store, or sell your browsing activity.</li>
+    <li>We do not log connection timestamps, source IP addresses, or DNS queries.</li>
+    <li>We collect the minimum required to run the service: a per-install identifier, your subscription status, and a private VPN-network IP temporarily assigned to your session.</li>
+    <li>We do not share your data with advertisers, data brokers, or third parties for marketing.</li>
+    <li>Post-quantum encryption (WireGuard + Rosenpass) is end-to-end between your device and our region servers; we cannot decrypt your traffic in transit.</li>
   </ul>
 
-  <h2>What we do not collect</h2>
-  <ul>
-    <li><strong>Your real IP address</strong> when you connect to the VPN. We do not log it. Cloudflare sees it for the <code>cloakvpn.ai</code> marketing site and Stripe sees it at checkout; we never receive it ourselves after that.</li>
-    <li><strong>Traffic logs.</strong> We do not record which sites you visit, DNS queries you make, bytes transferred, or timing of any connection.</li>
-    <li><strong>Connection logs.</strong> We do not record when you connect or disconnect.</li>
-    <li><strong>Device identifiers.</strong> We do not collect IMEI, advertising IDs, MAC addresses, or device model information.</li>
-    <li><strong>Real name, address, or phone number.</strong> We do not ask for any of these and our checkout form does not request them.</li>
-  </ul>
+  <h2>Information we collect</h2>
 
-  <h2>How logs are stored (or not)</h2>
+  <h3>1. Per-install identifier</h3>
   <p>
-    Our VPN concentrators run standard Linux servers. System journals (<code>/var/log</code>) are mounted as
-    <code>tmpfs</code>, meaning they live only in RAM and are wiped on every reboot.
-    We do not forward system logs to any external service. WireGuard and Rosenpass do not
-    produce per-connection logs by default, and we have not changed that. We do not use
-    any application-level logging that records user activity.
+    When you launch Cloak VPN for the first time, your device generates a random UUID that is
+    stored on the device and used to authenticate calls to our region API. We never associate this
+    identifier with your real-world identity, your Apple ID, or any other account.
   </p>
 
-  <h2>Third parties we rely on</h2>
+  <h3>2. Subscription status</h3>
+  <p>
+    If you subscribe through the Apple App Store, we receive a transaction identifier from Apple via
+    StoreKit so we can confirm you have an active subscription. We do not receive your payment
+    information, name, billing address, or Apple ID. The transaction identifier is used solely to
+    authorize VPN provisioning calls.
+  </p>
+
+  <h3>3. VPN session metadata (transient)</h3>
+  <p>
+    To route your traffic, our region servers temporarily hold:
+  </p>
   <ul>
-    <li><strong>Stripe, Inc.</strong> — processes payments and holds your payment instrument. We never see your card details. Stripe's privacy policy applies to that data: <a class="text-cloak-400" href="https://stripe.com/privacy">stripe.com/privacy</a>.</li>
-    <li><strong>Cloudflare, Inc.</strong> — serves our marketing website (<code>cloakvpn.ai</code>) and provides TLS. Cloudflare sees the IP of visitors to our site, same as any CDN. Cloudflare does <em>not</em> sit between you and our VPN concentrators — those connections go directly to our servers.</li>
-    <li><strong>Hetzner Online GmbH</strong> — hosts our VPN concentrators in Finland and Germany. Hetzner has no access to what runs inside your encrypted tunnel.</li>
+    <li>Your device&rsquo;s WireGuard and Rosenpass public keys (cryptographic identifiers &mdash; not personal data)</li>
+    <li>A private IP address (in <code>10.99.0.0/22</code>, not internet-routable) assigned to your device for the duration of your session</li>
+    <li>The encrypted UDP packet stream itself, which is forwarded immediately and not retained</li>
   </ul>
 
-  <h2>Retention</h2>
+  <p>We do <strong>not</strong> log:</p>
+  <ul>
+    <li>Your real (public) IP address</li>
+    <li>The websites or services you connect to through the VPN</li>
+    <li>DNS queries you make</li>
+    <li>Connection start/stop timestamps</li>
+    <li>Bandwidth used per session</li>
+  </ul>
+
+  <h3>4. Aggregate operational metrics</h3>
   <p>
-    We keep your account record (email, Stripe customer ID, subscription tier, and device
-    public keys) only while your subscription is active and for <strong>30 days after it ends</strong>,
-    to handle refunds and resubscriptions cleanly. After 30 days of inactivity, the
-    record is permanently deleted. You can request earlier deletion by emailing
-    <a class="text-cloak-400" href="mailto:support@cloakvpn.ai">support@cloakvpn.ai</a> — we will process it within 7 days.
+    We collect anonymous aggregate metrics (total active connections per region, bandwidth utilization
+    per region, software error counts) to operate and scale the service. These metrics cannot be used
+    to identify any individual user.
+  </p>
+
+  <h2>Information we do <em>not</em> collect</h2>
+  <ul>
+    <li>Personally identifiable information (name, email, phone number, address) &mdash; unless you contact our support team voluntarily</li>
+    <li>Browsing history or destination URLs</li>
+    <li>DNS queries</li>
+    <li>Real-world device identifiers (IDFA, IDFV are neither collected nor transmitted)</li>
+    <li>Cookies or web tracking data</li>
+    <li>Location data beyond the country your VPN exit is in (which you choose)</li>
+  </ul>
+
+  <h2>How we use the information</h2>
+  <p>The minimal information we collect is used solely to:</p>
+  <ul>
+    <li>Authenticate your device to our region API</li>
+    <li>Provision and maintain your VPN tunnel</li>
+    <li>Prevent abuse and operate the service reliably</li>
+  </ul>
+  <p>
+    We do <strong>not</strong> use it for advertising, profiling, marketing, sale to third parties,
+    or any purpose other than operating the VPN service.
+  </p>
+
+  <h2>Data retention</h2>
+  <ul>
+    <li><strong>Per-install identifier:</strong> stored on your device only; we hold a hash for rate-limiting purposes for up to 30 days after your last connection.</li>
+    <li><strong>Subscription transaction IDs:</strong> retained for as long as your subscription is active, plus 90 days for billing reconciliation, then deleted.</li>
+    <li><strong>VPN session metadata:</strong> deleted within minutes of session disconnect; never written to long-term storage.</li>
+  </ul>
+
+  <h2>Third parties</h2>
+  <p>We use the following third-party services strictly for operational purposes:</p>
+  <ul>
+    <li><strong>Apple StoreKit / App Store Connect</strong> &mdash; for subscription billing. Apple&rsquo;s privacy policy applies: <a href="https://www.apple.com/legal/privacy/">apple.com/legal/privacy</a>.</li>
+    <li><strong>Hetzner Online GmbH</strong> &mdash; hosts our region servers. <a href="https://www.hetzner.com/legal/privacy-policy/">hetzner.com privacy policy</a>.</li>
+    <li><strong>Cloudflare, Inc.</strong> &mdash; hosts DNS for <code>cloakvpn.ai</code> and our subscription auth endpoint. <a href="https://www.cloudflare.com/privacypolicy/">cloudflare.com privacy policy</a>.</li>
+    <li><strong>Quad9</strong> &mdash; DNS resolution inside the VPN tunnel (so your DNS queries don&rsquo;t leak to your ISP). Quad9 logs no personally identifiable data by policy: <a href="https://quad9.net/service/privacy/">quad9.net privacy</a>.</li>
+  </ul>
+  <p>
+    We do not embed analytics SDKs, advertising SDKs, or third-party trackers in the iOS application.
+  </p>
+
+  <h2>Children&rsquo;s privacy</h2>
+  <p>
+    Cloak VPN is not directed at children under 13. We do not knowingly collect any information from
+    children under 13.
   </p>
 
   <h2>Your rights</h2>
+  <p>You may at any time:</p>
   <ul>
-    <li><strong>Access:</strong> email support and we will send you every row we hold tied to your account. There will be one row.</li>
-    <li><strong>Deletion:</strong> email support and we will delete your record and revoke all active device configs within 7 days.</li>
-    <li><strong>Correction:</strong> email support if any field is wrong (most likely: your email address).</li>
-    <li><strong>Portability:</strong> same as access — we send you the row in JSON.</li>
+    <li>Delete the Cloak VPN app, which removes your per-install identifier and all locally stored cryptographic keys.</li>
+    <li>Cancel your subscription via the App Store.</li>
+    <li>Email us at <a href="mailto:support@cloakvpn.ai"><code>support@cloakvpn.ai</code></a> to request deletion of any data we hold associated with your subscription transaction ID.</li>
   </ul>
-
-  <h2>Cookies on this site</h2>
-  <p>
-    <code>cloakvpn.ai</code> uses a single first-party cookie set by Cloudflare for DDoS
-    protection. We do not use analytics, tracking pixels, session replay, or advertising
-    cookies. We do not embed social media widgets. The checkout flow redirects to Stripe,
-    which sets its own cookies necessary to complete payment.
-  </p>
-
-  <h2>Children</h2>
-  <p>Cloak VPN is intended for users 18 and older. We do not knowingly collect data from anyone under 18.</p>
-
-  <h2>Legal requests</h2>
-  <p>
-    If we ever receive a legal demand for user data, we will disclose only what we have,
-    which by design is very little. We maintain a warrant canary on this site at
-    <a class="text-cloak-400" href="/canary.html">/canary.html</a>; if that page is ever removed or
-    not updated on its posted schedule, treat that as a signal.
-  </p>
 
   <h2>Changes to this policy</h2>
   <p>
-    If we change what we collect or how we handle it, we will update the "Last updated"
-    date at the top and note the change in the warrant canary so existing users can see
-    the diff. Material changes will also be emailed to active subscribers.
+    We may update this Privacy Policy from time to time. The &ldquo;Last updated&rdquo; date at the
+    top reflects the current version. Material changes will be announced in-app on next launch.
   </p>
 
   <h2>Contact</h2>
-  <p>Email us at <a class="text-cloak-400" href="mailto:support@cloakvpn.ai">support@cloakvpn.ai</a>.</p>
+  <p>
+    Questions about this policy or your data: <a href="mailto:support@cloakvpn.ai"><code>support@cloakvpn.ai</code></a>
+  </p>
+
+  <hr class="border-slate-700 mt-12" />
+  <p class="text-sm text-slate-400">
+    See also: <a href="/terms.html">Terms of Service</a> &middot;
+    <a href="/canary.html">Warrant Canary</a> &middot;
+    <a href="/transparency.html">Transparency Report</a>
+  </p>
 </main>
 
-<footer class="border-t border-slate-800 mt-12">
-  <div class="max-w-4xl mx-auto px-6 py-6 text-xs text-slate-500 flex flex-col md:flex-row justify-between gap-2">
-    <div>© 2026 Cloak VPN.</div>
-    <div class="flex gap-4">
-      <a href="/privacy.html" class="hover:text-white">Privacy</a>
-      <a href="/terms.html" class="hover:text-white">Terms</a>
-      <a href="/canary.html" class="hover:text-white">Canary</a>
-    </div>
+<footer class="max-w-4xl mx-auto px-6 py-8 text-sm text-slate-400 flex flex-wrap gap-4 justify-between">
+  <div>&copy; 2026 Neuro AI Studios. CLOAK VPN is a trademark of Neuro AI Studios.</div>
+  <div class="space-x-4">
+    <a href="/privacy.html" class="hover:text-white">Privacy</a>
+    <a href="/terms.html" class="hover:text-white">Terms</a>
+    <a href="/canary.html" class="hover:text-white">Canary</a>
   </div>
 </footer>
 

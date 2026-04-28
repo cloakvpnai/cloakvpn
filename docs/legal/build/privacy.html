@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy · CLOAK VPN</title>
+<link rel="canonical" href="https://cloakvpn.ai/privacy">
+<style>
+:root {
+  --gold: #FFD700;
+  --green: #1FBE5C;
+  --bg: #0a0a0a;
+  --fg: #e8e8e8;
+  --fg-muted: #999;
+  --border: #2a2a2a;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+header {
+  border-bottom: 1px solid var(--border);
+  padding: 24px 16px;
+  text-align: center;
+}
+header .brand {
+  font-family: "New York", Georgia, serif;
+  font-weight: 600;
+  font-size: 22px;
+  letter-spacing: 2px;
+  color: var(--gold);
+}
+header nav {
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--fg-muted);
+}
+header nav a {
+  color: var(--fg-muted);
+  margin: 0 10px;
+  text-decoration: none;
+}
+header nav a:hover { color: var(--gold); }
+main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+}
+h1 {
+  font-family: "New York", Georgia, serif;
+  font-weight: 600;
+  font-size: 32px;
+  margin-top: 0;
+  letter-spacing: 0.5px;
+}
+h2 {
+  font-family: "New York", Georgia, serif;
+  font-weight: 600;
+  font-size: 22px;
+  margin-top: 40px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+h3 {
+  font-size: 17px;
+  margin-top: 28px;
+  color: var(--fg);
+}
+p, li { color: var(--fg); }
+a { color: var(--green); text-decoration: underline; text-underline-offset: 2px; }
+a:hover { color: var(--gold); }
+ul, ol { padding-left: 24px; }
+li { margin: 6px 0; }
+code {
+  background: #1a1a1a;
+  border: 1px solid var(--border);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+}
+strong { color: var(--fg); }
+em { color: var(--fg); }
+.last-updated { color: var(--fg-muted); font-size: 14px; }
+footer {
+  border-top: 1px solid var(--border);
+  padding: 20px 16px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+footer a { color: var(--fg-muted); text-decoration: none; }
+footer a:hover { color: var(--gold); }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">CLOAK VPN</div>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/terms">Terms</a>
+    <a href="mailto:support@cloakvpn.ai">Support</a>
+  </nav>
+</header>
+<main>
+<h1>Cloak VPN Privacy Policy</h1>
+<p><strong>Last updated: April 27, 2026</strong></p>
+<p>Cloak VPN (&quot;we&quot;, &quot;our&quot;, or &quot;the Service&quot;) is operated by Neuro AI Studios. This Privacy Policy describes how Cloak VPN handles information when you use our iOS application and VPN service.</p>
+<h2>TL;DR</h2>
+<ul>
+  <li>We do not log, store, or sell your browsing activity.</li>
+  <li>We do not log connection timestamps, source IP addresses, or DNS queries.</li>
+  <li>We collect the minimum required to run the service: a per-install identifier, your subscription status, and an IPv4/IPv6 address temporarily assigned inside our private VPN network.</li>
+  <li>We do not share your data with advertisers, data brokers, or third parties for marketing.</li>
+  <li>Post-quantum encryption (WireGuard + Rosenpass) is end-to-end between your device and our region servers; we cannot decrypt your traffic in transit.</li>
+</ul>
+<h2>Information we collect</h2>
+<h3>1. Per-install identifier</h3>
+<p>When you launch Cloak VPN for the first time, your device generates a random UUID that is stored on the device and used to authenticate calls to our region API. We never associate this identifier with your real-world identity, your Apple ID, or any other account.</p>
+<h3>2. Subscription status (when in-app purchases are active)</h3>
+<p>If you subscribe through the App Store, we receive a transaction identifier from Apple via StoreKit so we can confirm you have an active subscription. We do not receive your payment information, name, billing address, or Apple ID. The transaction identifier is used solely to authorize VPN provisioning calls.</p>
+<h3>3. VPN session metadata (transient)</h3>
+<p>To route your traffic, our region servers temporarily hold:</p>
+<ul>
+  <li>Your device&#x27;s WireGuard and Rosenpass public keys (cryptographic identifiers — not personal data)</li>
+  <li>A private IP address (in <code>10.99.0.0/22</code>, not internet-routable) assigned to your device for the duration of your session</li>
+  <li>The encrypted UDP packet stream itself, which is forwarded immediately and not retained</li>
+</ul>
+<p>We do not log:</p>
+<ul>
+  <li>Your real (public) IP address</li>
+  <li>The websites or services you connect to through the VPN</li>
+  <li>DNS queries you make</li>
+  <li>Connection start/stop timestamps</li>
+  <li>Bandwidth used per session</li>
+</ul>
+<h3>4. Aggregate operational metrics</h3>
+<p>We collect anonymous aggregate metrics (total active connections per region, bandwidth utilization per region, software error counts) to operate and scale the service. These metrics cannot be used to identify any individual user.</p>
+<h2>Information we do <strong>not</strong> collect</h2>
+<ul>
+  <li>Personally identifiable information (name, email, phone number, address) — unless you contact our support team voluntarily</li>
+  <li>Browsing history or destination URLs</li>
+  <li>DNS queries</li>
+  <li>Real-world device identifiers (IDFA, IDFV are not collected or transmitted)</li>
+  <li>Cookies or web tracking data</li>
+  <li>Location data beyond the country your VPN exit is in (which you choose)</li>
+</ul>
+<h2>How we use the information</h2>
+<p>The minimal information we collect is used solely to:</p>
+<ul>
+  <li>Authenticate your device to our region API</li>
+  <li>Provision and maintain your VPN tunnel</li>
+  <li>Prevent abuse and operate the service reliably</li>
+</ul>
+<p>We do <strong>not</strong> use it for advertising, profiling, marketing, sale to third parties, or any purpose other than operating the VPN service.</p>
+<h2>Data retention</h2>
+<ul>
+  <li>Per-install identifier: stored on your device only; we hold a hash for rate-limiting purposes for up to 30 days after your last connection</li>
+  <li>Subscription transaction IDs: retained for as long as your subscription is active, plus 90 days for billing reconciliation, then deleted</li>
+  <li>VPN session metadata: deleted within minutes of session disconnect; never written to long-term storage</li>
+</ul>
+<h2>Third parties</h2>
+<p>We use the following third-party services strictly for operational purposes:</p>
+<ul>
+  <li><strong>Apple StoreKit / App Store Connect</strong> — for subscription billing. Apple&#x27;s privacy policy applies: &lt;https://www.apple.com/legal/privacy/&gt;</li>
+  <li><strong>Hetzner Online GmbH</strong> — hosts our region servers. Hetzner&#x27;s privacy policy: &lt;https://www.hetzner.com/legal/privacy-policy/&gt;</li>
+  <li><strong>Cloudflare, Inc.</strong> — hosts DNS for <code>cloakvpn.ai</code> and our subscription auth endpoint. Cloudflare&#x27;s privacy policy: &lt;https://www.cloudflare.com/privacypolicy/&gt;</li>
+  <li><strong>Quad9</strong> — DNS resolution inside the VPN tunnel (so your DNS queries don&#x27;t leak to your ISP). Quad9 logs no personally identifiable data by policy: &lt;https://quad9.net/service/privacy/&gt;</li>
+</ul>
+<p>We do not embed analytics SDKs, advertising SDKs, or third-party trackers in the iOS application.</p>
+<h2>Children&#x27;s privacy</h2>
+<p>Cloak VPN is not directed at children under 13. We do not knowingly collect any information from children under 13.</p>
+<h2>Your rights</h2>
+<p>You may at any time:</p>
+<ul>
+  <li>Delete the Cloak VPN app, which removes your per-install identifier and all locally stored cryptographic keys</li>
+  <li>Cancel your subscription via the App Store</li>
+  <li>Email us at <code>support@cloakvpn.ai</code> to request deletion of any data we hold associated with your subscription transaction ID</li>
+</ul>
+<h2>Changes to this policy</h2>
+<p>We may update this Privacy Policy from time to time. The &quot;Last updated&quot; date at the top reflects the current version. Material changes will be announced in-app on next launch.</p>
+<h2>Contact</h2>
+<p>Questions about this policy or your data: <code>support@cloakvpn.ai</code></p>
+</main>
+<footer>
+  &copy; 2026 Neuro AI Studios. CLOAK VPN is a trademark of Neuro AI Studios.<br>
+  <a href="/privacy">Privacy Policy</a> · <a href="/terms">Terms of Service</a>
+</footer>
+</body>
+</html>

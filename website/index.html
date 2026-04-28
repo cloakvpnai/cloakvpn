@@ -4,262 +4,523 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Cloak VPN — Post-quantum, no-logs VPN</title>
-  <meta name="description" content="Cloak VPN adds a post-quantum pre-shared key to every WireGuard tunnel via academically-audited Rosenpass. Strict no-logs. RAM-only system journals." />
+  <meta name="description" content="Cloak VPN combines WireGuard with the post-quantum Rosenpass key-exchange protocol. Quantum-resistant privacy, strict no-logs, kill switch by default." />
 
-  <meta property="og:title" content="Cloak VPN — Post-quantum, no-logs VPN" />
-  <meta property="og:description" content="Post-quantum key exchange on every connection via academically-audited Rosenpass. Strict no-logs." />
+  <meta property="og:title" content="Cloak VPN — Quantum-resistant privacy" />
+  <meta property="og:description" content="The first consumer VPN with post-quantum encryption on every connection. Strict no-logs, kill switch by default." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://cloakvpn.ai/" />
+  <meta property="og:image" content="https://cloakvpn.ai/assets/logo.png" />
 
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/assets/logo.png" />
+
   <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
           colors: {
-            ink:   { 900: '#0A1628', 800: '#0E1F3A', 700: '#132B4F' },
-            cloak: { 500: '#3B82F6', 600: '#2563EB', 400: '#60A5FA' }
+            // Brand palette mirrors the iOS app's CloakDesign system.
+            cloak: {
+              green: '#1FBE5C',
+              greenDeep: '#0F4A24',
+              gold: '#FFD700',
+              grey: '#86898F',
+            }
           },
-          fontFamily: { sans: ['ui-sans-serif','system-ui','-apple-system','Segoe UI','Roboto','Inter','sans-serif'] }
+          fontFamily: {
+            // Default sans = SF Pro Text (Apple) / Inter / Helvetica Neue.
+            sans: ['ui-sans-serif','-apple-system','BlinkMacSystemFont','Inter','Segoe UI','Helvetica Neue','sans-serif'],
+            // Serif headlines = New York (Apple) / Crimson / Cormorant.
+            serif: ['ui-serif','New York','Crimson Pro','Cormorant Garamond','Georgia','serif'],
+          },
+          animation: {
+            'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'spin-slow': 'spin 60s linear infinite',
+          }
         }
       }
     };
   </script>
+
   <style>
-    body { background: radial-gradient(1000px 500px at 30% -10%, rgba(59,130,246,0.18), transparent 50%),
-                       radial-gradient(800px 400px at 90% 10%, rgba(124,58,237,0.12), transparent 50%),
-                       #0A1628; }
+    /* ----- BASE ----- */
+    html, body { background: #000; color: #f5f5f5; }
+    body {
+      -webkit-font-smoothing: antialiased;
+      font-feature-settings: 'kern', 'liga', 'ss01';
+    }
+
+    /* Subtle ambient gradients above the world map. The radials use
+       the brand green + gold at very low alpha so the page feels
+       "lit from above" without being noisy. */
+    .ambient-gradient {
+      background:
+        radial-gradient(900px 600px at 20% -5%, rgba(31, 190, 92, 0.12), transparent 50%),
+        radial-gradient(700px 500px at 90% 10%, rgba(255, 215, 0, 0.06), transparent 50%),
+        radial-gradient(600px 400px at 50% 110%, rgba(31, 190, 92, 0.10), transparent 60%);
+    }
+
+    /* ----- WORLD MAP BACKDROP ----- */
+    /* The SVG world map sits behind everything at ~12% opacity. Tinted
+       brand green via currentColor (the SVG strokes use stroke="currentColor"). */
+    .world-map-layer {
+      color: #1FBE5C;       /* drives the SVG stroke color */
+      opacity: 0.18;
+      pointer-events: none;
+    }
+
+    /* ----- ANIMATED PULSE DOTS (random ambient activity) ----- */
+    /* 24 fixed positions distributed across the map. Each pulses on a
+       staggered loop so the map looks "alive" without specific cities
+       being marked. Server regions will change later — this is purely
+       atmospheric. */
+    .pulse-dot {
+      position: absolute;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #1FBE5C;
+      box-shadow: 0 0 12px rgba(31, 190, 92, 0.8);
+      transform: translate(-50%, -50%);
+      animation: dotPulse 4s ease-in-out infinite;
+      pointer-events: none;
+      opacity: 0;
+    }
+    @keyframes dotPulse {
+      0%, 100% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+      50%       { opacity: 0.85; transform: translate(-50%, -50%) scale(1.2); }
+    }
+
+    /* Expanding ring on each dot for that "ping" effect. */
+    .pulse-dot::before {
+      content: "";
+      position: absolute;
+      inset: -2px;
+      border-radius: 50%;
+      border: 1px solid rgba(31, 190, 92, 0.6);
+      animation: ringExpand 4s ease-out infinite;
+    }
+    @keyframes ringExpand {
+      0%   { transform: scale(1);   opacity: 0.8; }
+      100% { transform: scale(4.5); opacity: 0; }
+    }
+
+    /* ----- HOLO-GLASS PANELS ----- */
+    /* The signature visual element: frosted-glass cards over the world
+       map. backdrop-filter blurs the map behind each card so content
+       stays readable. */
+    .holo-glass {
+      background: rgba(255, 255, 255, 0.025);
+      backdrop-filter: blur(12px) saturate(180%);
+      -webkit-backdrop-filter: blur(12px) saturate(180%);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 1px 30px rgba(31, 190, 92, 0.05),
+        0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+    .holo-glass-strong {
+      background: rgba(20, 30, 25, 0.55);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border: 1px solid rgba(31, 190, 92, 0.18);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 0 60px rgba(31, 190, 92, 0.10),
+        0 25px 50px -12px rgba(0, 0, 0, 0.6);
+    }
+
+    /* ----- CONNECT BUTTON (mirrors the iOS holo-glass connect) ----- */
+    .connect-button {
+      background:
+        linear-gradient(135deg,
+          rgba(31, 190, 92, 0.6) 0%,
+          rgba(31, 190, 92, 0.4) 50%,
+          rgba(31, 190, 92, 0.6) 100%);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 2.5px solid #FFD700;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.4),
+        0 0 30px rgba(255, 215, 0, 0.45),
+        0 0 60px rgba(31, 190, 92, 0.25);
+      transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s;
+    }
+    .connect-button:hover {
+      transform: translateY(-2px);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.4),
+        0 0 50px rgba(255, 215, 0, 0.7),
+        0 0 90px rgba(31, 190, 92, 0.4);
+    }
+
+    /* ----- TYPOGRAPHY ----- */
+    .brand-mark {
+      font-family: 'New York', Georgia, serif;
+      letter-spacing: 0.18em;
+      font-weight: 600;
+    }
+    .display-serif {
+      font-family: 'New York', Georgia, serif;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .label-small {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    /* ----- STARFIELD ----- */
+    /* Subtle star points behind the map, generated via radial gradients.
+       Cheap (no DOM elements, no JS). */
+    .starfield {
+      background-image:
+        radial-gradient(1px 1px at 13% 17%, rgba(255,255,255,0.6), transparent),
+        radial-gradient(1px 1px at 27% 83%, rgba(255,255,255,0.5), transparent),
+        radial-gradient(1px 1px at 41% 31%, rgba(255,255,255,0.4), transparent),
+        radial-gradient(1px 1px at 67% 12%, rgba(255,255,255,0.6), transparent),
+        radial-gradient(1px 1px at 78% 65%, rgba(255,255,255,0.5), transparent),
+        radial-gradient(1px 1px at 92% 38%, rgba(255,255,255,0.5), transparent),
+        radial-gradient(1px 1px at 7% 53%, rgba(255,255,255,0.4), transparent),
+        radial-gradient(1px 1px at 33% 47%, rgba(255,255,255,0.4), transparent),
+        radial-gradient(1px 1px at 56% 81%, rgba(255,255,255,0.5), transparent),
+        radial-gradient(1px 1px at 71% 23%, rgba(255,255,255,0.6), transparent);
+      background-size: 100% 100%;
+      opacity: 0.4;
+    }
+
+    /* ----- FEATURE ICON ----- */
+    .feature-icon {
+      width: 44px; height: 44px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 12px;
+      background: rgba(31, 190, 92, 0.10);
+      border: 1px solid rgba(31, 190, 92, 0.25);
+      color: #1FBE5C;
+    }
+
+    /* ----- GOLD ACCENT TEXT ----- */
+    .gold { color: #FFD700; }
+
+    /* ----- LINKS ----- */
+    a.link { color: #1FBE5C; }
+    a.link:hover { color: #FFD700; }
+
+    /* ----- HERO CONNECT BADGE GLOW ----- */
+    @keyframes glowPulse {
+      0%, 100% { box-shadow: 0 0 30px rgba(255, 215, 0, 0.45), 0 0 60px rgba(31, 190, 92, 0.25); }
+      50%      { box-shadow: 0 0 50px rgba(255, 215, 0, 0.7),  0 0 90px rgba(31, 190, 92, 0.4); }
+    }
+    .connect-button { animation: glowPulse 4s ease-in-out infinite; }
+
+    /* ----- RESPONSIVE TWEAKS ----- */
+    @media (max-width: 640px) {
+      .pulse-dot { display: none; } /* Hide ambient dots on small screens — too busy */
+    }
   </style>
 </head>
-<body class="text-slate-100 antialiased">
+<body class="font-sans">
 
-<!-- Nav -->
-<header class="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
-  <a href="/" class="flex items-center gap-2 font-semibold text-white">
-    <svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-      <path d="M16 2 L28 7 V17 C28 23 22 28 16 30 C10 28 4 23 4 17 V7 Z" stroke="#60A5FA" stroke-width="2" fill="rgba(59,130,246,0.12)"/>
-      <path d="M12 16 L15 19 L21 13" stroke="#60A5FA" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-    Cloak VPN
+<!-- ===== BACKGROUND LAYERS (fixed, behind everything) ===== -->
+<div class="fixed inset-0 -z-50 ambient-gradient"></div>
+<div class="fixed inset-0 -z-40 starfield"></div>
+<div class="fixed inset-0 -z-30 world-map-layer flex items-center justify-center overflow-hidden">
+  <object type="image/svg+xml" data="/assets/world-map.svg" class="w-[140%] h-[140%]"
+          aria-hidden="true"></object>
+</div>
+
+<!-- Ambient pulse dots — 24 random distributed positions across the map.
+     Inline-styled so we don't need JS for staggering. -->
+<div class="fixed inset-0 -z-20 pointer-events-none" aria-hidden="true">
+  <div class="pulse-dot" style="top: 28%; left: 18%; animation-delay: 0s;"></div>
+  <div class="pulse-dot" style="top: 35%; left: 24%; animation-delay: 1.2s;"></div>
+  <div class="pulse-dot" style="top: 42%; left: 32%; animation-delay: 2.4s;"></div>
+  <div class="pulse-dot" style="top: 22%; left: 42%; animation-delay: 0.6s;"></div>
+  <div class="pulse-dot" style="top: 31%; left: 49%; animation-delay: 3.1s;"></div>
+  <div class="pulse-dot" style="top: 26%; left: 56%; animation-delay: 1.8s;"></div>
+  <div class="pulse-dot" style="top: 38%; left: 63%; animation-delay: 0.4s;"></div>
+  <div class="pulse-dot" style="top: 30%; left: 71%; animation-delay: 2.7s;"></div>
+  <div class="pulse-dot" style="top: 45%; left: 78%; animation-delay: 1.1s;"></div>
+  <div class="pulse-dot" style="top: 52%; left: 67%; animation-delay: 3.4s;"></div>
+  <div class="pulse-dot" style="top: 60%; left: 30%; animation-delay: 0.9s;"></div>
+  <div class="pulse-dot" style="top: 58%; left: 47%; animation-delay: 2.0s;"></div>
+  <div class="pulse-dot" style="top: 65%; left: 62%; animation-delay: 0.2s;"></div>
+  <div class="pulse-dot" style="top: 72%; left: 41%; animation-delay: 3.7s;"></div>
+  <div class="pulse-dot" style="top: 70%; left: 75%; animation-delay: 1.5s;"></div>
+  <div class="pulse-dot" style="top: 18%; left: 14%; animation-delay: 2.9s;"></div>
+  <div class="pulse-dot" style="top: 25%; left: 81%; animation-delay: 0.7s;"></div>
+  <div class="pulse-dot" style="top: 50%; left: 14%; animation-delay: 3.2s;"></div>
+  <div class="pulse-dot" style="top: 55%; left: 88%; animation-delay: 1.4s;"></div>
+  <div class="pulse-dot" style="top: 80%; left: 22%; animation-delay: 0.5s;"></div>
+  <div class="pulse-dot" style="top: 78%; left: 56%; animation-delay: 2.3s;"></div>
+  <div class="pulse-dot" style="top: 85%; left: 78%; animation-delay: 3.6s;"></div>
+  <div class="pulse-dot" style="top: 40%; left: 90%; animation-delay: 1.7s;"></div>
+  <div class="pulse-dot" style="top: 67%; left: 9%; animation-delay: 0.1s;"></div>
+</div>
+
+<!-- ===== HEADER ===== -->
+<header class="relative z-10 max-w-6xl mx-auto px-6 py-6 flex items-center justify-between">
+  <a href="/" class="flex items-center gap-3">
+    <img src="/assets/logo.png" alt="" class="w-10 h-10 object-contain"
+         style="filter: drop-shadow(0 2px 8px rgba(255,215,0,0.4));" />
+    <span class="brand-mark text-white text-lg">CLOAK VPN</span>
   </a>
   <nav class="hidden md:flex items-center gap-8 text-sm text-slate-300">
-    <a href="#features" class="hover:text-white">Features</a>
-    <a href="#pqc" class="hover:text-white">How PQC works</a>
-    <a href="/pricing.html" class="hover:text-white">Pricing</a>
-    <a href="https://github.com/cloakvpnai/cloakvpn" class="hover:text-white">GitHub</a>
+    <a href="#features" class="hover:text-white transition">Features</a>
+    <a href="#how" class="hover:text-white transition">How it works</a>
+    <a href="/pricing.html" class="hover:text-white transition">Pricing</a>
+    <a href="/privacy.html" class="hover:text-white transition">Privacy</a>
   </nav>
-  <a href="/pricing.html" class="text-sm font-medium bg-cloak-500 hover:bg-cloak-600 transition px-4 py-2 rounded-lg">Get Cloak Pro</a>
 </header>
 
-<!-- Hero -->
-<section class="max-w-6xl mx-auto px-6 pt-16 pb-24 text-center">
-  <div class="inline-flex items-center gap-2 text-xs font-medium bg-slate-800/60 border border-slate-700 rounded-full px-3 py-1 text-slate-300">
-    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-    Post-quantum cryptography on every connection
+<!-- ===== HERO ===== -->
+<section class="relative z-10 max-w-6xl mx-auto px-6 pt-12 pb-20 md:pt-20 md:pb-32">
+  <div class="grid md:grid-cols-2 gap-12 items-center">
+
+    <!-- Left: copy + CTA -->
+    <div class="space-y-7">
+      <div class="label-small text-cloak-green">Quantum-resistant</div>
+      <h1 class="display-serif text-5xl md:text-6xl text-white leading-[1.05]">
+        Privacy that survives
+        <span class="gold">tomorrow's computers.</span>
+      </h1>
+      <p class="text-slate-300 text-lg max-w-md leading-relaxed">
+        Cloak VPN combines WireGuard with the post-quantum
+        Rosenpass key-exchange protocol — your traffic stays encrypted
+        even against future quantum attackers. No logs. Ever.
+      </p>
+      <div class="flex flex-wrap items-center gap-4 pt-2">
+        <a href="#download"
+           class="connect-button rounded-2xl px-9 py-4 text-white brand-mark text-lg">
+          DOWNLOAD
+        </a>
+        <a href="#how" class="text-slate-200 hover:text-cloak-gold transition px-2 py-2">
+          How it works &rarr;
+        </a>
+      </div>
+      <div class="pt-3 flex items-center gap-3 text-sm text-slate-400">
+        <span class="inline-block w-1.5 h-1.5 rounded-full bg-cloak-green" style="box-shadow:0 0 8px #1FBE5C;"></span>
+        <span>Coming soon to the iOS App Store</span>
+      </div>
+    </div>
+
+    <!-- Right: hero glass panel with the iconic logo + tagline -->
+    <div class="relative">
+      <div class="holo-glass-strong rounded-3xl p-10 md:p-12 text-center">
+        <img src="/assets/logo.png" alt="Cloak VPN logo"
+             class="mx-auto w-48 h-48 object-contain mb-6"
+             style="filter: drop-shadow(0 4px 24px rgba(255,215,0,0.45));" />
+        <div class="brand-mark text-white text-2xl mb-2">CLOAK VPN</div>
+        <div class="text-cloak-green text-sm">Post-quantum &middot; No logs &middot; Kill switch</div>
+      </div>
+      <!-- Floating gold-bordered "PQ" badge -->
+      <div class="absolute -top-4 -right-4 holo-glass rounded-2xl px-4 py-2 border border-cloak-gold/40">
+        <div class="label-small gold">PQ-SECURED</div>
+      </div>
+    </div>
+
   </div>
-  <h1 class="mt-6 text-4xl md:text-6xl font-bold tracking-tight leading-tight">
-    The VPN built for <span class="text-cloak-400">the next decade of threats.</span>
-  </h1>
-  <p class="mt-6 max-w-2xl mx-auto text-lg text-slate-300">
-    Every WireGuard tunnel is protected by a post-quantum pre-shared key rotated every ~120
-    seconds via <a href="https://rosenpass.eu" class="text-cloak-400 underline">Rosenpass</a>, the
-    academically peer-reviewed post-quantum key exchange. No connection logs. System journals
-    wiped on every reboot.
+</section>
+
+<!-- ===== FEATURES ===== -->
+<section id="features" class="relative z-10 max-w-6xl mx-auto px-6 py-16 md:py-24">
+  <div class="text-center mb-12 md:mb-16">
+    <div class="label-small text-cloak-green mb-3">What makes Cloak different</div>
+    <h2 class="display-serif text-4xl md:text-5xl text-white">
+      Built for a world where <span class="gold">quantum computers exist.</span>
+    </h2>
+  </div>
+
+  <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+    <div class="holo-glass rounded-2xl p-7">
+      <div class="feature-icon mb-5">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2L4 6v6c0 5 3.4 9.5 8 11 4.6-1.5 8-6 8-11V6l-8-4z"/>
+          <path d="M9 12l2 2 4-4"/>
+        </svg>
+      </div>
+      <div class="display-serif text-xl text-white mb-2">Post-quantum protection</div>
+      <p class="text-slate-300 text-sm leading-relaxed">
+        WireGuard + Rosenpass with NIST-standardized post-quantum
+        algorithms. Fresh quantum-safe key rotated every two minutes.
+      </p>
+    </div>
+
+    <div class="holo-glass rounded-2xl p-7">
+      <div class="feature-icon mb-5">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+      </div>
+      <div class="display-serif text-xl text-white mb-2">Strict no-logs</div>
+      <p class="text-slate-300 text-sm leading-relaxed">
+        We don&rsquo;t log your IP, DNS queries, browsing, or bandwidth.
+        We can&rsquo;t hand over what we never collected.
+      </p>
+    </div>
+
+    <div class="holo-glass rounded-2xl p-7">
+      <div class="feature-icon mb-5">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="2" y1="12" x2="22" y2="12"/>
+          <path d="M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/>
+        </svg>
+      </div>
+      <div class="display-serif text-xl text-white mb-2">Global regions</div>
+      <p class="text-slate-300 text-sm leading-relaxed">
+        High-performance bare-metal servers across multiple continents.
+        Tap a flag to switch instantly.
+      </p>
+    </div>
+
+    <div class="holo-glass rounded-2xl p-7">
+      <div class="feature-icon mb-5">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c2.5 0 4.76 1.02 6.39 2.66"/>
+          <polyline points="22 4 12 14 9 11"/>
+        </svg>
+      </div>
+      <div class="display-serif text-xl text-white mb-2">Kill switch by default</div>
+      <p class="text-slate-300 text-sm leading-relaxed">
+        If your tunnel drops, no traffic leaks to your ISP. iOS
+        enforces the lockdown even during reconnection.
+      </p>
+    </div>
+
+    <div class="holo-glass rounded-2xl p-7">
+      <div class="feature-icon mb-5">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2v20M2 12h20"/>
+          <circle cx="12" cy="12" r="9"/>
+        </svg>
+      </div>
+      <div class="display-serif text-xl text-white mb-2">Open & auditable</div>
+      <p class="text-slate-300 text-sm leading-relaxed">
+        Built on open-source WireGuard, audited Rosenpass, and the
+        publicly-published NIST PQC standards. No proprietary crypto.
+      </p>
+    </div>
+
+    <div class="holo-glass rounded-2xl p-7">
+      <div class="feature-icon mb-5">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+        </svg>
+      </div>
+      <div class="display-serif text-xl text-white mb-2">One-tap simplicity</div>
+      <p class="text-slate-300 text-sm leading-relaxed">
+        Pick a region, tap CONNECT. The complex cryptography handles
+        itself in the background. Designed to disappear.
+      </p>
+    </div>
+
+  </div>
+</section>
+
+<!-- ===== HOW IT WORKS ===== -->
+<section id="how" class="relative z-10 max-w-5xl mx-auto px-6 py-16 md:py-24">
+  <div class="holo-glass-strong rounded-3xl p-8 md:p-14">
+    <div class="label-small text-cloak-green mb-3">How it works</div>
+    <h2 class="display-serif text-3xl md:text-4xl text-white mb-8">
+      A quantum-safe handshake on every connection.
+    </h2>
+
+    <div class="space-y-8 text-slate-300">
+
+      <div class="flex gap-5">
+        <div class="display-serif text-3xl gold w-12 shrink-0">1.</div>
+        <div>
+          <div class="text-white font-semibold mb-1">Open the app, tap CONNECT</div>
+          <p class="text-sm leading-relaxed">
+            Pick a server region. Cloak provisions a peer-specific
+            tunnel keyed to your install. Your iPhone&rsquo;s
+            cryptographic identity never leaves the device.
+          </p>
+        </div>
+      </div>
+
+      <div class="flex gap-5">
+        <div class="display-serif text-3xl gold w-12 shrink-0">2.</div>
+        <div>
+          <div class="text-white font-semibold mb-1">WireGuard establishes the data plane</div>
+          <p class="text-sm leading-relaxed">
+            ChaCha20-Poly1305 encryption over UDP. Modern, fast, audited.
+            iOS&rsquo;s kill switch ensures no packet bypasses the tunnel,
+            even during reconnection.
+          </p>
+        </div>
+      </div>
+
+      <div class="flex gap-5">
+        <div class="display-serif text-3xl gold w-12 shrink-0">3.</div>
+        <div>
+          <div class="text-white font-semibold mb-1">Rosenpass adds the post-quantum layer</div>
+          <p class="text-sm leading-relaxed">
+            Every two minutes, a fresh post-quantum pre-shared key is
+            negotiated using Classic McEliece + NIST&rsquo;s ML-KEM.
+            Even if WireGuard&rsquo;s classical encryption were broken
+            by a future quantum computer, your traffic stays sealed.
+          </p>
+        </div>
+      </div>
+
+      <div class="flex gap-5">
+        <div class="display-serif text-3xl gold w-12 shrink-0">4.</div>
+        <div>
+          <div class="text-white font-semibold mb-1">No logs leave our servers</div>
+          <p class="text-sm leading-relaxed">
+            Connection metadata is held in RAM and never written to disk.
+            We can&rsquo;t comply with what we don&rsquo;t collect.
+            Read the <a href="/privacy.html" class="link">complete privacy policy</a>.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ===== CTA ===== -->
+<section id="download" class="relative z-10 max-w-4xl mx-auto px-6 py-20 md:py-28 text-center">
+  <h2 class="display-serif text-4xl md:text-5xl text-white mb-6">
+    Ready when quantum is.
+  </h2>
+  <p class="text-slate-300 text-lg max-w-xl mx-auto mb-10">
+    Download Cloak VPN and protect your traffic with cryptography that
+    will outlast classical encryption.
   </p>
-  <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
-    <a href="/pricing.html" class="w-full sm:w-auto bg-cloak-500 hover:bg-cloak-600 transition text-white font-semibold px-6 py-3 rounded-lg">
-      Start for $4.99/month
-    </a>
-    <a href="#pqc" class="w-full sm:w-auto border border-slate-700 hover:border-slate-500 transition text-slate-200 font-semibold px-6 py-3 rounded-lg">
-      See how the crypto works
-    </a>
-  </div>
-  <p class="mt-4 text-sm text-slate-400">
-    7-day money-back guarantee. Cancel anytime. Pay with card.
-  </p>
-</section>
-
-<!-- Features grid -->
-<section id="features" class="max-w-6xl mx-auto px-6 py-20">
-  <h2 class="text-3xl md:text-4xl font-bold text-center">Why Cloak</h2>
-  <p class="mt-3 text-center text-slate-400 max-w-xl mx-auto">
-    Most VPNs are a tunnel. Cloak is a tunnel plus three things that matter when privacy is the job, not the checkbox.
-  </p>
-
-  <div class="mt-12 grid md:grid-cols-3 gap-6">
-    <div class="bg-ink-800/60 border border-slate-800 rounded-xl p-6">
-      <div class="w-10 h-10 rounded-lg bg-cloak-500/20 border border-cloak-500/40 flex items-center justify-center mb-4 text-cloak-400 font-bold">PQ</div>
-      <h3 class="font-semibold text-lg">Post-quantum from day one</h3>
-      <p class="mt-2 text-slate-300 text-sm leading-relaxed">
-        Every tunnel mixes a post-quantum-derived pre-shared key into WireGuard via
-        Rosenpass (Classic McEliece + ML-KEM). Recorded today, still safe tomorrow.
-      </p>
-    </div>
-    <div class="bg-ink-800/60 border border-slate-800 rounded-xl p-6">
-      <div class="w-10 h-10 rounded-lg bg-cloak-500/20 border border-cloak-500/40 flex items-center justify-center mb-4 text-cloak-400 font-bold">✓</div>
-      <h3 class="font-semibold text-lg">Academically peer-reviewed</h3>
-      <p class="mt-2 text-slate-300 text-sm leading-relaxed">
-        The Rosenpass protocol has published formal proofs and peer-reviewed papers.
-        We don't invent our own crypto — we use what's already been verified.
-      </p>
-    </div>
-    <div class="bg-ink-800/60 border border-slate-800 rounded-xl p-6">
-      <div class="w-10 h-10 rounded-lg bg-cloak-500/20 border border-cloak-500/40 flex items-center justify-center mb-4 text-cloak-400 font-bold">0</div>
-      <h3 class="font-semibold text-lg">Nothing to hand over</h3>
-      <p class="mt-2 text-slate-300 text-sm leading-relaxed">
-        No connection logs. No traffic logs. System journals live in RAM and are wiped
-        on every reboot. The only data we hold per user is one row — see our
-        <a href="/privacy.html" class="text-cloak-400 underline">privacy policy</a>.
-      </p>
-    </div>
-  </div>
-</section>
-
-<!-- PQC deep-dive -->
-<section id="pqc" class="max-w-6xl mx-auto px-6 py-20">
-  <div class="grid md:grid-cols-2 gap-10 items-center">
-    <div>
-      <h2 class="text-3xl md:text-4xl font-bold">What "post-quantum" actually means here</h2>
-      <p class="mt-4 text-slate-300 leading-relaxed">
-        A future quantum computer could break the classical Curve25519 key exchange that most VPNs rely on.
-        An attacker could record your encrypted traffic today and decrypt it years from now. That's called
-        <em>harvest-now-decrypt-later</em>, and it's already a real concern.
-      </p>
-      <p class="mt-4 text-slate-300 leading-relaxed">
-        Cloak mixes a post-quantum-derived pre-shared key into every WireGuard handshake using
-        <a href="https://rosenpass.eu" class="text-cloak-400 underline">Rosenpass</a>.
-        The PSK rotates every two minutes. Even if Curve25519 is broken in 2035,
-        the traffic we protect today stays private.
-      </p>
-      <p class="mt-4 text-slate-300 leading-relaxed">
-        Our control plane (signup, account, config delivery) runs on TLS 1.3 with the
-        <code class="text-cloak-400">X25519MLKEM768</code> hybrid group — the same post-quantum key exchange
-        Cloudflare, Apple, and Google shipped across their networks in 2024–2025.
-      </p>
-    </div>
-
-    <div class="bg-ink-800/70 border border-slate-800 rounded-xl p-6 font-mono text-xs text-slate-300 overflow-x-auto">
-<pre class="whitespace-pre">
-┌─── Client ────────────┐         ┌─── Cloak server ──────┐
-│ rosenpass (on-device) │  PQ KE  │ rosenpass (daemon)    │
-│         │             │────────►│         │             │
-│         ▼ 32B PSK     │  every  │         ▼ 32B PSK     │
-│  WireGuard tunnel     │  ~120s  │  WireGuard tunnel     │
-│  (Noise IKpsk2)       │◄───────►│  (Noise IKpsk2)       │
-└───────────────────────┘         └───────────────────────┘
-         ▲                                 ▲
-         │                                 │
-     ChaCha20-Poly1305     +         PSK-mixed transcript
-         │                                 │
-         └─── even a quantum attacker ─────┘
-              with recorded traffic can't
-              decrypt it retroactively.
-</pre>
-    </div>
-  </div>
-</section>
-
-<!-- Trust / transparency strip -->
-<section class="max-w-6xl mx-auto px-6 py-16">
-  <div class="bg-gradient-to-r from-ink-800 to-ink-700 border border-slate-800 rounded-2xl p-8 md:p-12">
-    <div class="grid md:grid-cols-4 gap-6 text-center">
-      <div>
-        <div class="text-3xl font-bold text-cloak-400">0</div>
-        <div class="text-sm text-slate-300 mt-1">connection logs</div>
-      </div>
-      <div>
-        <div class="text-3xl font-bold text-cloak-400">0</div>
-        <div class="text-sm text-slate-300 mt-1">traffic logs</div>
-      </div>
-      <div>
-        <div class="text-3xl font-bold text-cloak-400">~120s</div>
-        <div class="text-sm text-slate-300 mt-1">PQ key rotation interval</div>
-      </div>
-      <div>
-        <div class="text-3xl font-bold text-cloak-400">2</div>
-        <div class="text-sm text-slate-300 mt-1">EU regions (FI, DE)</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- Apps status -->
-<section id="apps" class="max-w-6xl mx-auto px-6 py-16">
-  <div class="bg-ink-800/60 border border-slate-800 rounded-2xl p-8 md:p-10">
-    <h2 class="text-2xl md:text-3xl font-bold">How you connect today</h2>
-    <p class="mt-3 text-slate-300 max-w-2xl">
-      Native Cloak apps for iOS and Android are in development. Until they ship, you
-      connect using the <strong>official WireGuard app</strong> — free, open-source, audited,
-      and the same underlying data-plane our native clients will use. You'll get a config
-      file by email after subscribing; import it into WireGuard and you're on a
-      post-quantum-protected tunnel.
-    </p>
-    <div class="mt-6 flex flex-wrap gap-3">
-      <a href="https://apps.apple.com/app/wireguard/id1441195209" target="_blank" rel="noopener"
-         class="inline-flex items-center gap-2 rounded-lg border border-slate-700 hover:border-slate-500 px-5 py-3 text-slate-200">
-        WireGuard — App Store
-      </a>
-      <a href="https://play.google.com/store/apps/details?id=com.wireguard.android" target="_blank" rel="noopener"
-         class="inline-flex items-center gap-2 rounded-lg border border-slate-700 hover:border-slate-500 px-5 py-3 text-slate-200">
-        WireGuard — Google Play
-      </a>
-      <a href="https://www.wireguard.com/install/" target="_blank" rel="noopener"
-         class="inline-flex items-center gap-2 rounded-lg border border-slate-700 hover:border-slate-500 px-5 py-3 text-slate-200">
-        Desktop installers
-      </a>
-    </div>
-    <p class="mt-4 text-xs text-slate-500">
-      When our native apps launch, this section will be replaced with App Store and Play Store
-      download buttons and you can migrate on your own schedule.
-    </p>
-  </div>
-</section>
-
-<!-- CTA -->
-<section class="max-w-3xl mx-auto px-6 py-24 text-center">
-  <h2 class="text-3xl md:text-5xl font-bold">Ready for the next decade?</h2>
-  <p class="mt-4 text-slate-300">Pick a plan, get a WireGuard config by email, and connect in under five minutes. 7-day money-back guarantee.</p>
-  <a href="/pricing.html" class="mt-8 inline-block bg-cloak-500 hover:bg-cloak-600 transition text-white font-semibold px-8 py-4 rounded-lg">
-    See plans
+  <a href="#"
+     class="connect-button rounded-2xl px-12 py-5 text-white brand-mark text-xl inline-block">
+    DOWNLOAD ON THE APP STORE
   </a>
+  <div class="text-sm text-slate-500 mt-6">
+    Coming soon &middot; iOS 16+
+  </div>
 </section>
 
-<!-- Footer -->
-<footer class="border-t border-slate-800 mt-12">
-  <div class="max-w-6xl mx-auto px-6 py-10 grid md:grid-cols-4 gap-8 text-sm text-slate-400">
-    <div>
-      <div class="font-semibold text-white mb-2">Cloak VPN</div>
-      <p>Post-quantum protected VPN. No logs. Independent operator.</p>
+<!-- ===== FOOTER ===== -->
+<footer class="relative z-10 max-w-6xl mx-auto px-6 py-12 mt-12 border-t border-white/5">
+  <div class="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-slate-400">
+    <div class="flex items-center gap-3">
+      <img src="/assets/logo.png" alt="" class="w-7 h-7 object-contain opacity-80" />
+      <span class="brand-mark text-white text-sm">CLOAK VPN</span>
     </div>
-    <div>
-      <div class="font-semibold text-white mb-2">Product</div>
-      <ul class="space-y-1">
-        <li><a href="/pricing.html" class="hover:text-white">Pricing</a></li>
-        <li><a href="#features" class="hover:text-white">Features</a></li>
-        <li><a href="#pqc" class="hover:text-white">Post-quantum</a></li>
-      </ul>
+    <div class="flex flex-wrap items-center gap-x-5 gap-y-2 justify-center">
+      <a href="/privacy.html" class="hover:text-white transition">Privacy</a>
+      <a href="/terms.html" class="hover:text-white transition">Terms</a>
+      <a href="/canary.html" class="hover:text-white transition">Warrant Canary</a>
+      <a href="/transparency.html" class="hover:text-white transition">Transparency</a>
+      <a href="mailto:support@cloakvpn.ai" class="hover:text-white transition">Support</a>
     </div>
-    <div>
-      <div class="font-semibold text-white mb-2">Trust</div>
-      <ul class="space-y-1">
-        <li><a href="/privacy.html" class="hover:text-white">Privacy policy</a></li>
-        <li><a href="/terms.html" class="hover:text-white">Terms of service</a></li>
-        <li><a href="/canary.html" class="hover:text-white">Warrant canary</a></li>
-        <li><a href="/audit.html" class="hover:text-white">Audit report</a></li>
-      </ul>
+    <div class="text-xs text-slate-500">
+      &copy; 2026 Neuro AI Studios
     </div>
-    <div>
-      <div class="font-semibold text-white mb-2">Open source</div>
-      <ul class="space-y-1">
-        <li><a href="https://github.com/cloakvpnai/cloakvpn" class="hover:text-white">GitHub</a></li>
-        <li><a href="/transparency.html" class="hover:text-white">Transparency report</a></li>
-      </ul>
-    </div>
-  </div>
-  <div class="max-w-6xl mx-auto px-6 py-6 border-t border-slate-800 text-xs text-slate-500 flex flex-col md:flex-row justify-between gap-2">
-    <div>© 2026 Cloak VPN. An independent operator.</div>
-    <div>Cloak does not collect connection logs or traffic metadata. See <a href="/privacy.html" class="hover:text-white">privacy policy</a>.</div>
   </div>
 </footer>
 
