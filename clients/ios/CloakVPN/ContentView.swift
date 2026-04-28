@@ -236,10 +236,19 @@ struct ContentView: View {
             Image("WorldMap")
                 .renderingMode(.template)
                 .resizable()
-                .aspectRatio(contentMode: .fit)
+                // Drop the natural aspect-ratio constraint so the
+                // frame's width AND height are both honored. The
+                // continents pick up a mild vertical stretch but
+                // at 0.35 opacity the distortion isn't noticeable —
+                // and the map now feels like a globe wrapping the
+                // whole screen rather than a thin band across the
+                // middle.
                 .foregroundStyle(CloakDesign.brandGrey)
                 .opacity(0.35)
-                .frame(width: geo.size.width * 1.7)
+                .frame(
+                    width: geo.size.width * 1.7,
+                    height: geo.size.height * 0.95
+                )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
