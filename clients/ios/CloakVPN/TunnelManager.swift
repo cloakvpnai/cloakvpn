@@ -48,6 +48,17 @@ final class TunnelManager: ObservableObject {
     private var manager: NETunnelProviderManager?
     private var statusObserver: NSObjectProtocol?
 
+    /// Forwards nested-ObservableObject change notifications from
+    /// `rosenpass` (a let property of this class) up to TunnelManager's
+    /// own publisher chain. Without this, SwiftUI views observing
+    /// `tunnel: TunnelManager` via @EnvironmentObject don't redraw when
+    /// `tunnel.rosenpass.status` changes — they only redraw when one of
+    /// TunnelManager's own @Published properties changes. Surfaced today
+    /// 2026-04-27 as the "PQC: rotation N" UI text not updating until
+    /// the user tapped Test PQC FFI (which mutated a @State and forced a
+    /// re-render that then read the fresh rosenpass.status).
+    private var rosenpassChangeForwarder: AnyCancellable?
+
     // MARK: - Layer 3 — auto-reconnect on detected wedge recovery
     //
     // When the NE calls `cancelTunnelWithError` from Layer 2, iOS marks
@@ -94,6 +105,17 @@ final class TunnelManager: ObservableObject {
         // launch. New code path never reads them, but no point letting
         // stale files linger in the App Group container.
         AppGroupKeyStore.deleteLegacyClientKeys()
+
+        // Re-publish rosenpass.objectWillChange events as our own. Without
+        // this, SwiftUI views observing TunnelManager via @EnvironmentObject
+        // don't see updates when rosenpass.status changes (because
+        // `rosenpass` is a `let` property, not @Published — and SwiftUI
+        // doesn't traverse nested ObservableObjects automatically).
+        rosenpassChangeForwarder = rosenpass.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
     }
 
     /// Ensure this device has a locally-generated rosenpass keypair
