@@ -3,6 +3,26 @@
 <plist version="1.0">
 <dict>
 	<!--
+		Export Compliance declaration. Cloak VPN uses non-iOS-builtin
+		encryption (WireGuard via WireGuardKitGo, Rosenpass via the
+		bundled FFI), so this MUST be true. Setting it false here would
+		be a misrepresentation to Apple's review process.
+
+		Setting it true and providing the App Encryption Documentation
+		(self-classification letter under ECCN 5D992.c, on file with
+		App Store Connect) means future TestFlight uploads skip the
+		"Missing Compliance" prompt — the declaration carries forward
+		until you change which encryption your app uses.
+
+		If you ever rotate to a different non-standard algorithm, file
+		an updated classification letter and bump this build's encryption
+		export compliance code in App Store Connect.
+
+		See: docs/legal/CloakVPN-Encryption-Compliance.pdf
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<true/>
+	<!--
 		Alternate app icons. The primary icon (CLOAKVPN logo without
 		"PRO") lives in Assets.xcassets/AppIcon.appiconset and is what
 		the app shows by default. The "Pro" variant is registered here
