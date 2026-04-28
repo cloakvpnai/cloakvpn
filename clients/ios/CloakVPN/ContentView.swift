@@ -708,6 +708,12 @@ struct ContentView: View {
                 }
             }
         }
+        // Sheet content is presented in a NEW UIScene context, which
+        // doesn't inherit the .tint() from the root NavigationStack.
+        // Re-apply CloakDesign.brandGrey here so all the row icons,
+        // chevrons, and toolbar buttons inside the sheet stay grey
+        // instead of falling back to system blue.
+        .tint(CloakDesign.brandGrey)
     }
 
     /// "Account" detail view — placeholder for now. Will hold subscription
@@ -1033,6 +1039,9 @@ struct ContentView: View {
                 }
             }
         }
+        // Same as moreSheet — re-apply tint inside the new UIScene
+        // context so toolbar + form buttons stay grey.
+        .tint(CloakDesign.brandGrey)
     }
 
     private func performAddRegion() async {
@@ -1081,5 +1090,8 @@ struct ContentView: View {
                 }
             }
         }
+        // Same as moreSheet — re-apply tint inside the new UIScene
+        // context so toolbar + Save buttons stay grey.
+        .tint(CloakDesign.brandGrey)
     }
 }
