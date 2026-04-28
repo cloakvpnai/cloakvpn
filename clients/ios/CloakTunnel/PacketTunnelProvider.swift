@@ -73,6 +73,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// completes. Cleared after successful apply.
     private var pendingPresharedKey: Data?
 
+    /// In-process rosenpass driver. Replaces the old host-app
+    /// RosenpassBridge ↔ NE IPC dance with a direct UDP socket + direct
+    /// PSK application. Critical fix for the host-app-suspension wedge —
+    /// see RosenpassDriver.swift for the full rationale. Lifecycle:
+    /// instantiated and started inside the adapter.start success
+    /// callback in startTunnel (so we know wg-go is ready to receive
+    /// PSK updates); stopped in stopTunnel.
+    private var rosenpassDriver: RosenpassDriver?
+
     /// IP literal of the rosenpass server, parsed from
     /// CloakConfig.rpEndpoint at startTunnel. Used for two things:
     ///   (1) Adding an `excludedRoute` in `makeNetworkSettings` so iOS
@@ -306,6 +315,21 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                     }
                 }
 
+                // Task #17 — start the in-NE rosenpass driver. This
+                // replaces the host-app RosenpassBridge for the rotation
+                // loop. Critical because host-app RosenpassBridge stops
+                // running whenever iOS suspends the host app (every time
+                // the user backgrounds Cloak), causing PSK desync ->
+                // tunnel wedge. The NE-side driver runs as long as the
+                // tunnel is up regardless of host-app state. The host
+                // app's RosenpassBridge can keep running (when not
+                // suspended) without harm — they're idempotent and the
+                // last successful exchange wins; eventually we'll
+                // disable RosenpassBridge entirely for cleanliness.
+                if cloakCfg.pqEnabled {
+                    self.startRosenpassDriverIfPossible(cloakCfg: cloakCfg)
+                }
+
                 completionHandler(nil)
             }
         }
@@ -319,6 +343,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         // Stop the health monitor first so its callbacks can't fire
         // mid-teardown and try to inspect a stopped adapter.
         stopHealthMonitoring()
+        // Stop the in-NE rosenpass driver (task #17) — cancels the
+        // rotation loop and tears down its UDP socket.
+        rosenpassDriver?.stop()
+        rosenpassDriver = nil
         // Tear down the rosenpass UDP socket BEFORE stopping the
         // adapter — otherwise its callback queue could fire after the
         // NE process has been told to terminate.
@@ -671,6 +699,76 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             os_log("PSK rotated", log: self?.log ?? .default, type: .info)
             completion(true)
         }
+    }
+
+    // MARK: - In-NE rosenpass driver (task #17 — host-app suspension fix)
+
+    /// Read the device's rosenpass keys from the App Group container,
+    /// parse the rosenpass server endpoint from the active CloakConfig,
+    /// instantiate a RosenpassDriver, wire its onPSKDerived callback to
+    /// applyPresharedKey, and start the rotation loop. Silent no-op (with
+    /// log line) on any error — the tunnel will still come up classically
+    /// without PQ in that case, rather than the user being stranded.
+    private func startRosenpassDriverIfPossible(cloakCfg: CloakConfig) {
+        let clientKeys: (secretB64: String, publicB64: String)
+        let serverPubB64: String
+        do {
+            clientKeys = try AppGroupKeyStore.loadLocalKeypair()
+            serverPubB64 = try AppGroupKeyStore.loadServerPublicKey()
+        } catch {
+            os_log("RosenpassDriver: keys unavailable in App Group, skipping (%{public}s)",
+                   log: log, type: .error, String(describing: error))
+            return
+        }
+
+        guard let clientSecret = Data(base64Encoded: clientKeys.secretB64),
+              let clientPublic = Data(base64Encoded: clientKeys.publicB64),
+              let serverPublic = Data(base64Encoded: serverPubB64) else {
+            os_log("RosenpassDriver: bad base64 in stored keys, skipping",
+                   log: log, type: .error)
+            return
+        }
+
+        // Parse "host:port" from rpEndpoint. We only support v4 here for
+        // now — the four current regions all use v4 rosenpass endpoints.
+        // V6 / bracketed-form parsing lives in ensureRosenpassConnection
+        // for the legacy IPC path; if we ever need v6 here we can lift
+        // that helper into the driver.
+        let parts = cloakCfg.rpEndpoint.split(separator: ":", maxSplits: 1)
+        guard parts.count == 2,
+              let port = UInt16(parts[1]) else {
+            os_log("RosenpassDriver: malformed rpEndpoint %{public}s, skipping",
+                   log: log, type: .error, cloakCfg.rpEndpoint)
+            return
+        }
+
+        let driver = RosenpassDriver(
+            clientSecret: clientSecret,
+            clientPublic: clientPublic,
+            serverPublic: serverPublic,
+            serverHost: String(parts[0]),
+            serverPort: port,
+            rotationSeconds: cloakCfg.pskRotationSeconds,
+            log: log
+        )
+
+        // Direct PSK application — no IPC, no opcode 0x01 round-trip,
+        // no race with adapter.start (we're already past adapter.start
+        // success when this is called from startTunnel's callback). PSK
+        // tracking for the Layer 1 health monitor happens automatically
+        // because applyPresharedKey stamps lastPSKAppliedAt on success.
+        driver.onPSKDerived = { [weak self] psk in
+            guard let self = self else { return }
+            self.applyPresharedKey(psk) { ok in
+                os_log("RosenpassDriver: PSK apply: %{public}s",
+                       log: self.log, type: ok ? .info : .error,
+                       ok ? "ok" : "failed")
+            }
+        }
+
+        self.rosenpassDriver = driver
+        driver.start()
+        os_log("RosenpassDriver: instantiated and started", log: log, type: .info)
     }
 
     // MARK: - Health monitoring implementation

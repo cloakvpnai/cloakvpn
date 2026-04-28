@@ -11,6 +11,7 @@
 		80F31E1D2F9C911500E4B598 /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 80F31E1C2F9C911500E4B598 /* NetworkExtension.framework */; };
 		80F31E252F9C911500E4B598 /* CloakTunnel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 80F31E1A2F9C911500E4B598 /* CloakTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		80F31E2E2F9C9A1C00E4B598 /* RosenpassFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 80F31E2D2F9C9A1C00E4B598 /* RosenpassFFI.xcframework */; };
+		80F31E5A2F9C9A1C00E4B598 /* RosenpassFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 80F31E2D2F9C9A1C00E4B598 /* RosenpassFFI.xcframework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -55,7 +56,9 @@
 		80F31E2C2F9C938000E4B598 /* Exceptions for "CloakVPN" folder in "CloakTunnel" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				AppGroupKeyStore.swift,
 				ConfigParser.swift,
+				rosenpassffi.swift,
 			);
 			target = 80F31E192F9C911500E4B598 /* CloakTunnel */;
 		};
@@ -95,6 +98,7 @@
 			files = (
 				803B510D2F9D294100F6A013 /* WireGuardKit in Frameworks */,
 				80F31E1D2F9C911500E4B598 /* NetworkExtension.framework in Frameworks */,
+				80F31E5A2F9C9A1C00E4B598 /* RosenpassFFI.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
