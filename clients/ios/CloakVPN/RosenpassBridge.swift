@@ -89,6 +89,16 @@ final class RosenpassBridge: ObservableObject {
 
     private var statusPollTimer: Timer?
 
+    /// Timestamp (epoch seconds) when the current polling session
+    /// started. Set in `startStatusPolling`. Used to gate the
+    /// stale-PSK check: any `lastSuccessEpoch` older than this
+    /// belongs to a previous tunnel session and should be ignored
+    /// (not surfaced as "PSK stale (4400s old)" — which was the
+    /// previous behavior whenever the NE-side status file from a
+    /// prior connection was still on disk before the new NE process
+    /// got a chance to write fresh rotation data).
+    private var statusPollSessionStartEpoch: TimeInterval = 0
+
     private static let appGroupID = "group.ai.cloakvpn.CloakVPN"
     private static let neStatusFilename = "ne-rosenpass-status.json"
 
@@ -160,6 +170,13 @@ final class RosenpassBridge: ObservableObject {
     /// stays live ("PQC: N rotations ✓") without any UI refactor.
     func startStatusPolling() {
         stopStatusPolling()
+        // Stamp the session-start epoch BEFORE the first poll so the
+        // stale-PSK check ignores any lastSuccessEpoch from a previous
+        // tunnel session (which lingered in the App Group status file
+        // because file lifetime > NE process lifetime). Without this,
+        // every fresh tunnel start surfaced "PSK stale (Xs old)" until
+        // the NE driver completed its first rotation ~30-60s later.
+        statusPollSessionStartEpoch = Date().timeIntervalSince1970
         // Show .connecting until the first rotation completes; the
         // NE driver typically gets a fresh PSK within 30-60 seconds.
         status = .connecting

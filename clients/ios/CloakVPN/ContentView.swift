@@ -208,15 +208,29 @@ struct ContentView: View {
             errorMsg = "Couldn't open file: \(err.localizedDescription)"
         case .success(let urls):
             guard let url = urls.first else { return }
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            // Read the file synchronously (cheap), then dispatch the
+            // async import (which now awaits saveToPreferences inline)
+            // into a Task so the file picker handler can return without
+            // blocking. Security-scoped access is held only for the
+            // synchronous read — the import operates on the in-memory
+            // String afterwards and doesn't need the URL.
+            let text: String
             do {
-                let text = try String(contentsOf: url, encoding: .utf8)
-                try tunnel.importConfig(text)
-            } catch let e as TunnelError {
-                errorMsg = e.errorDescription ?? "Parse error"
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                text = try String(contentsOf: url, encoding: .utf8)
             } catch {
                 errorMsg = "Read failed: \(error.localizedDescription)"
+                return
+            }
+            Task {
+                do {
+                    try await tunnel.importConfig(text)
+                } catch let e as TunnelError {
+                    errorMsg = e.errorDescription ?? "Parse error"
+                } catch {
+                    errorMsg = "Import failed: \(error.localizedDescription)"
+                }
             }
         }
     }
@@ -1048,11 +1062,13 @@ struct ContentView: View {
                     .border(.secondary)
                     .padding()
                 Button("Save") {
-                    do {
-                        try tunnel.importConfig(configText)
-                        showingImport = false
-                    } catch {
-                        errorMsg = error.localizedDescription
+                    Task {
+                        do {
+                            try await tunnel.importConfig(configText)
+                            showingImport = false
+                        } catch {
+                            errorMsg = error.localizedDescription
+                        }
                     }
                 }
                 .buttonStyle(.borderedProminent)

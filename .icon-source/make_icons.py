@@ -32,14 +32,14 @@ TARGET_SIZE = 1024
 # (RGB 31,189,92) at ~12% brightness. Same dark luminance as the Basic
 # icon background so the home-screen weight feels balanced; just
 # different hue.
-PRO_BG = (10, 38, 22)
+PRO_BG = (0, 0, 0)               # pure black for max contrast with the gold ring
 
 # Gold ring on the Pro icon — matches CloakDesign.brandGold
 # (#FFD700, RGB 255,215,0). Inset from the icon edge so iOS's
 # rounded-corner mask doesn't clip it.
 PRO_RING_COLOR = (255, 215, 0)
 PRO_RING_INSET_FRAC = 0.07     # 7% of canvas (e.g. 72 px on 1024 master)
-PRO_RING_THICKNESS_FRAC = 0.022  # 2.2% of canvas (e.g. 22 px on 1024 master)
+PRO_RING_THICKNESS_FRAC = 0.038  # 3.8% of canvas (e.g. 39 px on 1024 master)
 PRO_RING_CORNER_FRAC = 0.18    # rounded ring corner radius — matches the
                                # iOS app-icon mask roughly so the ring
                                # parallels the rounded edge nicely

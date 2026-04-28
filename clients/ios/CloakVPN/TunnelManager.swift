@@ -268,7 +268,7 @@ final class TunnelManager: ObservableObject {
         if let cachedText = provisionedConfigsByRegionID[region.id] {
             debugLog("selectRegion: \(region.id) — cache hit, instant swap")
             do {
-                try importConfig(cachedText)
+                try await importConfig(cachedText)
                 selectedRegion = region
                 UserDefaults.standard.set(region.id, forKey: Self.selectedRegionUserDefaultsKey)
                 return
@@ -288,7 +288,7 @@ final class TunnelManager: ObservableObject {
                 apiKey: CloakRegion.bundledAPIKey,
                 peerName: nil  // server auto-derives from rp pubkey hash
             )
-            try importConfig(configText)
+            try await importConfig(configText)
             selectedRegion = region
             UserDefaults.standard.set(region.id, forKey: Self.selectedRegionUserDefaultsKey)
             // Cache the raw config text for instant subsequent switches
@@ -409,7 +409,7 @@ final class TunnelManager: ObservableObject {
     /// whole import — saving an `NETunnelProviderManager` without the
     /// pubkey on disk would put the user in a state where Connect appears
     /// to work but PQC silently never engages. Failing loud is better.
-    func importConfig(_ text: String) throws {
+    func importConfig(_ text: String) async throws {
         var parsed = try ConfigParser.parse(text)
 
         // If the config came from cloak-api-server (which omits
@@ -500,17 +500,23 @@ final class TunnelManager: ObservableObject {
         manager.localizedDescription = "CLOAK VPN"
         manager.isEnabled = true
 
-        Task {
-            do {
-                try await manager.saveToPreferences()
-                try await manager.loadFromPreferences()
-                self.manager = manager
-                self.config = parsed
-                self.observeStatus(manager.connection)
-            } catch {
-                print("importConfig save error: \(error)")
-            }
-        }
+        // CRITICAL: await saveToPreferences inline (was fire-and-forget
+        // in a Task before). The previous design caused a race where
+        // selectRegion → importConfig → returns → user taps Connect
+        // → startVPNTunnel runs against the STALE config because the
+        // save hadn't propagated yet. Symptom (2026-04-27): every
+        // region-switch+Connect lit up the "Connected" status but the
+        // tunnel was actually pointed at whatever region was loaded
+        // BEFORE the switch (or had no fresh keys at all). For cache-
+        // miss paths the API call took 3-8 s — enough time for the
+        // fire-and-forget save to land. For cache-HIT paths (after the
+        // per-region cache landed in commit b96235a), the import was
+        // instant and the race fired every single time.
+        try await manager.saveToPreferences()
+        try await manager.loadFromPreferences()
+        self.manager = manager
+        self.config = parsed
+        self.observeStatus(manager.connection)
     }
 
     /// "Add Region" — provision this iPhone as a peer against a Cloak
@@ -542,7 +548,7 @@ final class TunnelManager: ObservableObject {
             peerName: peerName
         )
         debugLog("provisionFromAPI: got config (\(configText.count) chars), importing…")
-        try importConfig(configText)
+        try await importConfig(configText)
     }
 
     /// Same as `provisionFromAPI` but returns the raw config text instead
