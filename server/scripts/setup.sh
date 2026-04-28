@@ -459,6 +459,65 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
+# ---------- Cloak provisioning API server --------------------------------
+#
+# Adds a small HTTP service that wraps add-peer.sh, so the iOS app can
+# auto-provision against any region without the user having to manually
+# AirDrop pubkeys + scp + run add-peer.sh by hand. See
+# server/scripts/cloak-api-server.py for the full design + privacy
+# rationale (server never sees private keys).
+#
+# Listens on TCP/8443 by default. Production deploys should put nginx +
+# Let's Encrypt in front for TLS termination; the API key is sent in a
+# header so plaintext HTTP would expose it on hostile networks. The
+# pubkey payloads themselves are public so plain HTTP doesn't leak any
+# crypto material — but the API key auth dictates TLS in production.
+
+log "Installing Cloak provisioning API server"
+
+# Ensure the add-peer.sh script is on PATH for the service to invoke.
+install -m 755 "$(dirname "$0")/add-peer.sh" /usr/local/bin/add-peer.sh
+
+# Generate an API token if one doesn't already exist. 32 bytes of
+# random base64 = 44 chars; printed once during setup so the operator
+# can capture it for client provisioning. NOT regenerated on re-run
+# (preserves any existing token across re-deploys).
+install -d -m 700 /etc/cloak
+if [[ ! -s /etc/cloak/api-token ]]; then
+  log "Generating fresh API token at /etc/cloak/api-token"
+  openssl rand -base64 32 | tr -d '\n' > /etc/cloak/api-token
+  chmod 600 /etc/cloak/api-token
+else
+  log "Preserving existing /etc/cloak/api-token"
+fi
+
+# Install the API server script.
+install -m 755 "$(dirname "$0")/cloak-api-server.py" /usr/local/bin/cloak-api-server.py
+
+cat >/etc/systemd/system/cloak-api-server.service <<'UNIT_EOF'
+[Unit]
+Description=Cloak VPN — Provisioning API server (HTTP wrapper around add-peer.sh)
+After=network-online.target wg-quick@wg0.service cloak-rosenpass.service
+Requires=wg-quick@wg0.service
+PartOf=cloak-rosenpass.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloak-api-server.py
+Restart=on-failure
+RestartSec=3
+# Service writes to /etc/wireguard, /etc/rosenpass, and runs systemctl
+# reload — needs root. Production hardening (NoNewPrivileges, seccomp,
+# Capabilities=CAP_NET_ADMIN+CAP_NET_BIND_SERVICE only) is a follow-up.
+
+[Install]
+WantedBy=multi-user.target
+UNIT_EOF
+
+# Allow the API port through UFW. We do this BEFORE the UFW reset block
+# below so the rule lands in the post-reset state.
+CLOAK_API_PORT="${CLOAK_API_PORT:-8443}"
+
 # ---------- UFW firewall --------------------------------------------------
 log "Configuring UFW firewall (deny-by-default, forward wg0 → eth0)"
 ufw --force reset >/dev/null
@@ -473,6 +532,7 @@ sed -i 's/DEFAULT_FORWARD_POLICY="DROP"/DEFAULT_FORWARD_POLICY="ACCEPT"/' /etc/d
 ufw allow OpenSSH
 ufw allow $WG_PORT/udp  comment 'WireGuard'
 ufw allow $RP_PORT/udp  comment 'Rosenpass PQ handshake'
+ufw allow ${CLOAK_API_PORT}/tcp comment 'Cloak provisioning API'
 # Explicitly allow WG peers to exit via the main interface.
 ufw route allow in on "$WG_IFACE" out on "$ETH_IFACE"
 ufw --force enable
@@ -520,6 +580,8 @@ systemctl enable --now cloak-rosenpass.service
 # rosenpass daemon — but we still enable it explicitly so a manual
 # `systemctl start cloak-psk-installer` works as expected.
 systemctl enable --now cloak-psk-installer.service
+# Provisioning API for the iOS "Add Region" flow. Same PartOf= pattern.
+systemctl enable --now cloak-api-server.service
 
 sleep 2
 systemctl --no-pager --full status wg-quick@$WG_IFACE.service     | head -n 12 || true

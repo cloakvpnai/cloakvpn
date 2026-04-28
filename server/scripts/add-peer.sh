@@ -2,31 +2,31 @@
 # Cloak VPN — Add a new peer (client)
 #
 # Usage:
-#   sudo ./add-peer.sh <peer-name>                   (server generates rosenpass keypair — LEGACY)
-#   sudo ./add-peer.sh <peer-name> <pubkey-b64>      (caller provides client's rosenpass pubkey — RECOMMENDED)
+#   sudo ./add-peer.sh <peer-name>                                       (legacy: server generates everything)
+#   sudo ./add-peer.sh <peer-name> <rp-pubkey-file>                      (modern: client rosenpass pubkey only)
+#   sudo ./add-peer.sh <peer-name> <rp-pubkey-file> <wg-pubkey-b64>      (full privacy: both pubkeys client-side)
 #
-# When invoked with a pubkey path, the file's contents are treated as the
-# base64 of the client's locally-generated rosenpass public key. The server
-# never sees, generates, or stores the client's secret key — that's the
-# point. This closes the privacy hole where a server compromise (or a
-# "harvest now, decrypt later" attacker against the config delivery
-# channel) could retroactively decrypt every client's PQ-protected
-# session.
+# When invoked with both an rp-pubkey path AND a wg-pubkey base64 string,
+# the server registers the peer using the client's locally-generated
+# keypairs and never sees, generates, or stores any private keys. The
+# output config block omits the private_key field — the iPhone already
+# has its own. This is the privacy-correct mode used by cloak-api-server
+# (HTTP onboarding API) and the iOS app's "Add Region" flow.
 #
-# When invoked WITHOUT a pubkey path, falls back to the legacy
-# server-generates-everything behavior. Useful for non-PQ clients or
-# CLI/test installs that don't run the iOS app.
+# When invoked with rosenpass pubkey only, the WG keypair is still
+# server-generated for backward compatibility with older clients.
 #
-# Output: client config block printed to stdout. WireGuard private key,
-# server's rosenpass pubkey, and (in legacy mode only) the client's
-# rosenpass keypair. Caller pipes to a .txt file and ships to the device.
+# When invoked WITHOUT either pubkey, falls back to fully-legacy mode:
+# server generates both keypairs. Useful for non-PQ clients or CLI/test
+# installs that don't run the iOS app.
 
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "Run as root"; exit 1; }
 
 NAME="${1:-}"
 CLIENT_PUBKEY_PATH="${2:-}"
-[[ -n "$NAME" ]] || { echo "Usage: $0 <peer-name> [client-pubkey-b64-file]"; exit 1; }
+CLIENT_WG_PUBKEY_B64="${3:-}"
+[[ -n "$NAME" ]] || { echo "Usage: $0 <peer-name> [rp-pubkey-file] [wg-pubkey-b64]"; exit 1; }
 [[ "$NAME" =~ ^[a-zA-Z0-9._-]+$ ]] || { echo "peer-name must be [A-Za-z0-9._-]"; exit 1; }
 
 WG_IFACE="${WG_IFACE:-wg0}"
@@ -46,13 +46,32 @@ PEER_V6="fd42:99::$(printf '%x' $next)"
 umask 077
 
 # ---------- WireGuard keypair --------------------------------------------
-# Still server-generated for now. WG private-key-on-server is a smaller
-# privacy hole than rosenpass private-key-on-server (WG provides ephemeral
-# DH per session, so even server compromise doesn't decrypt past sessions),
-# but should eventually move to client-generated too. Tracked separately.
-wg genkey | tee "$ETC_WG/$NAME.key" | wg pubkey > "$ETC_WG/$NAME.pub"
-PEER_PRIV=$(cat "$ETC_WG/$NAME.key")
-PEER_PUB=$(cat "$ETC_WG/$NAME.pub")
+# Three modes:
+#   (a) caller provides WG pubkey → register-only, server holds no
+#       private key. Privacy-correct. Used by cloak-api-server.
+#   (b) caller doesn't provide WG pubkey → generate server-side as
+#       before. Smaller privacy hole than rosenpass-on-server (WG uses
+#       ephemeral DH per session) but still imperfect. Legacy/CLI path.
+LEGACY_WG_KEYGEN_MODE=0
+if [[ -n "$CLIENT_WG_PUBKEY_B64" ]]; then
+  echo "[add-peer] Using client-provided WG pubkey (server holds no WG private key)"
+  # WG public keys are 32 bytes Curve25519, base64-encoded → exactly
+  # 44 chars including padding. Validate before persisting.
+  if [[ ! "$CLIENT_WG_PUBKEY_B64" =~ ^[A-Za-z0-9+/]{43}=$ ]]; then
+    echo "ERROR: WG pubkey must be 44-char base64 (got '${CLIENT_WG_PUBKEY_B64:0:60}'... length=${#CLIENT_WG_PUBKEY_B64})"
+    exit 1
+  fi
+  PEER_PUB="$CLIENT_WG_PUBKEY_B64"
+  echo "$PEER_PUB" > "$ETC_WG/$NAME.pub"
+  chmod 600 "$ETC_WG/$NAME.pub"
+  PEER_PRIV=""  # never set; flagged in config-output below
+else
+  LEGACY_WG_KEYGEN_MODE=1
+  echo "[add-peer] WARNING: no WG pubkey provided; generating WG keypair server-side (LEGACY)"
+  wg genkey | tee "$ETC_WG/$NAME.key" | wg pubkey > "$ETC_WG/$NAME.pub"
+  PEER_PRIV=$(cat "$ETC_WG/$NAME.key")
+  PEER_PUB=$(cat "$ETC_WG/$NAME.pub")
+fi
 
 # ---------- Rosenpass keypair OR provided client pubkey ------------------
 LEGACY_KEYGEN_MODE=0
@@ -139,7 +158,16 @@ cat <<EOF
 ----- CLIENT CONFIG ($NAME) -------------------------------------------------
 
 [wireguard]
-private_key = $PEER_PRIV
+EOF
+
+# Only emit private_key when the server actually has one (legacy WG
+# keygen mode). In the privacy-correct flow the iPhone keeps its own
+# WG private key; the importer reads its locally-stored key instead.
+if [[ "$LEGACY_WG_KEYGEN_MODE" -eq 1 ]]; then
+  echo "private_key = $PEER_PRIV"
+fi
+
+cat <<EOF
 address_v4  = $PEER_V4/32
 address_v6  = $PEER_V6/128
 dns         = 9.9.9.9, 2620:fe::fe
