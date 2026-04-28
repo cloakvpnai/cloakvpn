@@ -20,6 +20,11 @@ struct CloakVPNApp: App {
                     async let _ = tunnel.load()
                     async let _ = tunnel.ensureLocalKeypair()
                     async let _ = tunnel.ensureLocalWGKeypair()
+                    // Refresh the user's real public IP (only fires
+                    // when VPN is currently OFF, otherwise we'd
+                    // overwrite the home-IP cache with the VPN
+                    // endpoint's IP).
+                    async let _ = tunnel.refreshPublicIPIfNotConnected()
                 }
         }
     }

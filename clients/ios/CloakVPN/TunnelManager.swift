@@ -33,6 +33,25 @@ final class TunnelManager: ObservableObject {
     @Published private(set) var status: Status = .disconnected
     @Published private(set) var config: CloakConfig?
 
+    /// Currently-selected Cloak region. Driven by the in-app region
+    /// picker (ContentView's flag strip). Persisted in UserDefaults so
+    /// the user's last region survives app restarts. Nil before the
+    /// first selection.
+    @Published private(set) var selectedRegion: CloakRegion?
+    private static let selectedRegionUserDefaultsKey = "selectedCloakRegionID"
+
+    /// True while a region selection (provisioning + import) is in flight.
+    /// Drives a spinner on the region's flag tile.
+    @Published private(set) var regionSelectionInProgress: Bool = false
+
+    /// User's actual public IP (their home / cellular IP, NOT the VPN
+    /// endpoint). Fetched + cached when the VPN is OFF, so the
+    /// "IP → VPN IP" display pattern works even when connected.
+    /// Persists across launches via UserDefaults so the user sees their
+    /// real IP immediately even if launching with VPN already up.
+    @Published private(set) var publicIP: String?
+    private static let publicIPUserDefaultsKey = "lastKnownPublicIP"
+
     /// The post-quantum key exchange driver. Owned by the main app
     /// (never the NE — see docs/IOS_PQC.md). Bridges PSKs into the NE
     /// via `sendProviderMessage` opcode 0x01.
@@ -116,6 +135,84 @@ final class TunnelManager: ObservableObject {
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
             }
+
+        // Restore last-selected region from UserDefaults so the picker
+        // shows the user's chosen flag highlighted on app relaunch.
+        if let savedID = UserDefaults.standard.string(forKey: Self.selectedRegionUserDefaultsKey) {
+            selectedRegion = CloakRegion.byID(savedID)
+        }
+
+        // Restore last-known public IP (cached from a previous launch
+        // while VPN was off) so the "IP" display has something to
+        // show immediately on cold start, even if the user launches
+        // the app with the VPN already connected.
+        publicIP = UserDefaults.standard.string(forKey: Self.publicIPUserDefaultsKey)
+    }
+
+    /// Fetch the user's actual public IP from a third-party service and
+    /// cache it. Call only when the VPN is OFF — when ON, the response
+    /// is the VPN endpoint's IP, which would overwrite the user's real
+    /// home IP cache. The status observer also calls this on transitions
+    /// to .disconnected to refresh the cache for the next session.
+    func refreshPublicIPIfNotConnected() async {
+        guard status == .disconnected else {
+            debugLog("refreshPublicIPIfNotConnected: VPN is up, skipping (would overwrite real-IP cache)")
+            return
+        }
+        guard let url = URL(string: "https://api.ipify.org") else { return }
+        do {
+            var req = URLRequest(url: url)
+            req.timeoutInterval = 6
+            let (data, _) = try await URLSession.shared.data(for: req)
+            if let ip = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+               !ip.isEmpty {
+                self.publicIP = ip
+                UserDefaults.standard.set(ip, forKey: Self.publicIPUserDefaultsKey)
+                debugLog("refreshPublicIPIfNotConnected: cached \(ip)")
+            }
+        } catch {
+            debugLog("refreshPublicIPIfNotConnected: fetch failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Customer-facing region selection. Called when the user taps a
+    /// flag in ContentView's quick-connect strip. Runs the provisioning
+    /// API for that region (POST /api/v1/peers with our local public
+    /// keys), imports the returned config, and persists the choice.
+    /// The user can then tap the big Connect button to bring up the
+    /// tunnel.
+    ///
+    /// Idempotent: tapping the same region multiple times is safe (the
+    /// server's add-peer.sh derives peer name from the rosenpass pubkey
+    /// hash, so we just re-register the same peer; existing peer entry
+    /// in wg0.conf is preserved).
+    func selectRegion(_ region: CloakRegion) async {
+        guard !regionSelectionInProgress else { return }
+        regionSelectionInProgress = true
+        defer { regionSelectionInProgress = false }
+
+        debugLog("selectRegion: \(region.id) — provisioning via \(region.serverURL)")
+        do {
+            try await provisionFromAPI(
+                serverBase: region.serverURL,
+                apiKey: CloakRegion.bundledAPIKey,
+                peerName: nil  // server auto-derives from rp pubkey hash
+            )
+            selectedRegion = region
+            UserDefaults.standard.set(region.id, forKey: Self.selectedRegionUserDefaultsKey)
+            debugLog("selectRegion: \(region.id) configured successfully")
+        } catch {
+            debugLog("selectRegion: \(region.id) failed: \(error.localizedDescription)")
+            // Surface to UI via the existing tunnel.config flow OR via
+            // a dedicated lastError @Published. For now the caller
+            // (ContentView) inspects regionSelectionInProgress only;
+            // we throw nothing because async funcs without throws are
+            // simpler from SwiftUI Task closures. Errors will surface
+            // when the user taps Connect against a half-provisioned
+            // state.
+            // TODO: add @Published lastRegionError for inline error UI.
+        }
     }
 
     /// Ensure this device has a locally-generated WireGuard keypair
@@ -629,6 +726,16 @@ final class TunnelManager: ObservableObject {
         @unknown default: status = .invalid
         }
         debugLog("status change: \(old) → \(status) (raw NEVPNStatus=\(s.rawValue))")
+
+        // Refresh the user's real public IP cache on transitions to
+        // .disconnected. With the VPN off, the next api.ipify.org
+        // response is the user's home/cellular IP — exactly what we
+        // want to display in the "IP → VPN IP" panel for next session.
+        if status == .disconnected, old != .disconnected {
+            Task { [weak self] in
+                await self?.refreshPublicIPIfNotConnected()
+            }
+        }
 
         // Layer 3: detect wedge-recovery transitions and auto-reconnect.
         // We only attempt the auto-reconnect when the previous state was

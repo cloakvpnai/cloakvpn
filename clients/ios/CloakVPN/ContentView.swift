@@ -44,38 +44,40 @@ struct ContentView: View {
     @State private var addRegionPeerName: String = ""
     @State private var addRegionInProgress = false
 
+    // "More…" sheet for developer / admin features (manual config import,
+    // PQC FFI smoke test, custom region URL+token). The customer-facing
+    // path is the flag strip in the main view; everything else lives
+    // here so the main view stays clean.
+    @State private var showingMoreSheet = false
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
+            VStack(spacing: 18) {
                 statusBadge
                 bigConnectButton
-                infoPanel
-                pqcIdentityPanel
+                currentRegionCard
+                quickConnectStrip
+                pqcStatusLine
+                ipDisplayPanel
 
-                Spacer()
+                Spacer(minLength: 8)
 
-                // Two import paths:
-                //   - "Import from file" → UIDocumentPickerViewController
-                //     (via SwiftUI .fileImporter). Required for PQC configs
-                //     since they're ~1.4 MB of base64 McEliece keys —
-                //     too big to paste sanely.
-                //   - "Paste config" → TextEditor sheet. Fine for the
-                //     small classical-only configs (~400 bytes).
-                HStack(spacing: 12) {
-                    Button("Add Region…") { showingAddRegion = true }
-                        .buttonStyle(.borderedProminent)
-                    Button("Paste config") { showingImport = true }
-                        .buttonStyle(.bordered)
-                }
-                Button("Import from file…") { showingFileImporter = true }
-                    .buttonStyle(.bordered)
-                    .font(.footnote)
-
-                pqcSmokeTestPanel
-                troubleshootingPanel
+                bottomToolbar
             }
             .padding()
             .navigationTitle("Cloak VPN")
+            .toolbar {
+                // Hamburger button — opens the PIA-style Settings drawer
+                // with account info, region selection link, settings,
+                // about, etc.
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showingMoreSheet = true
+                    } label: {
+                        Image(systemName: "line.3.horizontal")
+                    }
+                }
+            }
             .alert("Error", isPresented: .constant(errorMsg != nil), actions: {
                 Button("OK") { errorMsg = nil }
             }, message: { Text(errorMsg ?? "") })
@@ -92,6 +94,9 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showingAddRegion) {
                 addRegionSheet
+            }
+            .sheet(isPresented: $showingMoreSheet) {
+                moreSheet
             }
             // .plainText covers .txt; .data is the catch-all so users can
             // pick a renamed file. We don't enforce a `.cloak` extension
@@ -161,6 +166,385 @@ struct ContentView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14))
         }
         .disabled(tunnel.config == nil)
+    }
+
+    /// Currently-selected region card. Shows the chosen region's flag
+    /// + display name + endpoint hint, OR a "Choose a region" placeholder
+    /// if no region is selected yet. Tapping the card scrolls the flag
+    /// strip into focus (just visual; the actual selection is via the
+    /// flag strip below).
+    private var currentRegionCard: some View {
+        HStack(spacing: 12) {
+            if let r = tunnel.selectedRegion {
+                Text(r.countryFlag).font(.system(size: 32))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(r.displayName)
+                        .font(.headline)
+                    Text(r.endpointIP)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Image(systemName: "globe")
+                    .font(.system(size: 28))
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Choose a region")
+                        .font(.headline)
+                    Text("Tap a flag below to provision")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            if tunnel.regionSelectionInProgress {
+                ProgressView().scaleEffect(0.9)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity)
+        .background(Color.secondary.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// Horizontal scrolling strip of all available regions. Tap a flag
+    /// to provision against that region (HTTP API call to its
+    /// cloak-api-server) and auto-import the resulting config. PIA-style
+    /// quick-connect pattern.
+    private var quickConnectStrip: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("QUICK CONNECT")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(CloakRegion.all) { region in
+                        regionTile(region)
+                    }
+                }
+                .padding(.horizontal, 2) // breathing room for selection ring
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func regionTile(_ region: CloakRegion) -> some View {
+        let isSelected = tunnel.selectedRegion?.id == region.id
+        Button {
+            Task { await tunnel.selectRegion(region) }
+        } label: {
+            VStack(spacing: 4) {
+                Text(region.countryFlag)
+                    .font(.system(size: 38))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+                    )
+                Text(region.shortLabel)
+                    .font(.caption.weight(isSelected ? .bold : .regular))
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(tunnel.regionSelectionInProgress)
+    }
+
+    /// Compact PQC rotation status line. Replaces the older multi-line
+    /// infoPanel; the customer mostly wants one quick visual on PQ
+    /// activity, not the endpoint URL repeated.
+    private var pqcStatusLine: some View {
+        HStack(spacing: 6) {
+            if case .established = tunnel.rosenpass.status {
+                Image(systemName: "lock.shield.fill").foregroundStyle(.green)
+            } else if case .error = tunnel.rosenpass.status {
+                Image(systemName: "exclamationmark.shield").foregroundStyle(.orange)
+            } else {
+                Image(systemName: "lock.shield").foregroundStyle(.secondary)
+            }
+            Text(tunnel.rosenpass.status.description)
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+    }
+
+    /// IP / VPN IP block — PIA-style. Left column shows the user's
+    /// real public IP (their home / cellular IP, which the VPN HIDES
+    /// when connected — useful as a "this is what you'd expose
+    /// without the VPN" indicator). Right column shows the VPN
+    /// endpoint IP when connected, "---" otherwise. Arrow between
+    /// the two reinforces the "IP → VPN IP" mental model.
+    private var ipDisplayPanel: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("IP").font(.caption).foregroundStyle(.secondary)
+                Text(tunnel.publicIP ?? "—")
+                    .font(.system(.subheadline, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer()
+            Image(systemName: "arrow.right")
+                .font(.footnote)
+                .foregroundStyle(tunnel.status == .connected ? .green : .secondary)
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("VPN IP").font(.caption).foregroundStyle(.secondary)
+                Text(vpnIPDisplayValue)
+                    .font(.system(.subheadline, design: .monospaced))
+                    .foregroundStyle(tunnel.status == .connected ? .primary : .secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// VPN IP shown in the right column. Only populated when the tunnel
+    /// is actually up — preserves the "your traffic appears to come from
+    /// here NOW" semantic. When disconnected, "---" matches PIA's idiom.
+    private var vpnIPDisplayValue: String {
+        if tunnel.status == .connected, let r = tunnel.selectedRegion {
+            return r.endpointIP
+        }
+        return "---"
+    }
+
+    /// Bottom row: tiny utility buttons. Hides developer-style entry
+    /// points (Paste config, Import from file, Add Region with custom
+    /// URL, PQC FFI smoke test) inside a "More…" sheet so the main
+    /// view stays focused on the customer-facing connect flow.
+    private var bottomToolbar: some View {
+        HStack(spacing: 16) {
+            Button {
+                showingResetConfirm = true
+            } label: {
+                Label("Reset", systemImage: "arrow.counterclockwise")
+                    .font(.footnote)
+            }
+            .buttonStyle(.bordered)
+            .disabled(tunnel.config == nil || resetInProgress)
+
+            Spacer()
+
+            Button {
+                showingMoreSheet = true
+            } label: {
+                Label("More…", systemImage: "ellipsis.circle")
+                    .font(.footnote)
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    /// PIA-style Settings drawer. Top: account header (subscription
+    /// tier + Manage link). Middle: navigation rows for major user-
+    /// facing functions. Bottom: about / support / privacy / version.
+    /// Developer-only paths (custom region URL+token, paste config,
+    /// import from file, PQC smoke test) are still here but in a
+    /// less-prominent "Advanced" section so the customer-facing layout
+    /// still feels clean.
+    private var moreSheet: some View {
+        let sub = SubscriptionInfo.current
+        return NavigationStack {
+            List {
+                // ---- Account header ----
+                Section {
+                    HStack(spacing: 12) {
+                        Image(systemName: "lock.shield.fill")
+                            .resizable()
+                            .frame(width: 44, height: 44)
+                            .foregroundStyle(Color.accentColor)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(sub.accountID)
+                                .font(.headline)
+                            Text(sub.displayLine)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Button("Manage subscription") {
+                                // Placeholder — wire to App Store
+                                // subscription manager when IAP ships.
+                            }
+                            .font(.caption)
+                            .padding(.top, 2)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                // ---- Primary navigation ----
+                Section {
+                    Button {
+                        showingMoreSheet = false
+                        // Region selection lives on the main screen
+                        // already (the flag strip). Closing this sheet
+                        // returns the user to it.
+                    } label: {
+                        Label("Region selection", systemImage: "mappin.and.ellipse")
+                    }
+                    NavigationLink {
+                        accountDetailView(sub: sub)
+                    } label: {
+                        Label("Account", systemImage: "person.crop.circle")
+                    }
+                    NavigationLink {
+                        settingsDetailView
+                    } label: {
+                        Label("Settings", systemImage: "gear")
+                    }
+                }
+
+                // ---- Information & support ----
+                Section {
+                    NavigationLink {
+                        aboutDetailView
+                    } label: {
+                        Label("About", systemImage: "info.circle")
+                    }
+                    Link(destination: URL(string: "https://cloakvpn.ai/privacy")!) {
+                        Label("Privacy policy", systemImage: "shield.lefthalf.filled")
+                    }
+                    Link(destination: URL(string: "mailto:support@cloakvpn.ai")!) {
+                        Label("Support", systemImage: "bubble.left.and.bubble.right")
+                    }
+                }
+
+                // ---- Advanced (developer / power-user) ----
+                Section("Advanced") {
+                    Button {
+                        showingMoreSheet = false
+                        showingAddRegion = true
+                    } label: {
+                        Label("Add region (custom URL & key)",
+                              systemImage: "globe.badge.chevron.backward")
+                    }
+                    Button {
+                        showingMoreSheet = false
+                        showingImport = true
+                    } label: {
+                        Label("Paste config", systemImage: "doc.text")
+                    }
+                    Button {
+                        showingMoreSheet = false
+                        showingFileImporter = true
+                    } label: {
+                        Label("Import from file…", systemImage: "tray.and.arrow.down")
+                    }
+                    NavigationLink {
+                        pqcDiagnosticsView
+                    } label: {
+                        Label("PQC diagnostics", systemImage: "key.fill")
+                    }
+                }
+
+                // ---- Footer: version ----
+                Section {
+                    HStack {
+                        Spacer()
+                        Text("Cloak VPN \(appVersionDisplay)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .listRowBackground(Color.clear)
+                }
+            }
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { showingMoreSheet = false }
+                }
+            }
+        }
+    }
+
+    /// "Account" detail view — placeholder for now. Will hold subscription
+    /// details, payment method, sign-in info once IAP / account
+    /// infrastructure exists.
+    private func accountDetailView(sub: SubscriptionInfo) -> some View {
+        Form {
+            Section("Subscription") {
+                LabeledContent("Account ID", value: sub.accountID)
+                LabeledContent("Plan", value: sub.tier.displayName)
+                if let r = sub.renewalDate {
+                    LabeledContent("Renews",
+                                   value: r.formatted(date: .long, time: .omitted))
+                }
+            }
+            Section {
+                Button("Log out", role: .destructive) {
+                    // Placeholder — clears local credentials when
+                    // account auth ships.
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+        .navigationTitle("Account")
+    }
+
+    /// "Settings" detail view — tunnel preferences. For now mostly a
+    /// stub with a single Reset Tunnel action; future settings (kill
+    /// switch toggle, on-demand rules, custom DNS) live here.
+    private var settingsDetailView: some View {
+        Form {
+            Section("Connection") {
+                Button(role: .destructive) {
+                    showingMoreSheet = false
+                    showingResetConfirm = true
+                } label: {
+                    Label("Reset tunnel", systemImage: "arrow.counterclockwise")
+                }
+                .disabled(tunnel.config == nil || resetInProgress)
+            }
+        }
+        .navigationTitle("Settings")
+    }
+
+    /// "About" detail view.
+    private var aboutDetailView: some View {
+        Form {
+            Section {
+                LabeledContent("Version", value: appVersionDisplay)
+                LabeledContent("Build", value: appBuildDisplay)
+            }
+            Section {
+                Text("Cloak VPN combines WireGuard with the post-quantum Rosenpass key-exchange protocol. Your traffic is protected against both classical and quantum-capable adversaries.")
+                    .font(.footnote)
+            }
+        }
+        .navigationTitle("About")
+    }
+
+    /// "PQC diagnostics" — formerly the on-main-screen PQC FFI smoke
+    /// test + identity panel. Tucked here so the main screen stays
+    /// customer-clean.
+    private var pqcDiagnosticsView: some View {
+        Form {
+            Section("Local PQC identity") {
+                pqcIdentityPanel
+            }
+            Section("FFI smoke test") {
+                pqcSmokeTestPanel
+            }
+        }
+        .navigationTitle("PQC diagnostics")
+    }
+
+    /// CFBundleShortVersionString for display (e.g. "1.0").
+    private var appVersionDisplay: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    }
+
+    /// CFBundleVersion (build number) for display.
+    private var appBuildDisplay: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
     }
 
     private var infoPanel: some View {
