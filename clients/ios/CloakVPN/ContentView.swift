@@ -238,7 +238,7 @@ struct ContentView: View {
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .foregroundStyle(CloakDesign.brandGrey)
-                .opacity(0.10)
+                .opacity(0.35)
                 .frame(width: geo.size.width * 1.15)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
