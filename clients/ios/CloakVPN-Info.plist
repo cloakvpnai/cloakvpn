@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+		App Transport Security exceptions for the Cloak provisioning
+		API endpoints. Each region currently runs cloak-api-server.py on
+		plain HTTP (port 8443). iOS 9+ blocks plain HTTP by default;
+		without these exceptions, every region-tap from the customer's
+		flag strip fails with "App Transport Security policy requires
+		the use of a secure connection."
+
+		Production deploy plan: terminate TLS via nginx + Let's Encrypt
+		on each region (e.g. cloak-us-west-1.cloakvpn.ai → :443) and
+		drop these exceptions in favor of standard HTTPS. Until then we
+		whitelist the four region IPs explicitly so we don't open the
+		barn door (NSAllowsArbitraryLoads=true) for arbitrary HTTP.
+
+		Per-IP whitelist is App Store-review friendly; the alternative
+		(NSAllowsArbitraryLoads) flags reviewers and requires written
+		justification.
+	-->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>5.78.203.171</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<false/>
+			</dict>
+			<key>5.161.198.227</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<false/>
+			</dict>
+			<key>91.98.65.98</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<false/>
+			</dict>
+			<key>204.168.252.70</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<false/>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>
