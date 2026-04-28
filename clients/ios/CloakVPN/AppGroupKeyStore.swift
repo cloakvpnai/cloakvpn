@@ -28,7 +28,7 @@ enum AppGroupKeyStore {
         // Server's rosenpass public key (from the imported config block).
         case serverRPPublicKey = "rp_server_pubkey.b64"
 
-        // -- Locally-generated device keypair --
+        // -- Locally-generated device rosenpass keypair --
         // Generated on first app launch via the FFI's generateStaticKeypair().
         // The secret never leaves the device — this is the privacy fix that
         // closes the hole where the server formerly held every client's
@@ -36,6 +36,18 @@ enum AppGroupKeyStore {
         // re-imports of new server configs.
         case localRPSecretKey = "rp_local_seckey.b64"
         case localRPPublicKey = "rp_local_pubkey.b64"
+
+        // -- Locally-generated device WireGuard keypair --
+        // Generated on first app launch via CryptoKit's
+        // Curve25519.KeyAgreement.PrivateKey. Same privacy property
+        // as the rosenpass keypair: secret never leaves the device.
+        // Used by the "Add Region" provisioning flow that POSTs only
+        // the public key to cloak-api-server. For backward compat with
+        // legacy configs that DO contain a private_key field, the
+        // imported value still wins (parsed CloakConfig.wgPrivateKey
+        // is checked first in TunnelManager).
+        case localWGSecretKey = "wg_local_seckey.b64"
+        case localWGPublicKey = "wg_local_pubkey.b64"
 
         // -- LEGACY: server-generated client keys (DEPRECATED) --
         // These were the old privacy-broken design where add-peer.sh on
@@ -110,6 +122,47 @@ enum AppGroupKeyStore {
         guard let dir = containerURL else { return }
         let fm = FileManager.default
         for f in [Filename.localRPSecretKey, .localRPPublicKey] {
+            try? fm.removeItem(at: dir.appendingPathComponent(f.rawValue))
+        }
+    }
+
+    // MARK: - Public API — Local device WireGuard keypair
+    //
+    // Generated on first launch from CryptoKit Curve25519. Mirrors the
+    // local rosenpass keypair design: the private key never leaves the
+    // device. Used by the "Add Region" provisioning API flow which sends
+    // only the public key to the server.
+
+    /// Persist a freshly-generated WireGuard keypair as this device's
+    /// long-term WG identity. Idempotent.
+    static func saveLocalWGKeypair(secretB64: String, publicB64: String) throws {
+        try writeAtomic(secretB64, to: .localWGSecretKey)
+        try writeAtomic(publicB64, to: .localWGPublicKey)
+    }
+
+    /// Load this device's locally-generated WG keypair.
+    static func loadLocalWGKeypair() throws -> (secretB64: String, publicB64: String) {
+        let secret = try read(.localWGSecretKey)
+        let pubkey = try read(.localWGPublicKey)
+        return (secret, pubkey)
+    }
+
+    /// True if this device has already generated and persisted a local
+    /// WG keypair.
+    static func hasLocalWGKeypair() -> Bool {
+        guard let dir = containerURL else { return false }
+        let fm = FileManager.default
+        return [Filename.localWGSecretKey, .localWGPublicKey]
+            .allSatisfy { fm.fileExists(atPath: dir.appendingPathComponent($0.rawValue).path) }
+    }
+
+    /// Wipe the local WG keypair. Sparingly — destroys the device's WG
+    /// identity; the next handshake will need a re-issued peer
+    /// registration on the server.
+    static func clearLocalWGKeypair() {
+        guard let dir = containerURL else { return }
+        let fm = FileManager.default
+        for f in [Filename.localWGSecretKey, .localWGPublicKey] {
             try? fm.removeItem(at: dir.appendingPathComponent(f.rawValue))
         }
     }

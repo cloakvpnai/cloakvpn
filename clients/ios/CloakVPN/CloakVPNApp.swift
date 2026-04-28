@@ -9,12 +9,17 @@ struct CloakVPNApp: App {
             ContentView()
                 .environmentObject(tunnel)
                 .task {
-                    // Run both startup tasks concurrently — they're
-                    // independent (loading existing VPN profile vs. ensuring
-                    // a local rosenpass keypair) and we don't want either
-                    // blocking the other.
+                    // Run startup tasks concurrently — they're
+                    // independent (loading existing VPN profile vs.
+                    // ensuring local keypairs) and we don't want any
+                    // blocking the others. The two ensure* calls each
+                    // generate one keypair on first launch (rosenpass
+                    // McEliece keygen ~50-200 ms; Curve25519 WG keygen
+                    // <1 ms) and are fast-path no-ops on subsequent
+                    // launches.
                     async let _ = tunnel.load()
                     async let _ = tunnel.ensureLocalKeypair()
+                    async let _ = tunnel.ensureLocalWGKeypair()
                 }
         }
     }

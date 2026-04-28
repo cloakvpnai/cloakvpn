@@ -118,6 +118,30 @@ final class TunnelManager: ObservableObject {
             }
     }
 
+    /// Ensure this device has a locally-generated WireGuard keypair
+    /// persisted in the App Group container. Idempotent — if a keypair
+    /// already exists from a prior launch, no-op. Otherwise generates a
+    /// fresh Curve25519 keypair via CryptoKit (instant on any iPhone)
+    /// and persists. Used by the cloak-api-server provisioning flow,
+    /// which sends only the public key to the server. The private key
+    /// never leaves the device.
+    func ensureLocalWGKeypair() async {
+        if AppGroupKeyStore.hasLocalWGKeypair() { return }
+        do {
+            // CryptoKit's Curve25519.KeyAgreement.PrivateKey uses X25519
+            // semantics with RFC 7748 clamping — wire-compatible with
+            // WireGuard's `wg genkey`. rawRepresentation yields the 32
+            // raw bytes; base64 yields the 44-char form WG expects.
+            let privKey = Curve25519.KeyAgreement.PrivateKey()
+            let secretB64 = privKey.rawRepresentation.base64EncodedString()
+            let publicB64 = privKey.publicKey.rawRepresentation.base64EncodedString()
+            try AppGroupKeyStore.saveLocalWGKeypair(secretB64: secretB64, publicB64: publicB64)
+            debugLog("ensureLocalWGKeypair: generated & persisted (pub=\(publicB64.prefix(16))…)")
+        } catch {
+            debugLog("ensureLocalWGKeypair: persistence failed: \(error)")
+        }
+    }
+
     /// Ensure this device has a locally-generated rosenpass keypair
     /// persisted in the App Group container. Idempotent — if a keypair
     /// already exists from a prior launch, just publishes the cached
@@ -201,7 +225,25 @@ final class TunnelManager: ObservableObject {
     /// pubkey on disk would put the user in a state where Connect appears
     /// to work but PQC silently never engages. Failing loud is better.
     func importConfig(_ text: String) throws {
-        let parsed = try ConfigParser.parse(text)
+        var parsed = try ConfigParser.parse(text)
+
+        // If the config came from cloak-api-server (which omits
+        // private_key — server doesn't have ours), fill it in from
+        // the locally-stored WG keypair. provisionFromAPI ensures
+        // ensureLocalWGKeypair has run before getting here. Legacy
+        // configs that DO carry a private_key keep their existing
+        // value untouched.
+        if parsed.wgPrivateKey.isEmpty {
+            do {
+                let wg = try AppGroupKeyStore.loadLocalWGKeypair()
+                parsed.wgPrivateKey = wg.secretB64
+                debugLog("importConfig: filled in wgPrivateKey from local WG keypair")
+            } catch {
+                throw TunnelError.parse(
+                    "config has no private_key and no local WG keypair available: \(error.localizedDescription)"
+                )
+            }
+        }
 
         // Stash just the server's pubkey (the only PQC blob we still
         // accept from the config). If this fails, abort before we touch
@@ -284,6 +326,90 @@ final class TunnelManager: ObservableObject {
                 print("importConfig save error: \(error)")
             }
         }
+    }
+
+    /// "Add Region" — provision this iPhone as a peer against a Cloak
+    /// region by POSTing both locally-generated public keys to the
+    /// region's cloak-api-server. The server returns a complete client
+    /// config block (without private_key — we already have the WG
+    /// secret locally). Auto-imports on success.
+    ///
+    /// Privacy: only public keys cross the wire. The iPhone's WG and
+    /// rosenpass private keys never leave the device.
+    ///
+    /// - Parameters:
+    ///   - serverBase: full base URL of the API, e.g.
+    ///     "http://5.78.203.171:8443" (production should be HTTPS via
+    ///     the operator's nginx + Let's Encrypt).
+    ///   - apiKey: shared-secret token configured at
+    ///     /etc/cloak/api-token on the server. The operator distributes
+    ///     this to authorized users out-of-band.
+    ///   - peerName: optional human-readable peer name. If absent, the
+    ///     server auto-generates one from a hash of the rosenpass pubkey.
+    func provisionFromAPI(
+        serverBase: String,
+        apiKey: String,
+        peerName: String? = nil
+    ) async throws {
+        // 1. Make sure we have both keypairs locally before talking to
+        // the server. ensureLocalKeypair handles rosenpass; the new
+        // ensureLocalWGKeypair handles WG. Both are idempotent.
+        await ensureLocalKeypair()
+        await ensureLocalWGKeypair()
+
+        let rpKeys = try AppGroupKeyStore.loadLocalKeypair()
+        let wgKeys = try AppGroupKeyStore.loadLocalWGKeypair()
+
+        // 2. Build the request.
+        var url = serverBase.trimmingCharacters(in: .whitespacesAndNewlines)
+        if url.hasSuffix("/") { url.removeLast() }
+        guard let endpoint = URL(string: "\(url)/api/v1/peers") else {
+            throw TunnelError.parse("invalid serverBase URL: \(serverBase)")
+        }
+
+        var body: [String: Any] = [
+            "wg_pubkey_b64": wgKeys.publicB64,
+            "rosenpass_pubkey_b64": rpKeys.publicB64,
+        ]
+        if let n = peerName, !n.isEmpty {
+            body["peer_name"] = n
+        }
+        let bodyData = try JSONSerialization.data(withJSONObject: body)
+
+        var req = URLRequest(url: endpoint)
+        req.httpMethod = "POST"
+        req.setValue(apiKey, forHTTPHeaderField: "X-Cloak-API-Key")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = bodyData
+        // Provisioning involves running add-peer.sh + restarting
+        // cloak-rosenpass.service on the server — give it some
+        // headroom but cap to keep the UI responsive.
+        req.timeoutInterval = 30
+
+        debugLog("provisionFromAPI: POST \(endpoint.absoluteString) (wg_pub=\(wgKeys.publicB64.prefix(8))…, rp_pub=\(rpKeys.publicB64.prefix(12))…)")
+
+        // 3. Hit the API.
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        guard let http = resp as? HTTPURLResponse else {
+            throw TunnelError.parse("non-HTTP response from server")
+        }
+        if http.statusCode != 200 {
+            let msg = String(data: data, encoding: .utf8) ?? "<binary>"
+            throw TunnelError.parse("API returned HTTP \(http.statusCode): \(msg.prefix(200))")
+        }
+
+        guard let configText = String(data: data, encoding: .utf8) else {
+            throw TunnelError.parse("API response not valid UTF-8")
+        }
+
+        debugLog("provisionFromAPI: got config (\(configText.count) chars), importing…")
+
+        // 4. Import the returned config. The config block omits
+        // private_key (the server doesn't have ours and doesn't need
+        // to send it back); the parser tolerates that and importConfig
+        // picks up the locally-stored WG private key when wgPrivateKey
+        // is empty.
+        try importConfig(configText)
     }
 
     func connect() async throws {
