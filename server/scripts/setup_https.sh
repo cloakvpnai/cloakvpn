@@ -83,9 +83,14 @@ server {
     # HSTS (1 year, no preload — preload is opt-in via separate process)
     add_header Strict-Transport-Security "max-age=31536000" always;
 
-    # Limit request body — provisioning POST is ~1KB JSON. 16KB is plenty,
-    # blocks accidental large uploads.
-    client_max_body_size 16k;
+    # Limit request body. The provisioning POST carries a base64-encoded
+    # rosenpass McEliece-460896 public key (~700 KB on the wire) plus
+    # ~50 bytes of WG pubkey + JSON overhead. 2 MB cap matches the
+    # cloak-api-server's own internal cap and gives modest headroom
+    # without inviting accidental uploads. Setting this too low (we
+    # initially shipped 16k) caused nginx to 413-reject every region
+    # provision before the request even reached cloak-api-server.
+    client_max_body_size 2m;
 
     # Modest timeouts — provisioning takes 3-8s server-side, so 30s
     # is comfortable headroom.
