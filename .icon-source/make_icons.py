@@ -5,15 +5,17 @@ background tints.
   - Basic (primary AppIcon): dark textured background sampled from
     the source PNG corners (matches the brand's standard dark matte).
   - Pro   (alternate icon):  deep emerald flat background that ties to
-    CloakDesign.brandGreen (RGB 31,189,92 darkened to ~10% brightness).
-    Gold-on-emerald reads as "premium tier of the same brand."
+    CloakDesign.brandGreen (RGB 31,189,92 darkened to ~10% brightness),
+    PLUS a gold outer ring inset from the icon edge — this is the
+    home-screen "premium" badge that distinguishes Pro from Basic
+    without changing the central hood mark.
 
 Hood detection: identifies the top-most gold-pixel cluster (the hood)
 by finding the vertical gap between hood and wordmark, then extracts
 just that cluster as an alpha-masked overlay so we can composite it
 onto an arbitrary background color.
 """
-from PIL import Image
+from PIL import Image, ImageDraw
 import os
 
 SRC_DIR = "/sessions/loving-confident-dirac/mnt/cloak-vpn/.icon-source"
@@ -31,6 +33,16 @@ TARGET_SIZE = 1024
 # icon background so the home-screen weight feels balanced; just
 # different hue.
 PRO_BG = (10, 38, 22)
+
+# Gold ring on the Pro icon — matches CloakDesign.brandGold
+# (#FFD700, RGB 255,215,0). Inset from the icon edge so iOS's
+# rounded-corner mask doesn't clip it.
+PRO_RING_COLOR = (255, 215, 0)
+PRO_RING_INSET_FRAC = 0.07     # 7% of canvas (e.g. 72 px on 1024 master)
+PRO_RING_THICKNESS_FRAC = 0.022  # 2.2% of canvas (e.g. 22 px on 1024 master)
+PRO_RING_CORNER_FRAC = 0.18    # rounded ring corner radius — matches the
+                               # iOS app-icon mask roughly so the ring
+                               # parallels the rounded edge nicely
 
 
 def hood_overlay(im):
@@ -106,7 +118,8 @@ def hood_overlay(im):
     return hood
 
 
-def composite(hood_rgba, bg_color, target_size=TARGET_SIZE, fill=TARGET_FILL):
+def composite(hood_rgba, bg_color, target_size=TARGET_SIZE, fill=TARGET_FILL,
+              gold_ring=False):
     w, h = hood_rgba.size
     target_short = target_size * fill
     scale = target_short / min(w, h)
@@ -116,17 +129,31 @@ def composite(hood_rgba, bg_color, target_size=TARGET_SIZE, fill=TARGET_FILL):
     canvas.paste(scaled, ((target_size - new_w) // 2,
                           (target_size - new_h) // 2),
                  mask=scaled)
+    if gold_ring:
+        # Draw a rounded gold ring inset from the icon edge. iOS will
+        # apply its own rounded-corner mask on top — we inset enough
+        # that the ring sits inside that mask comfortably.
+        draw = ImageDraw.Draw(canvas)
+        inset = int(target_size * PRO_RING_INSET_FRAC)
+        thick = int(target_size * PRO_RING_THICKNESS_FRAC)
+        radius = int(target_size * PRO_RING_CORNER_FRAC)
+        draw.rounded_rectangle(
+            (inset, inset, target_size - inset, target_size - inset),
+            radius=radius,
+            outline=PRO_RING_COLOR,
+            width=thick,
+        )
     return canvas
 
 
-def export(src_filename, out_basename, sizes, bg_color=None):
+def export(src_filename, out_basename, sizes, bg_color=None, gold_ring=False):
     src = os.path.join(SRC_DIR, src_filename)
     im = Image.open(src)
     hood = hood_overlay(im)
     if bg_color is None:
         bg_color = im.convert("RGB").getpixel((0, 0))
-    print(f"  {src_filename}: hood {hood.size}, bg={bg_color}")
-    base = composite(hood, bg_color)
+    print(f"  {src_filename}: hood {hood.size}, bg={bg_color}, ring={gold_ring}")
+    base = composite(hood, bg_color, gold_ring=gold_ring)
     for size in sizes:
         scaled = base.resize((size, size), Image.LANCZOS) if size != TARGET_SIZE else base
         out = os.path.join(OUT_DIR, f"{out_basename}_{size}.png")
@@ -135,7 +162,8 @@ def export(src_filename, out_basename, sizes, bg_color=None):
 
 
 print("== Basic — dark textured bg ==")
-export("CloakVPN.png", "AppIcon", [1024], bg_color=None)
-print("== Pro — deep emerald bg ==")
-export("CloakVPN_PRO.png", "CloakProIcon", [60, 120, 180, 1024], bg_color=PRO_BG)
+export("CloakVPN.png", "AppIcon", [1024], bg_color=None, gold_ring=False)
+print("== Pro — deep emerald bg + gold ring ==")
+export("CloakVPN_PRO.png", "CloakProIcon", [60, 120, 180, 1024],
+       bg_color=PRO_BG, gold_ring=True)
 print("Done.")
