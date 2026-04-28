@@ -211,10 +211,10 @@ struct ContentView: View {
             }
         }) {
             Text(tunnel.status == .connected ? "Disconnect" : "Connect")
-                .font(CloakDesign.headline(size: 22, weight: .semibold))
-                .tracking(0.6)
+                .font(CloakDesign.headline(size: 30, weight: .semibold))
+                .tracking(0.8)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
+                .padding(.vertical, 22)
                 .background(
                     tunnel.status == .connected
                         ? Color.red
