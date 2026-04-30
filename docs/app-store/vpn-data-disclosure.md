@@ -1,20 +1,115 @@
 # Apple App Review — VPN Data Disclosure Response
 
 This document is the canonical response to Apple's standard
-"VPN data handling" review questions. Paste the entire body below
-into:
+"VPN data handling" review questions. Two versions:
 
-  1. The Resolution Center reply box when Apple's review team asks
-     about VPN data practices (they ask this for almost every VPN
-     app on first submission), AND
-  2. The App Review Information → Notes field in App Store Connect,
-     so future reviews see the same disclosure without prompting.
+  1. **Short version (~3,950 chars)** — paste into the
+     Resolution Center reply box. Apple caps that at 4,000 chars.
+  2. **Long version** — paste into the App Review Information →
+     Notes field, which has no character limit. Future reviews see
+     the same disclosure without re-prompting.
 
 The content below mirrors `cloakvpn.ai/privacy` and the actual
 app/server behavior committed in this repo. If either changes,
 update this file too.
 
 ---
+
+## Short version (Resolution Center reply, ≤ 4000 chars)
+
+```
+Cloak VPN — VPN data-handling answers. Matches our public Privacy
+Policy at https://cloakvpn.ai/privacy.
+
+1) WHAT INFORMATION THE APP COLLECTS
+
+(a) Per-install UUID generated locally on first launch. Used only
+to authenticate the device when requesting a VPN configuration
+from our region API. Not linked to Apple ID, name, email,
+phone, IDFA, IDFV, or any real-world identity.
+
+(b) Cryptographic public keys (Curve25519 WireGuard + Classic
+McEliece rosenpass), generated on device. Only PUBLIC halves
+are sent to our servers, to register the device as a peer.
+Private halves never leave the device. These are cryptographic
+identifiers, not personal information.
+
+(c) StoreKit subscription transaction ID (when IAP ships). Used
+only to verify the user has an active subscription. We do NOT
+receive payment info, name, billing address, Apple ID, or
+email from Apple.
+
+(d) Transient session metadata held in RAM only on our region
+servers: the user's already-registered public keys, an
+internal-only private VPN IP in 10.99.0.0/22 (not internet-
+routable), and the encrypted UDP packet stream itself
+(forwarded immediately, never written to disk). Discarded
+within minutes of session end.
+
+We do NOT collect or log: real public IP, websites/services
+visited, DNS queries, connection timestamps, bandwidth, name,
+email, phone, address, IDFA/IDFV, cookies, location beyond
+the user-chosen exit country.
+
+2) WHY WE COLLECT IT — COMPLETE LIST OF USES
+
+(a) Per-install UUID: device authentication for VPN config
+requests; prevents unauthorized peer registration.
+(b) Public keys: establish + operate the encrypted WireGuard
+tunnel and the post-quantum Rosenpass key exchange that
+rotates a fresh quantum-safe PSK every 120 seconds.
+(c) Transaction ID: verify active subscription before serving a
+VPN configuration.
+(d) Session metadata: route the user's encrypted traffic.
+
+We do NOT use any data for advertising, profiling, analytics,
+marketing, sale to third parties, behavioral profiling, linking
+sessions across time, or any purpose other than operating the
+VPN service. There are no plans to add any such use.
+
+3) THIRD PARTIES
+
+We use only operational vendors. None receive user-identifiable
+information.
+
+(a) Apple Inc. (StoreKit). Receives nothing from us. We receive
+a subscription transaction ID. https://www.apple.com/legal/privacy/
+(b) Hetzner Online GmbH (Germany). Hosts our region servers.
+Encrypted VPN bytes transit through; not logged or retained.
+https://www.hetzner.com/legal/privacy-policy/
+(c) Cloudflare, Inc. Hosts cloakvpn.ai DNS + routes our
+provisioning HTTPS traffic. Sees only TLS-encrypted requests.
+https://www.cloudflare.com/privacypolicy/
+(d) Quad9. DNS resolution inside the encrypted tunnel so DNS
+queries don't leak to the user's ISP. No-logging policy for
+PII: https://quad9.net/service/privacy/
+
+The iOS app contains NO third-party analytics, advertising,
+crash-reporting, telemetry, or tracking SDKs. No plans to add any.
+
+DATA RETENTION
+- Per-install UUID (hashed): up to 30 days post last connection,
+then deleted.
+- Subscription transaction IDs: lifetime of subscription + 90
+days for billing reconciliation, then deleted.
+- Session metadata: discarded within minutes of disconnect;
+never written to long-term storage.
+
+ADDITIONAL CONTEXT
+
+Cloak VPN is published by Neuro AI Studios. Our business model
+is the subscription fee. We do not sell user data or share with
+data brokers. Post-quantum encryption (NIST-standardized
+algorithms) means even our region servers cannot decrypt
+traffic in transit. Full policy at https://cloakvpn.ai/privacy.
+
+Contact: support@cloakvpn.ai
+```
+
+---
+
+## Long version (App Review Notes, no length limit)
+
 
 Thank you for reviewing Cloak VPN. Below are the complete and accurate
 responses to your questions about our app's VPN functionality and data
