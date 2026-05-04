@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 //
-// Cloak VPN — Subscription info (placeholder).
+// Lattice VPN — Subscription info (placeholder).
 //
 // This is the customer-account stand-in. Real implementation requires
 // Stripe / App Store In-App Purchase integration + a Cloak account
@@ -30,11 +30,11 @@ enum SubscriptionTier: String, Codable {
     /// Name of the alternate icon (registered in Info.plist's
     /// CFBundleAlternateIcons) that should be active for this tier.
     /// `nil` means "use the primary icon" — i.e. the AppIcon in the
-    /// asset catalog, which today is the gold "CLOAKVPN" mark.
+    /// asset catalog, which today is the lattice-shield "LATTICE VPN" mark.
     var alternateIconName: String? {
         switch self {
-        case .basic: return nil               // primary AppIcon (CLOAKVPN)
-        case .pro:   return "CloakProIcon"    // CLOAKVPN PRO logo
+        case .basic: return nil                 // primary AppIcon (LATTICE VPN)
+        case .pro:   return "LatticeProIcon"    // LATTICE VPN PRO logo (amber ring)
         }
     }
 }

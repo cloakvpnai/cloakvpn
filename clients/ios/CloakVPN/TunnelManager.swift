@@ -518,7 +518,7 @@ final class TunnelManager: ObservableObject {
     }
 
     /// On fresh install, pre-create a placeholder NETunnelProviderManager
-    /// so the iOS "Cloak VPN Would Like to Add VPN Configurations" prompt
+    /// so the iOS "Lattice VPN Would Like to Add VPN Configurations" prompt
     /// fires the moment the app opens — BEFORE the user taps a region.
     ///
     /// Why: the prompt is only triggered by saveToPreferences() on a
@@ -565,7 +565,7 @@ final class TunnelManager: ObservableObject {
         // includeAllNetworks=true, so we set it here too.
         proto.includeAllNetworks = true
         placeholder.protocolConfiguration = proto
-        placeholder.localizedDescription = "CLOAK VPN"
+        placeholder.localizedDescription = "LATTICE VPN"
         placeholder.isEnabled = false  // user can't accidentally connect to nothing
 
         do {
@@ -677,7 +677,7 @@ final class TunnelManager: ObservableObject {
         // iOS is forced to use utun via includeAllNetworks=true.
         //
         // First activation per signing identity prompts the user with
-        // "Cloak VPN would like to monitor all your network traffic" —
+        // "Lattice VPN would like to monitor all your network traffic" —
         // accept once and iOS retains consent.
         proto.includeAllNetworks = true
 
@@ -689,7 +689,7 @@ final class TunnelManager: ObservableObject {
         // worse. Stripping back to the upstream minimum.
 
         manager.protocolConfiguration = proto
-        manager.localizedDescription = "CLOAK VPN"
+        manager.localizedDescription = "LATTICE VPN"
         manager.isEnabled = true
 
         // CRITICAL: await saveToPreferences inline (was fire-and-forget
@@ -926,7 +926,7 @@ final class TunnelManager: ObservableObject {
         proto.passwordReference = nil
         proto.includeAllNetworks = true
         manager.protocolConfiguration = proto
-        manager.localizedDescription = "CLOAK VPN"
+        manager.localizedDescription = "LATTICE VPN"
         manager.isEnabled = true
 
         // 6. Save (triggers iOS permission prompt the first time after
@@ -1171,7 +1171,7 @@ final class TunnelManager: ObservableObject {
         }
         let fp = Self.pubkeyFingerprint(pubB64)
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("cloakvpn-pubkey-\(fp).b64")
+            .appendingPathComponent("latticevpn-pubkey-\(fp).b64")
         try pubB64.write(to: url, atomically: true, encoding: .utf8)
         return url
     }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 //
-// Cloak VPN — Auth client.
+// Lattice VPN — Auth client.
 //
 // Responsible for getting (and caching) a JWT that authorizes
 // provisioning calls against cloak-api-server. Two-step flow:

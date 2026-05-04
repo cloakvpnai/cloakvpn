@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 // `import rosenpassffiFFI` (the C module from the xcframework) under
 // the hood; that's the only module name in this build.
 
-/// Cloak VPN design system — single source of truth for brand color
+/// Lattice VPN design system — single source of truth for brand color
 /// and typography choices. Centralized here so we can rev the visual
 /// language in one place rather than chasing magic constants across
 /// the view tree.
@@ -124,13 +124,13 @@ struct ContentView: View {
                 }
                 .padding()
             }
-            .navigationTitle("CLOAK VPN")
+            .navigationTitle("LATTICE VPN")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 // Custom serif title for premium-tech brand feel.
                 // Replaces SwiftUI's default sans-serif navigation title.
                 ToolbarItem(placement: .principal) {
-                    Text("CLOAK VPN")
+                    Text("LATTICE VPN")
                         .font(CloakDesign.headline(size: 18, weight: .semibold))
                         .tracking(1.6)
                 }
@@ -161,7 +161,7 @@ struct ContentView: View {
                 }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("This deletes and recreates the iOS VPN profile, then reconnects. iOS will ask you to allow CLOAK VPN to add VPN configurations again. Use this only when normal disconnect+reconnect doesn't recover the tunnel.")
+                Text("This deletes and recreates the iOS VPN profile, then reconnects. iOS will ask you to allow LATTICE VPN to add VPN configurations again. Use this only when normal disconnect+reconnect doesn't recover the tunnel.")
             }
             .sheet(isPresented: $showingImport) {
                 importSheet
@@ -185,7 +185,7 @@ struct ContentView: View {
             }
         }
         // Global tint override — replaces SwiftUI's default blue with
-        // CLOAK VPN's neutral steel grey for all toolbar buttons,
+        // LATTICE VPN's neutral steel grey for all toolbar buttons,
         // NavigationLink chevrons, default-styled buttons, and
         // any Image/Text using `.tint` or `.accentColor`.
         // Brand-green elements (Connect button, region selection ring,
@@ -691,7 +691,7 @@ struct ContentView: View {
                 Section {
                     HStack {
                         Spacer()
-                        Text("CLOAK VPN \(appVersionDisplay)")
+                        Text("LATTICE VPN \(appVersionDisplay)")
                             .font(.caption)
                             .tracking(1.0)
                             .foregroundStyle(.secondary)
@@ -733,7 +733,7 @@ struct ContentView: View {
             // Tier toggle — until real IAP / receipt validation ships,
             // the user can flip Basic ↔ Pro themselves to preview both
             // app icons. Each tap re-applies the matching alternate
-            // icon (Basic = primary CLOAKVPN logo, Pro = CLOAKVPN PRO
+            // icon (Basic = primary LATTICE VPN logo, Pro = LATTICE VPN PRO
             // logo). iOS shows its mandatory "icon changed" system
             // alert once per real change.
             Section {
@@ -749,7 +749,7 @@ struct ContentView: View {
             } header: {
                 Text("Plan preview")
             } footer: {
-                Text("Switching tier updates the home-screen app icon (Basic = CLOAKVPN, Pro = CLOAKVPN PRO). iOS shows a one-time system alert when the icon actually changes.")
+                Text("Switching tier updates the home-screen app icon (Basic = LATTICE VPN, Pro = LATTICE VPN PRO). iOS shows a one-time system alert when the icon actually changes.")
                     .font(.caption)
             }
 
@@ -790,7 +790,7 @@ struct ContentView: View {
                 LabeledContent("Build", value: appBuildDisplay)
             }
             Section {
-                Text("CLOAK VPN combines WireGuard with the post-quantum Rosenpass key-exchange protocol. Your traffic is protected against both classical and quantum-capable adversaries.")
+                Text("LATTICE VPN combines WireGuard with the post-quantum Rosenpass key-exchange protocol. Your traffic is protected against both classical and quantum-capable adversaries.")
                     .font(.footnote)
             }
         }
@@ -864,8 +864,8 @@ struct ContentView: View {
                 if let url = try? tunnel.makeLocalPubkeyShareFile() {
                     ShareLink(
                         item: url,
-                        subject: Text("CLOAK VPN PQC public key"),
-                        message: Text("Register this with `sudo add-peer.sh <peer-name> <this-file>` on your Cloak server.")
+                        subject: Text("LATTICE VPN PQC public key"),
+                        message: Text("Register this with `sudo add-peer.sh <peer-name> <this-file>` on your Lattice server.")
                     ) {
                         Label("Share my public key…", systemImage: "square.and.arrow.up")
                             .font(.footnote)
@@ -1005,7 +1005,7 @@ struct ContentView: View {
                 } header: {
                     Text("Region details")
                 } footer: {
-                    Text("The server URL is where the Cloak provisioning API runs. The API key is a shared secret from /etc/cloak/api-token on the server. Both keys generated by your phone are stored locally — only the public halves are sent to the server.")
+                    Text("The server URL is where the Lattice provisioning API runs. The API key is a shared secret from /etc/cloak/api-token on the server. Both keys generated by your phone are stored locally — only the public halves are sent to the server.")
                         .font(.caption)
                 }
 
@@ -1029,7 +1029,7 @@ struct ContentView: View {
                               || addRegionAPIKey.isEmpty)
                 }
             }
-            .navigationTitle("Add a Cloak region")
+            .navigationTitle("Add a Lattice region")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
