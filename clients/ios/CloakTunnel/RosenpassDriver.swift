@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 //
-// Cloak VPN — RosenpassDriver
+// Lattice VPN — RosenpassDriver
 //
 // In-NE-process driver for the rosenpass post-quantum key-exchange loop.
 // Replaces the host-app-resident RosenpassBridge that broke whenever iOS

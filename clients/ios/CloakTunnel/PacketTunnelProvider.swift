@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 //
-// Cloak VPN — PacketTunnelProvider for the CloakTunnel NetworkExtension
+// Lattice VPN — PacketTunnelProvider for the CloakTunnel NetworkExtension
 // target.
 //
 // 2026-04-27 ROOT-CAUSE FIX (see docs/TRIAGE_2026-04-27.md):

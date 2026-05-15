@@ -3,25 +3,31 @@
 <plist version="1.0">
 <dict>
 	<!--
-		Export Compliance declaration. Cloak VPN uses non-iOS-builtin
-		encryption (WireGuard via WireGuardKitGo, Rosenpass via the
-		bundled FFI), so this MUST be true. Setting it false here would
-		be a misrepresentation to Apple's review process.
+		Export Compliance declaration.
 
-		Setting it true and providing the App Encryption Documentation
-		(self-classification letter under ECCN 5D992.c, on file with
-		App Store Connect) means future TestFlight uploads skip the
-		"Missing Compliance" prompt — the declaration carries forward
-		until you change which encryption your app uses.
+		Lattice VPN uses non-iOS-builtin encryption (WireGuard via
+		WireGuardKitGo, Rosenpass via the bundled FFI). The original Cloak
+		VPN-era submission set ITSAppUsesNonExemptEncryption=true here and
+		paired it with an ECCN 5D992.c self-classification letter uploaded
+		to App Store Connect, which generated a server-side compliance
+		code that was matched against ITSEncryptionExportComplianceCode in
+		this Info.plist. After the rebrand, that code stopped matching and
+		blocked uploads ("Invalid Export Compliance Code").
 
-		If you ever rotate to a different non-standard algorithm, file
-		an updated classification letter and bump this build's encryption
-		export compliance code in App Store Connect.
+		The simplest recovery path is to OMIT both the
+		ITSAppUsesNonExemptEncryption key AND the matching
+		ITSEncryptionExportComplianceCode from Info.plist entirely. Apple
+		then prompts the encryption questionnaire on the version page of
+		App Store Connect after upload — answer YES to non-exempt
+		encryption, YES to qualifying for the mass-market exemption under
+		ECCN 5D992.c, and the previously-uploaded self-classification PDF
+		(docs/legal/CloakVPN-Encryption-Compliance.pdf) remains the
+		supporting documentation on file.
 
-		See: docs/legal/CloakVPN-Encryption-Compliance.pdf
+		Once Apple approves the rebrand, regenerate compliance docs under
+		the Lattice name and re-introduce the keys here for friction-free
+		future uploads.
 	-->
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<true/>
 
 	<!--
 		Bootstrap key for /api/v1/auth/exchange. Loaded at build time
@@ -39,31 +45,42 @@
 	<string>$(CLOAK_BOOTSTRAP_KEY)</string>
 
 	<!--
-		Alternate app icons. The primary icon (CLOAKVPN logo without
-		"PRO") lives in Assets.xcassets/AppIcon.appiconset and is what
-		the app shows by default. The "Pro" variant is registered here
-		as a CFBundleAlternateIcons entry so we can switch to it at
-		runtime via UIApplication.setAlternateIconName("CloakProIcon")
-		when the user upgrades their subscription.
+		User-facing display name on the home screen. Project / target /
+		bundle ID still carry the historical "CloakVPN" identifier (those
+		are Phase B once Apple approves), but the springboard label and
+		every iOS system-generated VPN dialog show this string instead.
+		"Lattice VPN" is the rebrand chosen after the 4.1(a) Copycats
+		rejection — see docs/app-store/lattice-rebrand.md.
+	-->
+	<key>CFBundleDisplayName</key>
+	<string>Lattice VPN</string>
+
+	<!--
+		Alternate app icons. The primary icon (LATTICE VPN lattice-shield
+		logo) lives in Assets.xcassets/AppIcon.appiconset and is what the
+		app shows by default. The "Pro" variant is registered here as a
+		CFBundleAlternateIcons entry so we can switch to it at runtime via
+		UIApplication.setAlternateIconName("LatticeProIcon") when the user
+		upgrades their subscription.
 
 		File-naming convention: iOS auto-resolves @2x and @3x suffixes,
-		so we ship CloakProIcon.png / @2x / @3x as loose PNGs in the
+		so we ship LatticeProIcon.png / @2x / @3x as loose PNGs in the
 		bundle (NOT in the asset catalog — Apple's required pattern
 		for alternate icons since iOS 11).
 
 		UIPrerenderedIcon=true: the source PNGs already have the dark
-		matte background baked in; we don't want iOS to apply its
+		navy background baked in; we don't want iOS to apply its
 		default gloss-overlay on top of them.
 	-->
 	<key>CFBundleIcons</key>
 	<dict>
 		<key>CFBundleAlternateIcons</key>
 		<dict>
-			<key>CloakProIcon</key>
+			<key>LatticeProIcon</key>
 			<dict>
 				<key>CFBundleIconFiles</key>
 				<array>
-					<string>CloakProIcon</string>
+					<string>LatticeProIcon</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<true/>

@@ -18,7 +18,7 @@ struct CloakVPNApp: App {
                     async let _ = tunnel.refreshPublicIPIfNotConnected()
 
                     await tunnel.load()
-                    // CRITICAL UX: trigger the iOS "Cloak VPN Would Like
+                    // CRITICAL UX: trigger the iOS "Lattice VPN Would Like
                     // to Add VPN Configurations" prompt the MOMENT the app
                     // opens, not later when the user taps a region (which
                     // would force them to wait through a 3-8s server

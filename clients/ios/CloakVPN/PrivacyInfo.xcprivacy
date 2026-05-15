@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <!--
-        Cloak VPN — Apple Privacy Manifest.
+        Lattice VPN — Apple Privacy Manifest.
 
         Required by Apple for all new App Store submissions and significant
         updates as of Q1 2024. Declares:

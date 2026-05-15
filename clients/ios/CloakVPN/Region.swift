@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 //
-// Cloak VPN — Region catalog.
+// Lattice VPN — Region catalog.
 //
-// Hardcoded list of available Cloak regions, displayed in the in-app
+// Hardcoded list of available Lattice regions, displayed in the in-app
 // region picker (ContentView's quick-connect strip). When the user taps
 // a region's flag, TunnelManager.selectRegion runs the provisioning API
 // flow against that region's URL with the bundled API key, then the
