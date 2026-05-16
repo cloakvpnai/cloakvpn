@@ -1,4 +1,4 @@
-# cloakvpn.ai — marketing site
+# latticevpn.ai — marketing site
 
 Static, zero-build. Tailwind via CDN, vanilla JS. Deploys anywhere that serves HTML; recommended host is **Cloudflare Pages** (free tier, Cloudflare-managed TLS, no Cloudflare account required for the visitor, no JS runtime on our server to worry about logs for).
 
@@ -25,7 +25,7 @@ python3 -m http.server 8000
 ## Deploy to Cloudflare Pages
 
 Recommended because:
-- Free, global CDN, automatic HTTPS for `cloakvpn.ai`.
+- Free, global CDN, automatic HTTPS for `latticevpn.ai`.
 - Supports deploying a subdirectory of a monorepo.
 - No build command needed — we serve `website/` directly.
 
@@ -41,18 +41,18 @@ Recommended because:
 4. Environment variables: none needed yet.
 5. Deploy. You'll get `https://cloakvpn.pages.dev`.
 
-**Attach `cloakvpn.ai`:**
+**Attach `latticevpn.ai`:**
 
-1. Buy `cloakvpn.ai` (Cloudflare Registrar is cheapest and does not resell — ~$10/yr for `.ai` depending on registrar, `.ai` is usually pricier; confirm at checkout).
+1. Buy `latticevpn.ai` (Cloudflare Registrar is cheapest and does not resell — ~$10/yr for `.ai` depending on registrar, `.ai` is usually pricier; confirm at checkout).
 2. If you bought it through Cloudflare, nameservers are already set. If elsewhere, set their nameservers to the two Cloudflare ones shown in the dashboard.
-3. In Pages → *Custom domains* → add `cloakvpn.ai` and `www.cloakvpn.ai`. Cloudflare provisions TLS automatically (takes < 5 min).
+3. In Pages → *Custom domains* → add `latticevpn.ai` and `www.latticevpn.ai`. Cloudflare provisions TLS automatically (takes < 5 min).
 4. Turn on **Always use HTTPS** and **HSTS** in the zone's SSL/TLS → *Edge Certificates*.
 
 ## Stripe Pricing Table (when you're ready)
 
 The pricing page currently uses static HTML cards with a client-side billing toggle. To swap in a real Stripe-hosted Pricing Table:
 
-1. Create two **Products** in Stripe: `Cloak Basic` and `Cloak Pro`, each with a monthly and annual **Price**.
+1. Create two **Products** in Stripe: `Lattice Basic` and `Lattice Pro`, each with a monthly and annual **Price**.
 2. Stripe → *Product catalog → Pricing tables → Create pricing table*. Add both products; enable monthly+annual.
 3. Copy the generated `prctbl_...` ID and your `pk_live_...` publishable key.
 4. In `pricing.html`, find the commented-out `<!-- Stripe Pricing Table placeholder -->` block, paste the IDs, and uncomment.
