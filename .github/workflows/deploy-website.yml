@@ -1,0 +1,48 @@
+# Auto-deploy the marketing/legal website to Cloudflare Pages on every push
+# to main that touches the website/ directory (or this workflow itself).
+#
+# Replaces the broken Direct-Upload UI flow we hit on 2026-05-15 — the
+# `cloakvpn-ai` Pages project is in Direct Upload mode (Cloudflare's design
+# does not allow converting to Git-connected mode), so instead of fighting
+# with the dashboard's flaky bulk uploader we run `wrangler pages deploy`
+# from CI. Same end result (push to main -> cloakvpn.ai updates), more
+# reliable plumbing.
+#
+# Requires two repository secrets:
+#   CLOUDFLARE_API_TOKEN  - Cloudflare API token with `Account > Cloudflare
+#                           Pages > Edit` permission and `User > User
+#                           Details > Read`. Generated at
+#                           dash.cloudflare.com -> My Profile -> API Tokens.
+#   CLOUDFLARE_ACCOUNT_ID - 32-char hex string. Found on any project page
+#                           in the Cloudflare dashboard's right sidebar.
+#
+# To deploy manually (e.g. without a website/ change), use the
+# "Run workflow" button on the Actions tab in GitHub.
+
+name: Deploy website to Cloudflare Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'website/**'
+      - '.github/workflows/deploy-website.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy ./website --project-name=cloakvpn-ai --branch=main --commit-dirty=true
