@@ -1,0 +1,99 @@
+---
+/**
+ * Top navigation bar — light theme.
+ *
+ * White background, subtle bottom border on scroll, brand mark + page
+ * links + App Store CTA on the right. Mobile: links collapse into a
+ * hamburger sheet.
+ */
+import Logo from '@/components/Logo.astro';
+
+const links = [
+  { href: '/', label: 'Home' },
+  { href: '/pricing', label: 'Pricing' },
+  { href: '/#platforms', label: 'Apps' },
+  { href: '/audit', label: 'Security' },
+];
+const currentPath = Astro.url.pathname;
+---
+
+<header
+  id="site-nav"
+  class="fixed top-0 left-0 right-0 z-50 transition-all duration-200 bg-white/95 backdrop-blur"
+>
+  <div class="mx-auto max-w-6xl px-6 py-3.5 flex items-center justify-between">
+    <Logo size={38} showWordmark={true} />
+
+    <nav class="hidden md:flex items-center gap-8" aria-label="Primary">
+      {links.map((l) => (
+        <a
+          href={l.href}
+          class:list={[
+            'text-sm font-medium transition-colors',
+            currentPath === l.href ? 'text-slate-900' : 'text-slate-600 hover:text-slate-900',
+          ]}
+        >
+          {l.label}
+        </a>
+      ))}
+    </nav>
+
+    <a
+      href="https://apps.apple.com/app/lattice-vpn/id6764261045"
+      class="hidden md:inline-flex items-center gap-2 rounded-full bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm px-4 py-2 transition-colors"
+      target="_blank"
+      rel="noopener"
+    >
+      Get Lattice VPN
+    </a>
+
+    <button
+      type="button"
+      class="md:hidden p-2 text-slate-600 hover:text-slate-900"
+      aria-label="Open menu"
+      data-mobile-menu-toggle
+    >
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <line x1="3" y1="6" x2="21" y2="6" />
+        <line x1="3" y1="12" x2="21" y2="12" />
+        <line x1="3" y1="18" x2="21" y2="18" />
+      </svg>
+    </button>
+  </div>
+
+  <div
+    id="mobile-menu"
+    class="md:hidden hidden border-t border-slate-200 bg-white"
+    data-mobile-menu
+  >
+    <nav class="px-6 py-5 flex flex-col gap-4" aria-label="Mobile">
+      {links.map((l) => (
+        <a href={l.href} class="text-base font-medium text-slate-700">{l.label}</a>
+      ))}
+      <a
+        href="https://apps.apple.com/app/lattice-vpn/id6764261045"
+        class="mt-1 inline-flex items-center justify-center rounded-full bg-slate-900 text-white font-semibold text-sm px-4 py-2.5"
+        target="_blank" rel="noopener"
+      >
+        Get Lattice VPN
+      </a>
+    </nav>
+  </div>
+</header>
+
+<script>
+  const nav = document.getElementById('site-nav');
+  const onScroll = () => {
+    if (!nav) return;
+    const scrolled = window.scrollY > 8;
+    nav.classList.toggle('shadow-sm', scrolled);
+    nav.classList.toggle('border-b', scrolled);
+    nav.classList.toggle('border-slate-200', scrolled);
+  };
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  const toggle = document.querySelector('[data-mobile-menu-toggle]');
+  const menu = document.querySelector('[data-mobile-menu]');
+  toggle?.addEventListener('click', () => menu?.classList.toggle('hidden'));
+</script>

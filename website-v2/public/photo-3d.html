@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Photo Render</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: radial-gradient(circle at center, #2a2a2a 0%, #0a0a0a 100%);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+            cursor: pointer;
+        }
+
+        .instructions {
+            position: absolute;
+            bottom: 30px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.5);
+            pointer-events: none;
+            font-size: 14px;
+            letter-spacing: 1px;
+            z-index: 10;
+        }
+
+        .controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 15px 20px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            z-index: 20;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        .controls h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .controls p {
+            margin: 0 0 15px 0;
+            font-size: 13px;
+            color: rgba(255,255,255,0.7);
+            max-width: 250px;
+        }
+
+        .file-upload {
+            display: inline-block;
+            padding: 8px 16px;
+            background: white;
+            color: black;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .file-upload:hover {
+            background: #e0e0e0;
+            transform: translateY(-1px);
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+    </style>
+    
+    <!-- Import map for modern three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div class="controls">
+        <h3>3D Photo Viewer</h3>
+        <p>Render any photo as a premium 3D interactive model.</p>
+        <label class="file-upload">
+            <input type="file" id="image-upload" accept="image/*">
+            Upload Your Photo
+        </label>
+    </div>
+
+    <div id="canvas-container"></div>
+    <div class="instructions">MOVE MOUSE TO INTERACT WITH THE 3D MODEL</div>
+    
+    <script type="module">
+        import * as THREE from 'three';
+        import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+        // Configuration
+        const INITIAL_IMAGE = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
+        const MODEL_THICKNESS = 0.05;
+        const MODEL_CORNER_RADIUS = 0.05;
+
+        // Setup Scene
+        const container = document.getElementById('canvas-container');
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        // Better rendering for materials
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        container.appendChild(renderer.domElement);
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.z = 4;
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 2.0);
+        directionalLight.position.set(5, 5, 5);
+        scene.add(directionalLight);
+
+        // Add a back light for rim lighting effect
+        const backLight = new THREE.DirectionalLight(0xaabbff, 3.0);
+        backLight.position.set(-5, 5, -5);
+        scene.add(backLight);
+        
+        const pointLight = new THREE.PointLight(0xffddaa, 2.0, 10);
+        pointLight.position.set(0, 0, 2);
+        scene.add(pointLight);
+
+        // Global variables for the model
+        let photoGroup = new THREE.Group();
+        scene.add(photoGroup);
+        let currentMesh = null;
+        const textureLoader = new THREE.TextureLoader();
+        textureLoader.setCrossOrigin('anonymous'); // Allow external images
+
+        // Create the 3D Model from an Image
+        function create3DPhotoModel(imageUrl) {
+            // Remove existing mesh if present
+            if (currentMesh) {
+                photoGroup.remove(currentMesh);
+                currentMesh.geometry.dispose();
+                currentMesh.material.forEach(m => m.dispose());
+            }
+
+            textureLoader.load(imageUrl, (texture) => {
+                texture.colorSpace = THREE.SRGBColorSpace;
+                
+                // Calculate aspect ratio
+                const imageAspect = texture.image.width / texture.image.height;
+                
+                // Define base size
+                let width = 2;
+                let height = 2;
+                
+                if (imageAspect > 1) {
+                    height = width / imageAspect;
+                } else {
+                    width = height * imageAspect;
+                }
+
+                // Create a 3D box with rounded corners
+                const geometry = new RoundedBoxGeometry(width, height, MODEL_THICKNESS, 4, MODEL_CORNER_RADIUS);
+                
+                // Material for the edges and back
+                const edgeMaterial = new THREE.MeshPhysicalMaterial({
+                    color: 0x111111,
+                    metalness: 0.9,
+                    roughness: 0.2,
+                    clearcoat: 1.0,
+                    clearcoatRoughness: 0.1
+                });
+
+                // Material for the front (the photo itself)
+                const frontMaterial = new THREE.MeshPhysicalMaterial({
+                    map: texture,
+                    metalness: 0.1,
+                    roughness: 0.3,
+                    clearcoat: 0.8,
+                    clearcoatRoughness: 0.2
+                });
+
+                // Apply materials: [right, left, top, bottom, front, back]
+                const materials = [
+                    edgeMaterial, edgeMaterial, 
+                    edgeMaterial, edgeMaterial, 
+                    frontMaterial, edgeMaterial
+                ];
+
+                currentMesh = new THREE.Mesh(geometry, materials);
+                
+                // Add a subtle drop shadow under the photo
+                currentMesh.castShadow = true;
+                
+                photoGroup.add(currentMesh);
+                
+                // Reset rotation
+                targetRotation.set(0, 0);
+                photoGroup.rotation.set(0, 0, 0);
+            }, undefined, (err) => {
+                console.error('Error loading image:', err);
+                alert("Failed to load the image. Please try another one.");
+            });
+        }
+
+        // Initialize with default placeholder
+        create3DPhotoModel(INITIAL_IMAGE);
+
+        // Interaction - Mouse tracking
+        const mouse = new THREE.Vector2();
+        const targetRotation = new THREE.Vector2();
+        
+        window.addEventListener('mousemove', (e) => {
+            // Normalize mouse position to -1 to 1
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            
+            // Calculate target rotation (max rotation is around 25 degrees)
+            targetRotation.x = mouse.y * 0.4;
+            targetRotation.y = mouse.x * 0.4;
+        });
+        
+        // Touch support for mobile
+        window.addEventListener('touchmove', (e) => {
+            if(e.touches.length > 0) {
+                mouse.x = (e.touches[0].clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(e.touches[0].clientY / window.innerHeight) * 2 + 1;
+                targetRotation.x = mouse.y * 0.4;
+                targetRotation.y = mouse.x * 0.4;
+            }
+        });
+        
+        window.addEventListener('touchend', () => {
+            // Return to center when touch ends
+            targetRotation.x = 0;
+            targetRotation.y = 0;
+        });
+        
+        window.addEventListener('mouseleave', () => {
+            // Return to center when mouse leaves window
+            targetRotation.x = 0;
+            targetRotation.y = 0;
+        });
+
+        // Handle File Upload
+        document.getElementById('image-upload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    create3DPhotoModel(event.target.result);
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Animation Loop
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = clock.getElapsedTime();
+
+            // Smoothly interpolate current rotation towards target rotation
+            photoGroup.rotation.x += (targetRotation.x - photoGroup.rotation.x) * 0.05;
+            photoGroup.rotation.y += (targetRotation.y - photoGroup.rotation.y) * 0.05;
+            
+            // Add a subtle floating animation
+            photoGroup.position.y = Math.sin(time * 1.5) * 0.05;
+            
+            // Move the point light based on mouse for dynamic reflections
+            pointLight.position.x = mouse.x * 3;
+            pointLight.position.y = mouse.y * 3;
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+    </script>
+</body>
+</html>

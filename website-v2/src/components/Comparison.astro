@@ -1,0 +1,118 @@
+---
+/**
+ * Comparison section — Lattice VPN vs typical VPNs.
+ *
+ * Three-column comparison table. Left: feature name. Middle: typical VPN
+ * (subtle, slightly dim). Right: Lattice VPN (highlighted with mint accent).
+ *
+ * Designed to be honest: not every row is a Lattice win (e.g., "Number
+ * of regions" — typical VPNs have 50+, Lattice has 4 currently).
+ * Honesty builds trust with technical users.
+ */
+const rows = [
+  {
+    feature: 'Encryption against quantum attacks',
+    typical: { value: 'Vulnerable', good: false },
+    lattice: { value: 'Quantum-safe', good: true },
+  },
+  {
+    feature: 'Activity logs retained',
+    typical: { value: 'Often, despite marketing', good: false },
+    lattice: { value: 'None. Verifiable.', good: true },
+  },
+  {
+    feature: 'User account required',
+    typical: { value: 'Yes (email + password)', good: false },
+    lattice: { value: 'No account. Anonymous.', good: true },
+  },
+  {
+    feature: 'Apple App Store native',
+    typical: { value: 'Sometimes', good: false },
+    lattice: { value: 'Yes — purpose-built for iOS', good: true },
+  },
+  {
+    feature: 'Server regions',
+    typical: { value: '50+', good: true },
+    lattice: { value: '4 — global coverage, no bloat', good: 'neutral' as const },
+  },
+  {
+    feature: 'Kill switch',
+    typical: { value: 'Sometimes', good: false },
+    lattice: { value: 'Built-in, always on', good: true },
+  },
+  {
+    feature: 'Warrant canary',
+    typical: { value: 'Rare', good: false },
+    lattice: { value: 'Updated weekly', good: true },
+  },
+  {
+    feature: 'Independent security audit',
+    typical: { value: 'Marketing only', good: false },
+    lattice: { value: 'Public report', good: true },
+  },
+];
+---
+
+<section class="relative py-32">
+  <div class="mx-auto max-w-5xl px-6">
+    <div class="text-center mb-16 reveal">
+      <span class="inline-flex items-center gap-2 rounded-full holo-glass px-4 py-1.5 text-xs font-mono text-mint-400 mb-6">
+        COMPARE
+      </span>
+      <h2 class="font-display font-bold text-4xl md:text-5xl text-white tracking-tight">
+        Lattice VPN vs <span class="text-slate-500">typical VPNs</span>.
+      </h2>
+      <p class="mt-4 text-slate-400 max-w-2xl mx-auto">
+        We're going to be honest where competitors win, too. Privacy isn't marketing &mdash; it's the whole product.
+      </p>
+    </div>
+
+    <div class="holo-glass rounded-2xl overflow-hidden reveal">
+      <div class="grid grid-cols-[1.4fr_1fr_1fr] text-sm">
+        <!-- Header row -->
+        <div class="p-5 border-b border-mint-500/10 font-semibold text-slate-300 text-xs uppercase tracking-wider">
+          Feature
+        </div>
+        <div class="p-5 border-b border-l border-mint-500/10 font-semibold text-slate-500 text-xs uppercase tracking-wider text-center">
+          Typical VPN
+        </div>
+        <div class="p-5 border-b border-l border-mint-500/10 font-semibold text-mint-400 text-xs uppercase tracking-wider text-center bg-mint-500/5">
+          Lattice VPN
+        </div>
+
+        {rows.map((r, i) => (
+          <>
+            <div class:list={['p-5 text-slate-200 font-medium', i < rows.length - 1 && 'border-b border-mint-500/5']}>
+              {r.feature}
+            </div>
+            <div class:list={[
+              'p-5 border-l border-mint-500/5 text-center text-sm',
+              i < rows.length - 1 && 'border-b',
+              r.typical.good === true ? 'text-slate-300' : 'text-slate-500',
+            ]}>
+              {r.typical.good === false && (
+                <svg class="inline-block mr-1.5" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717A" stroke-width="2.5" stroke-linecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              )}
+              {r.typical.value}
+            </div>
+            <div class:list={[
+              'p-5 border-l border-mint-500/5 text-center text-sm font-medium bg-mint-500/5',
+              i < rows.length - 1 && 'border-b',
+              r.lattice.good === true && 'text-mint-300',
+              r.lattice.good === 'neutral' && 'text-slate-300',
+            ]}>
+              {r.lattice.good === true && (
+                <svg class="inline-block mr-1.5" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5FE3B5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              )}
+              {r.lattice.value}
+            </div>
+          </>
+        ))}
+      </div>
+    </div>
+  </div>
+</section>

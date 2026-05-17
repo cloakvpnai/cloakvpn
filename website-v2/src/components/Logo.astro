@@ -1,0 +1,40 @@
+---
+/**
+ * Lattice VPN brand mark.
+ *
+ * Uses the actual production app icon (lattice-logo.png) — the same
+ * 1024x1024 PNG that ships as the iOS app's AppIcon. This is the real
+ * brand mark with all its detail (glowing nodes, gradient halo, navy
+ * backdrop) rather than a procedural SVG approximation.
+ *
+ * Props:
+ *   size         — square width in px (default 32). Height matches.
+ *   showWordmark — render the "LATTICE VPN" text to the right of the mark.
+ *   class        — extra classes passed onto the wrapping link.
+ */
+interface Props {
+  size?: number;
+  showWordmark?: boolean;
+  class?: string;
+}
+
+const { size = 32, showWordmark = false, class: className = '' } = Astro.props;
+---
+
+<a href="/" class={`inline-flex items-center gap-2.5 group ${className}`} aria-label="Lattice VPN home">
+  <img
+    src="/lattice-logo.png"
+    alt="Lattice VPN"
+    width={size}
+    height={size}
+    class="rounded-[22%] shadow-[0_4px_14px_rgba(15,23,42,0.10)] transition-transform group-hover:scale-[1.04]"
+    style={`width: ${size}px; height: ${size}px;`}
+    loading="eager"
+    decoding="async"
+  />
+  {showWordmark && (
+    <span class="font-display font-bold tracking-tight text-slate-900 text-xl leading-none">
+      LATTICE<span class="text-mint-600 ml-1 font-semibold">VPN</span>
+    </span>
+  )}
+</a>

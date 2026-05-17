@@ -1,0 +1,175 @@
+/* Lattice VPN — global styles (light theme).
+ *
+ * Pivot from the previous dark/cinematic theme to a clean, commercial,
+ * trust-forward design pattern — modeled on the layout conventions used
+ * by ExpressVPN, NordVPN, PrivateInternetAccess: white background,
+ * generous whitespace, brand colors as accents only, clear visual
+ * hierarchy. The map-background hero with the IP-detection card is the
+ * conversion-driving centerpiece.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- Font loading -------------------------------------------------- */
+
+@font-face {
+  font-family: 'Inter';
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.18/files/inter-latin-400-normal.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.18/files/inter-latin-500-normal.woff2') format('woff2');
+  font-weight: 500; font-display: swap;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.18/files/inter-latin-600-normal.woff2') format('woff2');
+  font-weight: 600; font-display: swap;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.18/files/inter-latin-700-normal.woff2') format('woff2');
+  font-weight: 700; font-display: swap;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.18/files/inter-latin-800-normal.woff2') format('woff2');
+  font-weight: 800; font-display: swap;
+}
+
+/* ---- Base ---------------------------------------------------------- */
+
+html {
+  background: #FFFFFF;
+  color: #0F172A;
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: #FFFFFF;
+  min-height: 100vh;
+}
+
+::selection {
+  background: rgba(95, 227, 181, 0.25);
+  color: #0F172A;
+}
+
+/* ---- Reveal-on-scroll utility (kept from V1) ----------------------- */
+.reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 600ms cubic-bezier(0.16, 1, 0.3, 1),
+              transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.reveal.in-view { opacity: 1; transform: translateY(0); }
+
+/* ---- Soft card pattern (light) ------------------------------------- */
+.soft-card {
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04),
+              0 4px 12px -2px rgb(0 0 0 / 0.04);
+}
+.soft-card-hover:hover {
+  border-color: #5FE3B5;
+  box-shadow: 0 4px 6px -1px rgb(95 227 181 / 0.10),
+              0 10px 20px -5px rgb(95 227 181 / 0.10);
+  transform: translateY(-2px);
+  transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ---- Status pill colors -------------------------------------------- */
+.status-protected   { color: #059669; background: #D1FAE5; }
+.status-unprotected { color: #DC2626; background: #FEE2E2; }
+.status-checking    { color: #6B7280; background: #F3F4F6; }
+
+/* ---- Holographic glass card ----------------------------------------
+ * Frosted-glass background (backdrop-filter blur) + slowly rotating
+ * conic-gradient shimmer creates the iridescent holographic effect.
+ * Designed to pair with .pulse-card-mint for the green sonar boundary.
+ *
+ * The conic gradient on ::before rotates 360° over 14s so the prismatic
+ * highlights drift continuously without ever feeling busy. `isolation:
+ * isolate` keeps the z-index: -1 pseudo trapped inside the card so it
+ * appears UNDER the card content but ABOVE the card's own background.
+ */
+.holo-glass-card {
+  position: relative;
+  background:
+    linear-gradient(135deg,
+      rgba(255, 255, 255, 0.42) 0%,
+      rgba(248, 250, 252, 0.28) 50%,
+      rgba(255, 255, 255, 0.38) 100%);
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.15),
+    0 12px 36px -12px rgba(15, 23, 42, 0.15),
+    0 4px 12px -4px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.holo-glass-card::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  z-index: -1;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(95, 227, 181, 0.14)   60deg,   /* mint */
+    transparent                120deg,
+    rgba(184, 230, 255, 0.18) 180deg,   /* light blue */
+    transparent                240deg,
+    rgba(255, 179, 71, 0.10)  300deg,   /* amber */
+    transparent                360deg
+  );
+  animation: holo-rotate 14s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes holo-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .holo-glass-card::before { animation: none; }
+}
+
+/* ---- Mint pulse boundary -------------------------------------------
+ * Continuous sonar-ring effect using nested box-shadows. Three shadow
+ * layers expanding sequentially out of phase create a perpetual radiating
+ * pulse that visually flags the IP card as the focal point. Keeps the
+ * card's static drop-shadow underneath for depth.
+ */
+@keyframes mint-pulse-border {
+  0%   { box-shadow: 0 0 0 0 rgba(95, 227, 181, 0.65),
+                     0 0 0 0 rgba(95, 227, 181, 0.40),
+                     0 8px 24px -6px rgba(15, 23, 42, 0.10); }
+  60%  { box-shadow: 0 0 0 10px rgba(95, 227, 181, 0.10),
+                     0 0 0 20px rgba(95, 227, 181, 0.00),
+                     0 8px 24px -6px rgba(15, 23, 42, 0.10); }
+  100% { box-shadow: 0 0 0 14px rgba(95, 227, 181, 0.00),
+                     0 0 0 24px rgba(95, 227, 181, 0.00),
+                     0 8px 24px -6px rgba(15, 23, 42, 0.10); }
+}
+
+.pulse-card-mint {
+  border: 1.5px solid rgba(95, 227, 181, 0.55);
+  animation: mint-pulse-border 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-card-mint { animation: none; }
+}

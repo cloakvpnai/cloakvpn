@@ -1,0 +1,381 @@
+---
+import Logo from '@/components/Logo.astro';
+/**
+ * Home hero — light theme.
+ *
+ * Layout pattern modeled on the conversion-tested commercial-VPN format:
+ *   - Bold left-aligned headline + supporting copy
+ *   - Right-side IP-detection card showing visitor's current public IP,
+ *     geolocation, ISP, and protection status
+ *   - Greyscale world map as subtle background texture
+ *   - Brand mint/amber used only as small accents
+ *
+ * The IP card calls a free geolocation API (ipapi.co) on page load to
+ * populate the visitor's real public IP and location. Since they are
+ * NOT connected through Lattice VPN when they visit the marketing site,
+ * status shows "Unprotected" with a CTA to download the app. This is the
+ * core conversion mechanism on every commercial VPN site.
+ */
+---
+
+<section class="relative pt-32 pb-20 overflow-hidden">
+  <!-- Background: light gradient + greyscale world map -->
+  <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
+    <div class="absolute inset-0" style="background:
+      radial-gradient(ellipse 1000px 600px at 50% 0%, rgba(95, 227, 181, 0.05), transparent 70%),
+      linear-gradient(180deg, #F8FAFC 0%, #FFFFFF 70%);"></div>
+    <img
+      src="/world-map.svg"
+      alt=""
+      class="absolute top-20 left-1/2 -translate-x-1/2 w-[130%] max-w-none select-none"
+    />
+
+    <!--
+      Server mesh overlay — shares the world-map.svg viewBox (0 0 360 180)
+      and same preserveAspectRatio so coordinates align exactly with the
+      underlying map. Dots are placed at the lat/lon of each Lattice region
+      converted to equirectangular SVG coords:
+        US West (Oregon, 45.5°N, 122.7°W) -> (57.3, 44.5)
+        US East (Virginia, 37.5°N, 78.6°W) -> (101.4, 52.5)
+        Germany (Falkenstein, 50.5°N, 12.4°E) -> (192.4, 39.5)
+        Finland (Helsinki, 60.2°N, 24.9°E) -> (204.9, 29.8)
+      Arched lines between regions use quadratic Bezier curves with control
+      points lifted toward the top of the map for an upward arch shape.
+    -->
+    <svg
+      viewBox="0 0 360 180"
+      preserveAspectRatio="xMidYMid slice"
+      class="absolute top-20 left-1/2 -translate-x-1/2 w-[130%] max-w-none pointer-events-none"
+      aria-hidden="true"
+    >
+      <defs>
+        <filter id="server-glow" x="-100%" y="-100%" width="300%" height="300%">
+          <feGaussianBlur stdDeviation="0.7" />
+          <feMerge>
+            <feMergeNode />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <linearGradient id="mesh-stroke" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%"   stop-color="#5FE3B5" stop-opacity="0.3" />
+          <stop offset="50%"  stop-color="#5FE3B5" stop-opacity="0.75" />
+          <stop offset="100%" stop-color="#5FE3B5" stop-opacity="0.3" />
+        </linearGradient>
+      </defs>
+
+      <!-- Arching mesh lines between region pairs.
+           Q control point is lifted toward y=0 to create the upward arch. -->
+      <g fill="none" stroke="url(#mesh-stroke)" stroke-width="0.35" stroke-linecap="round" filter="url(#server-glow)">
+        <path d="M 57.3 44.5 Q 79.35 33  101.4 52.5" />
+        <path d="M 101.4 52.5 Q 146.9 28  192.4 39.5" />
+        <path d="M 192.4 39.5 Q 198.65 26 204.9 29.8" />
+        <path d="M 57.3 44.5 Q 124.85 18  192.4 39.5" />
+        <path d="M 101.4 52.5 Q 153.15 22  204.9 29.8" />
+      </g>
+
+      <!-- Outer expanding pulse rings (sonar effect) -->
+      <g fill="none" stroke="#5FE3B5" stroke-width="0.25">
+        <circle cx="57.3" cy="44.5" r="1.3">
+          <animate attributeName="r"       values="1.3;4.5"   dur="2.6s" repeatCount="indefinite" />
+          <animate attributeName="opacity" values="0.9;0"     dur="2.6s" repeatCount="indefinite" />
+        </circle>
+        <circle cx="101.4" cy="52.5" r="1.3">
+          <animate attributeName="r"       values="1.3;4.5"   dur="2.6s" repeatCount="indefinite" begin="0.6s" />
+          <animate attributeName="opacity" values="0.9;0"     dur="2.6s" repeatCount="indefinite" begin="0.6s" />
+        </circle>
+        <circle cx="192.4" cy="39.5" r="1.3">
+          <animate attributeName="r"       values="1.3;4.5"   dur="2.6s" repeatCount="indefinite" begin="1.2s" />
+          <animate attributeName="opacity" values="0.9;0"     dur="2.6s" repeatCount="indefinite" begin="1.2s" />
+        </circle>
+        <circle cx="204.9" cy="29.8" r="1.3">
+          <animate attributeName="r"       values="1.3;4.5"   dur="2.6s" repeatCount="indefinite" begin="1.8s" />
+          <animate attributeName="opacity" values="0.9;0"     dur="2.6s" repeatCount="indefinite" begin="1.8s" />
+        </circle>
+      </g>
+
+      <!-- Solid server dots (glowing) on top -->
+      <g filter="url(#server-glow)">
+        <circle cx="57.3"  cy="44.5" r="1.4" fill="#5FE3B5">
+          <animate attributeName="opacity" values="1;0.55;1" dur="2.6s" repeatCount="indefinite" />
+        </circle>
+        <circle cx="101.4" cy="52.5" r="1.4" fill="#5FE3B5">
+          <animate attributeName="opacity" values="1;0.55;1" dur="2.6s" repeatCount="indefinite" begin="0.6s" />
+        </circle>
+        <circle cx="192.4" cy="39.5" r="1.4" fill="#5FE3B5">
+          <animate attributeName="opacity" values="1;0.55;1" dur="2.6s" repeatCount="indefinite" begin="1.2s" />
+        </circle>
+        <circle cx="204.9" cy="29.8" r="1.4" fill="#5FE3B5">
+          <animate attributeName="opacity" values="1;0.55;1" dur="2.6s" repeatCount="indefinite" begin="1.8s" />
+        </circle>
+      </g>
+    </svg>
+  </div>
+
+  <div class="relative mx-auto max-w-6xl px-6">
+    <div class="grid lg:grid-cols-[1.1fr_1fr] gap-12 lg:gap-16 items-center">
+
+      <!-- Left: headline + copy + CTAs -->
+      <div>
+        <!-- Large brand mark — sits above the headline for strong first-glance brand recognition -->
+        <div class="mb-7 reveal flex items-center gap-4">
+          <Logo size={104} showWordmark={false} />
+          <span class="font-display font-extrabold tracking-tight text-slate-900 text-3xl leading-none">
+            LATTICE<span class="text-mint-600 ml-1.5 font-bold">VPN</span>
+          </span>
+        </div>
+
+        <span class="inline-flex items-center gap-2.5 rounded-full bg-mint-500/15 border-2 border-mint-500/60 px-5 py-2 text-sm font-bold tracking-wide text-mint-700 mb-6 reveal shadow-[0_4px_14px_rgba(95,227,181,0.20)]">
+          <span class="relative inline-flex w-2.5 h-2.5">
+            <span class="absolute inline-flex w-full h-full rounded-full bg-mint-500 opacity-60 animate-ping"></span>
+            <span class="relative inline-block w-2.5 h-2.5 rounded-full bg-mint-500"></span>
+          </span>
+          POST-QUANTUM ENCRYPTION
+        </span>
+
+        <h1 class="font-display text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.05] text-slate-900 reveal" style="transition-delay: 80ms;">
+          Privacy that survives <br class="hidden md:block" />
+          tomorrow's computers.
+        </h1>
+
+        <p class="mt-5 text-lg text-slate-600 max-w-xl reveal" style="transition-delay: 160ms;">
+          Lattice VPN encrypts your internet traffic with cryptography designed to resist
+          quantum attacks &mdash; protecting your data today and decades from now.
+        </p>
+
+        <div class="mt-8 flex flex-col sm:flex-row gap-3 reveal" style="transition-delay: 240ms;">
+          <a
+            href="https://apps.apple.com/app/lattice-vpn/id6764261045"
+            class="inline-flex items-center justify-center gap-2.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white font-semibold text-base px-6 py-3.5 transition-colors"
+            target="_blank" rel="noopener"
+          >
+            <svg width="18" height="20" viewBox="0 0 14 16" fill="currentColor" aria-hidden="true">
+              <path d="M11.36 8.5c0-1.86 1.52-2.75 1.59-2.79-.87-1.27-2.22-1.44-2.69-1.46-1.14-.12-2.24.67-2.82.67-.59 0-1.48-.66-2.44-.64-1.25.02-2.42.74-3.07 1.86-1.32 2.29-.33 5.66.94 7.51.63.91 1.36 1.93 2.32 1.89.93-.04 1.28-.6 2.4-.6 1.12 0 1.43.6 2.41.58 1-.02 1.62-.92 2.22-1.84.71-1.06.99-2.09 1.01-2.14-.02-.01-1.93-.74-1.94-2.94zM9.4 3.6c.5-.62.85-1.46.75-2.31-.73.03-1.62.48-2.15 1.1-.47.54-.89 1.41-.78 2.24.83.07 1.67-.42 2.18-1.03z" />
+            </svg>
+            Get Lattice for iPhone
+          </a>
+          <a
+            href="/pricing"
+            class="inline-flex items-center justify-center gap-2 rounded-full bg-white hover:bg-slate-50 border border-slate-300 text-slate-900 font-semibold text-base px-6 py-3.5 transition-colors"
+          >
+            See pricing
+          </a>
+        </div>
+
+        <p class="mt-6 text-sm text-slate-500 reveal" style="transition-delay: 320ms;">
+          30-day money-back guarantee &middot; No logs &middot; No accounts
+        </p>
+      </div>
+
+      <!-- Right: IP / location / protection-status card -->
+      <div class="reveal" style="transition-delay: 360ms;">
+        <div class="holo-glass-card pulse-card-mint rounded-2xl p-6 sm:p-7">
+          <div class="flex items-center justify-between mb-5">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Your connection</p>
+              <p class="text-sm text-slate-700">Live check based on your current network</p>
+            </div>
+            <span id="ip-status-pill" class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold status-checking">
+              <span class="inline-block w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>
+              <span data-status-label>Checking…</span>
+            </span>
+          </div>
+
+          <div class="space-y-4">
+            <div class="flex items-baseline justify-between gap-4 pb-3 border-b border-slate-100">
+              <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">IP address</span>
+              <span class="font-mono text-lg text-slate-900 truncate" data-ip>—</span>
+            </div>
+            <div class="flex items-baseline justify-between gap-4 pb-3 border-b border-slate-100">
+              <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Location</span>
+              <span class="text-sm text-slate-900 text-right" data-location>—</span>
+            </div>
+            <div class="flex items-baseline justify-between gap-4 pb-3 border-b border-slate-100">
+              <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">ISP</span>
+              <span class="text-sm text-slate-900 text-right truncate max-w-[60%]" data-isp>—</span>
+            </div>
+            <div class="flex items-baseline justify-between gap-4">
+              <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Status</span>
+              <span class="text-sm font-semibold text-right" data-status-text>—</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<script>
+  /**
+   * Fetch the visitor's public IP + geolocation from ipapi.co (free tier,
+   * no API key required, supports HTTPS). Populate the card. Since the
+   * visitor is on the marketing site, they're not connected via Lattice
+   * — so status is always "Unprotected" with conversion CTA.
+   *
+   * Future: when iOS app ships and users visit from inside the tunnel,
+   * we can detect that by checking if the public IP matches one of our
+   * known region-server IPs (cloak-{region}.cloakvpn.ai resolution).
+   */
+  type IpInfo = {
+    ip?: string;
+    city?: string;
+    region?: string;
+    country_name?: string;
+    org?: string;
+    error?: boolean;
+  };
+
+  /**
+   * Translate a WHOIS organization name (legal entity, e.g. "Charter
+   * Communications") to the consumer brand the visitor actually
+   * recognizes (e.g. "Spectrum"). Most ISPs operate under a brand that
+   * differs from their corporate name in WHOIS/RIR records, and showing
+   * the legal name makes the card feel inaccurate even when it isn't.
+   *
+   * Matching is case-insensitive and substring-based — handles the
+   * variations in how RIRs format names (e.g. "Charter Communications",
+   * "Charter Communications Inc", "Charter Communications, LLC").
+   * Entries ordered most-specific-first so subtype matches (e.g.
+   * "Comcast Business" vs "Comcast Cable") resolve correctly.
+   */
+  function consumerBrand(orgName: string | undefined): string {
+    if (!orgName) return 'Unknown';
+    const lower = orgName.toLowerCase();
+    const mappings: Array<[string, string]> = [
+      // US — major residential ISPs
+      ['charter communications',  'Spectrum'],
+      ['time warner cable',       'Spectrum'],         // legacy WHOIS name
+      ['comcast business',        'Comcast Business'],
+      ['comcast cable',           'Xfinity'],
+      ['comcast',                 'Xfinity'],
+      ['at&t mobility',           'AT&T Mobile'],
+      ['at&t services',           'AT&T Internet'],
+      ['at&t corp',               'AT&T'],
+      ['at&t',                    'AT&T'],
+      ['lumen technologies',      'CenturyLink'],
+      ['centurytel',              'CenturyLink'],
+      ['centurylink',             'CenturyLink'],
+      ['qwest',                   'CenturyLink'],
+      ['cox business',            'Cox Business'],
+      ['cox communications',      'Cox'],
+      ['verizon business',        'Verizon'],
+      ['verizon wireless',        'Verizon Wireless'],
+      ['cellco partnership',      'Verizon Wireless'],
+      ['verizon',                 'Verizon'],
+      ['t-mobile',                'T-Mobile'],
+      ['sprint',                  'T-Mobile'],
+      ['mediacom',                'Mediacom'],
+      ['frontier communications', 'Frontier'],
+      ['frontier online',         'Frontier'],
+      ['windstream',              'Kinetic by Windstream'],
+      ['suddenlink',              'Optimum'],
+      ['altice',                  'Optimum'],
+      ['cablevision',             'Optimum'],
+      ['rcn',                     'Astound Broadband'],
+      ['grande communications',   'Astound Broadband'],
+      ['wave broadband',          'Astound Broadband'],
+      ['atlantic broadband',      'Breezeline'],
+      ['cable one',               'Sparklight'],
+      ['wow! internet',           'WOW!'],
+      ['google fiber',            'Google Fiber'],
+      ['starlink',                'Starlink'],
+      // Cloud providers (if visitor is on a server)
+      ['amazon technologies',     'Amazon AWS'],
+      ['amazon.com',              'Amazon AWS'],
+      ['microsoft',               'Microsoft Azure'],
+      ['google llc',              'Google Cloud'],
+      ['cloudflare',              'Cloudflare'],
+      ['hetzner',                 'Hetzner'],
+      ['digitalocean',            'DigitalOcean'],
+      ['linode',                  'Linode (Akamai)'],
+      ['ovh',                     'OVH'],
+      // International
+      ['british telecommunications', 'BT'],
+      ['bt public',               'BT'],
+      ['sky uk',                  'Sky'],
+      ['virgin media',            'Virgin Media'],
+      ['talktalk',                'TalkTalk'],
+      ['plusnet',                 'Plusnet'],
+      ['deutsche telekom',        'Telekom (Magenta)'],
+      ['vodafone gmbh',           'Vodafone DE'],
+      ['vodafone limited',        'Vodafone UK'],
+      ['vodafone',                'Vodafone'],
+      ['orange s.a',              'Orange'],
+      ['free sas',                'Free'],
+      ['bouygues',                'Bouygues Telecom'],
+      ['proximus',                'Proximus'],
+      ['kpn',                     'KPN'],
+      ['ziggo',                   'Ziggo'],
+      ['telia',                   'Telia'],
+      ['rogers communications',   'Rogers'],
+      ['bell canada',             'Bell'],
+      ['telus',                   'Telus'],
+      ['shaw communications',     'Shaw'],
+      ['videotron',               'Videotron'],
+      ['cogeco',                  'Cogeco'],
+      ['telstra',                 'Telstra'],
+      ['optus',                   'Optus'],
+      ['tpg',                     'TPG'],
+      ['nbn co',                  'NBN'],
+    ];
+    for (const [needle, brand] of mappings) {
+      if (lower.includes(needle)) return brand;
+    }
+    // No mapping — return the original with corporate suffixes trimmed
+    return orgName
+      .replace(/,?\s*(LLC|L\.L\.C\.?|Inc\.?|Ltd\.?|Limited|Corp\.?|Corporation|Co\.?|GmbH|S\.A\.?|B\.V\.?|N\.V\.?|S\.r\.l\.?|Pty Ltd)\.?$/gi, '')
+      .trim();
+  }
+
+  async function loadIp() {
+    const $ip       = document.querySelector<HTMLElement>('[data-ip]');
+    const $location = document.querySelector<HTMLElement>('[data-location]');
+    const $isp      = document.querySelector<HTMLElement>('[data-isp]');
+    const $statusText = document.querySelector<HTMLElement>('[data-status-text]');
+    const $statusLabel = document.querySelector<HTMLElement>('[data-status-label]');
+    const $pill     = document.getElementById('ip-status-pill');
+    const $cta      = document.querySelector<HTMLElement>('[data-call-to-action]');
+
+    try {
+      const res = await fetch('https://ipapi.co/json/');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: IpInfo = await res.json();
+      if (data.error) throw new Error('ipapi error');
+
+      if ($ip)       $ip.textContent       = data.ip ?? 'Unknown';
+      if ($location) $location.textContent = [data.city, data.region, data.country_name].filter(Boolean).join(', ') || 'Unknown';
+      if ($isp)      $isp.textContent      = consumerBrand(data.org);
+
+      // Always "Unprotected" — visitor is on the marketing site, not the tunnel
+      if ($pill) {
+        $pill.classList.remove('status-checking');
+        $pill.classList.add('status-unprotected');
+      }
+      if ($statusLabel) $statusLabel.textContent = 'Unprotected';
+      if ($statusText)  {
+        $statusText.textContent = 'Exposed';
+        $statusText.classList.add('text-red-600');
+      }
+      if ($cta) {
+        $cta.textContent = `Anyone watching your network can see your IP (${data.ip}) and approximate location (${data.city || data.country_name || 'your area'}). Lattice VPN hides both.`;
+      }
+    } catch (e) {
+      // Fall back gracefully
+      if ($ip)       $ip.textContent       = 'Unavailable';
+      if ($location) $location.textContent = 'Unavailable';
+      if ($isp)      $isp.textContent      = 'Unavailable';
+      if ($pill) {
+        $pill.classList.remove('status-checking');
+        $pill.classList.add('status-unprotected');
+      }
+      if ($statusLabel) $statusLabel.textContent = 'Unprotected';
+      if ($statusText) {
+        $statusText.textContent = 'Exposed';
+        $statusText.classList.add('text-red-600');
+      }
+    }
+  }
+
+  loadIp();
+</script>

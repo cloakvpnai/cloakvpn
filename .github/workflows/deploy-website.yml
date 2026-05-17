@@ -1,12 +1,18 @@
-# Auto-deploy the marketing/legal website to Cloudflare Pages on every push
-# to main that touches the website/ directory (or this workflow itself).
+# Auto-deploy the Lattice VPN website to Cloudflare Pages on every push
+# to main that touches the website-v2/ directory (or this workflow itself).
 #
-# Replaces the broken Direct-Upload UI flow we hit on 2026-05-15 — the
-# `cloakvpn-ai` Pages project is in Direct Upload mode (Cloudflare's design
-# does not allow converting to Git-connected mode), so instead of fighting
-# with the dashboard's flaky bulk uploader we run `wrangler pages deploy`
-# from CI. Same end result (push to main -> cloakvpn.ai updates), more
-# reliable plumbing.
+# History:
+#  - 2026-05-15: First wired up wrangler-action to replace the broken
+#    Direct-Upload UI flow. Deployed plain static files from ./website.
+#  - 2026-05-16: Migrated to the Astro-based website-v2 (Lattice rebrand,
+#    holographic IP card, world-map hero, post-quantum messaging). The
+#    legacy ./website directory has been removed.
+#
+# The `cloakvpn-ai` Pages project is in Direct Upload mode (Cloudflare's
+# design does not allow converting to Git-connected mode after creation),
+# so we build the Astro site here in CI and push the static dist/ output
+# via `wrangler pages deploy`. Pushes to main land on latticevpn.ai +
+# cloakvpn.ai automatically.
 #
 # Requires two repository secrets:
 #   CLOUDFLARE_API_TOKEN  - Cloudflare API token with `Account > Cloudflare
@@ -16,7 +22,7 @@
 #   CLOUDFLARE_ACCOUNT_ID - 32-char hex string. Found on any project page
 #                           in the Cloudflare dashboard's right sidebar.
 #
-# To deploy manually (e.g. without a website/ change), use the
+# To deploy manually (e.g. without a website-v2/ change), use the
 # "Run workflow" button on the Actions tab in GitHub.
 
 name: Deploy website to Cloudflare Pages
@@ -26,7 +32,7 @@ on:
     branches:
       - main
     paths:
-      - 'website/**'
+      - 'website-v2/**'
       - '.github/workflows/deploy-website.yml'
   workflow_dispatch:
 
@@ -40,9 +46,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: website-v2/package-lock.json
+
+      - name: Install dependencies
+        working-directory: website-v2
+        run: npm ci
+
+      - name: Build Astro site
+        working-directory: website-v2
+        run: npm run build
+
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy ./website --project-name=cloakvpn-ai --branch=main --commit-dirty=true
+          command: pages deploy ./website-v2/dist --project-name=cloakvpn-ai --branch=main --commit-dirty=true

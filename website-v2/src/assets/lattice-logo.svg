@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Lattice VPN — primary brand mark.
+
+  Hand-drawn SVG redraw of the AI-generated source icon. Lattice-shield
+  motif: a shield silhouette filled with a 4-row x 4-column lattice grid.
+  Inner intersections are "nodes" — mint-green where they sit on grid
+  intersections that fall on the shield's symmetry line, amber where they
+  sit on the load-bearing corners. Stroke weight is consistent throughout.
+
+  Designed for animation: each .lattice-line and .lattice-node has a
+  unique id so JS can target them individually (draw-in on page load,
+  pulse on hover, react to scroll, etc.).
+
+  Viewbox is 200x240 — taller than wide, matching the shield's natural
+  silhouette. All coordinates are integers or half-integers for crisp
+  rendering at common display sizes (24, 48, 96, 192, 1024).
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 240" fill="none" role="img" aria-label="Lattice VPN logo">
+  <defs>
+    <linearGradient id="lattice-stroke" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5FE3B5" />
+      <stop offset="100%" stop-color="#7EE5C2" />
+    </linearGradient>
+    <filter id="node-glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="2.5" />
+      <feMerge>
+        <feMergeNode />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Shield outline.
+       Path: top-center -> top-right corner -> swoop down both sides ->
+       point at bottom. Classic heater-shield shape, slightly elongated
+       for a more modern feel. -->
+  <path id="lattice-shield"
+        d="M 100 20
+           L 180 50
+           L 180 130
+           Q 180 180 100 220
+           Q 20 180 20 130
+           L 20 50 Z"
+        stroke="url(#lattice-stroke)"
+        stroke-width="2.5"
+        stroke-linejoin="round"
+        fill="rgba(95, 227, 181, 0.04)" />
+
+  <!-- Internal lattice grid.
+       4 horizontal "rungs" + diagonals forming a 3D-ish wireframe. -->
+  <g id="lattice-lines" stroke="url(#lattice-stroke)" stroke-width="1.5" stroke-linecap="round">
+    <!-- Horizontals -->
+    <line id="ll-h1" x1="35"  y1="75"  x2="165" y2="75"  />
+    <line id="ll-h2" x1="32"  y1="115" x2="168" y2="115" />
+    <line id="ll-h3" x1="38"  y1="155" x2="162" y2="155" />
+    <line id="ll-h4" x1="55"  y1="190" x2="145" y2="190" />
+
+    <!-- Verticals -->
+    <line id="ll-v1" x1="65"  y1="55"  x2="65"  y2="195" />
+    <line id="ll-v2" x1="100" y1="35"  x2="100" y2="210" />
+    <line id="ll-v3" x1="135" y1="55"  x2="135" y2="195" />
+
+    <!-- Diagonals (give the 3D lattice feel) -->
+    <line id="ll-d1" x1="35"  y1="75"  x2="100" y2="115" />
+    <line id="ll-d2" x1="165" y1="75"  x2="100" y2="115" />
+    <line id="ll-d3" x1="100" y1="115" x2="32"  y2="155" />
+    <line id="ll-d4" x1="100" y1="115" x2="168" y2="155" />
+    <line id="ll-d5" x1="32"  y1="155" x2="100" y2="190" />
+    <line id="ll-d6" x1="168" y1="155" x2="100" y2="190" />
+  </g>
+
+  <!-- Nodes (intersection dots).
+       Amber nodes on the central spine (load-bearing intersections);
+       mint nodes everywhere else. The glow filter makes them appear
+       to emit light. -->
+  <g id="lattice-nodes" filter="url(#node-glow)">
+    <!-- Outer-ring mint nodes -->
+    <circle id="ln-m1" cx="65"  cy="75"  r="4" fill="#5FE3B5" />
+    <circle id="ln-m2" cx="135" cy="75"  r="4" fill="#5FE3B5" />
+    <circle id="ln-m3" cx="65"  cy="155" r="4" fill="#5FE3B5" />
+    <circle id="ln-m4" cx="135" cy="155" r="4" fill="#5FE3B5" />
+    <circle id="ln-m5" cx="35"  cy="75"  r="3" fill="#5FE3B5" />
+    <circle id="ln-m6" cx="165" cy="75"  r="3" fill="#5FE3B5" />
+    <circle id="ln-m7" cx="32"  cy="115" r="3" fill="#5FE3B5" />
+    <circle id="ln-m8" cx="168" cy="115" r="3" fill="#5FE3B5" />
+    <circle id="ln-m9" cx="55"  cy="190" r="3" fill="#5FE3B5" />
+    <circle id="ln-m10" cx="145" cy="190" r="3" fill="#5FE3B5" />
+
+    <!-- Central spine amber nodes (the "load-bearing" core) -->
+    <circle id="ln-a1" cx="100" cy="75"  r="5" fill="#FFB347" />
+    <circle id="ln-a2" cx="100" cy="115" r="6" fill="#FFB347" />
+    <circle id="ln-a3" cx="100" cy="155" r="5" fill="#FFB347" />
+    <circle id="ln-a4" cx="100" cy="190" r="4" fill="#FFB347" />
+  </g>
+</svg>

@@ -1,0 +1,85 @@
+---
+/**
+ * Site-wide HTML wrapper.
+ *
+ * Sets up head tags (meta, OG, favicon), pulls in the global stylesheet,
+ * wraps page content in <Navbar /> + <slot /> + <Footer />. Pages just
+ * import this and pass their content into the default slot.
+ *
+ * Props:
+ *   title       — page <title>. Will be prefixed with "Lattice VPN — ".
+ *   description — meta description, OG description, twitter description.
+ */
+import '@/styles/global.css';
+import Navbar from '@/components/Navbar.astro';
+import Footer from '@/components/Footer.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const {
+  title,
+  description = 'Encrypted internet protection built to survive tomorrow’s computers. No logs. No accounts. Just privacy.',
+} = Astro.props;
+
+const fullTitle = title === 'home' ? 'Lattice VPN — Post-quantum VPN for iPhone' : `Lattice VPN — ${title}`;
+const ogImage = '/og-image.png';
+const canonical = new URL(Astro.url.pathname, Astro.site).toString();
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#040810" />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+
+    <!-- Open Graph / Twitter -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={ogImage} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
+    <!-- Preconnects for font CDN -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  </head>
+
+  <body class="min-h-screen text-slate-900 antialiased overflow-x-hidden">
+    <Navbar />
+    <main class="relative">
+      <slot />
+    </main>
+    <Footer />
+
+    <script>
+      // Reveal-on-scroll handler.
+      // Any element with class "reveal" gets "in-view" added when it enters
+      // the viewport, which triggers the CSS transition in global.css.
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('in-view');
+              io.unobserve(entry.target);
+            }
+          }
+        },
+        { rootMargin: '0px 0px -10% 0px', threshold: 0.05 }
+      );
+      document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+    </script>
+  </body>
+</html>

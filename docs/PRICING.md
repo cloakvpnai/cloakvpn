@@ -50,7 +50,7 @@ Pro differentiates on convenience and coverage (devices, locations, obfuscation,
    - URL: `https://api.cloakvpn.ai/v1/webhook/stripe`
    - Events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`
    - Store the `whsec_…` as `STRIPE_WEBHOOK_SECRET`.
-5. Dashboard → **Product catalog → Pricing tables → Create** and add both Products. Copy the `prctbl_…` ID into `website/pricing.html` (there's a commented block ready for it).
+5. Dashboard → **Product catalog → Pricing tables → Create** and add both Products. Copy the `prctbl_…` ID into `website-v2/src/pages/pricing.astro` (there's a commented block ready for it).
 
 ## Payment methods beyond Stripe
 

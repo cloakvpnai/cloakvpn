@@ -1,0 +1,102 @@
+---
+/**
+ * How It Works section.
+ *
+ * Three-step visual walkthrough of what happens when you tap Connect.
+ * Each step is presented as a card with: large numeral, icon, title,
+ * description, and a small "under-the-hood" mono-font detail line for
+ * the technical-curious.
+ *
+ * Layout: horizontal on desktop with connecting lines between steps,
+ * stacked vertical on mobile.
+ */
+const steps = [
+  {
+    n: '01',
+    title: 'You tap Connect.',
+    body: "Your iPhone generates a fresh keypair locally — neither we nor your ISP ever see your private key.",
+    detail: '> Curve25519 + Classic McEliece keypair, 0 round-trips',
+  },
+  {
+    n: '02',
+    title: 'A quantum-safe key exchange happens.',
+    body: "Your device and our region server agree on an encryption key that even a quantum computer couldn't intercept.",
+    detail: '> Rosenpass PQ handshake, completes in ~80ms',
+  },
+  {
+    n: '03',
+    title: 'Your traffic flows encrypted.',
+    body: "Every packet is encrypted on your phone, decrypted at the region server, and routed to its destination. Your ISP, Wi-Fi, and we ourselves see nothing.",
+    detail: '> WireGuard tunnel, PSK rotated every 120s',
+  },
+];
+---
+
+<section id="how-it-works" class="relative py-32">
+  <div class="mx-auto max-w-6xl px-6">
+    <div class="text-center mb-16 reveal">
+      <span class="inline-flex items-center gap-2 rounded-full holo-glass px-4 py-1.5 text-xs font-mono text-mint-400 mb-6">
+        HOW IT WORKS
+      </span>
+      <h2 class="font-display font-bold text-4xl md:text-5xl text-white tracking-tight">
+        Three seconds. <span class="text-gradient-mint-amber">Three steps.</span>
+      </h2>
+      <p class="mt-4 text-slate-400 max-w-2xl mx-auto">
+        From tap to encrypted. No accounts to create, no servers to choose. Just privacy.
+      </p>
+    </div>
+
+    <div class="relative grid md:grid-cols-3 gap-6 md:gap-4">
+      <!-- Connecting line behind step cards on desktop -->
+      <div class="hidden md:block absolute top-12 left-[16.67%] right-[16.67%] h-px bg-gradient-to-r from-transparent via-mint-500/30 to-transparent pointer-events-none"></div>
+
+      {steps.map((s, i) => (
+        <div
+          class="relative reveal"
+          style={`transition-delay: ${i * 120}ms;`}
+        >
+          <!-- Step number badge -->
+          <div class="relative mx-auto w-24 h-24 rounded-full holo-glass-strong border-mint-500/30 flex items-center justify-center mb-6">
+            <span class="font-mono text-2xl font-bold text-gradient-mint-amber">{s.n}</span>
+            <!-- Pulsing ring -->
+            <div class="absolute inset-0 rounded-full border border-mint-500/40 animate-ping" style={`animation-duration: 3s; animation-delay: ${i * 1000}ms;`}></div>
+          </div>
+
+          <div class="text-center md:text-left">
+            <h3 class="font-display font-semibold text-xl mb-3 text-white">{s.title}</h3>
+            <p class="text-sm text-slate-400 leading-relaxed mb-4">{s.body}</p>
+            <p class="font-mono text-xs text-mint-400/70 break-all">{s.detail}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    <!-- Spec bar at the bottom -->
+    <div class="mt-20 holo-glass rounded-2xl p-6 reveal flex flex-wrap items-center justify-around gap-6 text-center">
+      <div>
+        <div class="font-mono text-2xl font-bold text-mint-400">~80ms</div>
+        <div class="text-xs text-slate-400 mt-1">PQ handshake</div>
+      </div>
+      <div class="w-px h-10 bg-mint-500/10 hidden sm:block"></div>
+      <div>
+        <div class="font-mono text-2xl font-bold text-amber-400">120s</div>
+        <div class="text-xs text-slate-400 mt-1">PSK rotation</div>
+      </div>
+      <div class="w-px h-10 bg-mint-500/10 hidden sm:block"></div>
+      <div>
+        <div class="font-mono text-2xl font-bold text-mint-400">0</div>
+        <div class="text-xs text-slate-400 mt-1">Logs retained</div>
+      </div>
+      <div class="w-px h-10 bg-mint-500/10 hidden sm:block"></div>
+      <div>
+        <div class="font-mono text-2xl font-bold text-amber-400">4</div>
+        <div class="text-xs text-slate-400 mt-1">Global regions</div>
+      </div>
+      <div class="w-px h-10 bg-mint-500/10 hidden sm:block"></div>
+      <div>
+        <div class="font-mono text-2xl font-bold text-mint-400">∞</div>
+        <div class="text-xs text-slate-400 mt-1">Bandwidth</div>
+      </div>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,53 @@
+---
+/**
+ * Footer — light theme.
+ * Clean sitemap-style grid + entity attribution row.
+ */
+import Logo from '@/components/Logo.astro';
+---
+
+<footer class="relative mt-24 border-t border-slate-200 bg-slate-50/60">
+  <div class="mx-auto max-w-6xl px-6 py-14">
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-10">
+      <div class="col-span-2">
+        <Logo size={28} showWordmark={true} />
+        <p class="mt-4 text-sm text-slate-600 max-w-xs leading-relaxed">
+          Encrypted internet protection built to survive tomorrow's computers.
+        </p>
+      </div>
+
+      <div>
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Product</h3>
+        <ul class="space-y-2">
+          <li><a href="/" class="text-sm text-slate-700 hover:text-slate-900 transition-colors">Home</a></li>
+          <li><a href="/pricing" class="text-sm text-slate-700 hover:text-slate-900 transition-colors">Pricing</a></li>
+          <li><a href="/#platforms" class="text-sm text-slate-700 hover:text-slate-900 transition-colors">Apps</a></li>
+          <li><a href="https://apps.apple.com/app/lattice-vpn/id6764261045" target="_blank" rel="noopener" class="text-sm text-slate-700 hover:text-slate-900 transition-colors">Download</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Trust</h3>
+        <ul class="space-y-2">
+          <li><a href="/audit" class="text-sm text-slate-700 hover:text-slate-900 transition-colors">Audit</a></li>
+          <li><a href="/canary" class="text-sm text-slate-700 hover:text-slate-900 transition-colors">Warrant canary</a></li>
+          <li><a href="/transparency" class="text-sm text-slate-700 hover:text-slate-900 transition-colors">Transparency</a></li>
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Legal</h3>
+        <ul class="space-y-2">
+          <li><a href="/privacy" class="text-sm text-slate-700 hover:text-slate-900 transition-colors">Privacy policy</a></li>
+          <li><a href="/terms" class="text-sm text-slate-700 hover:text-slate-900 transition-colors">Terms of service</a></li>
+          <li><a href="mailto:support@latticevpn.ai" class="text-sm text-slate-700 hover:text-slate-900 transition-colors break-all">support@latticevpn.ai</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="mt-12 pt-6 border-t border-slate-200 flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
+      <p class="text-xs text-slate-500">&copy; 2026 Lattice VPN. Operated by Kryptoknightz LLC.</p>
+      <p class="text-xs text-slate-400 font-mono">Built with post-quantum encryption.</p>
+    </div>
+  </div>
+</footer>
