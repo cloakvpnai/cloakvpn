@@ -1,0 +1,15 @@
+{
+  "originHash" : "d6caeee8389a390a93ee4e3a7ed781109e0d9635451e2cb6ea249866a5d188c2",
+  "pins" : [
+    {
+      "identity" : "wireguard-apple",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/mullvad/wireguard-apple.git",
+      "state" : {
+        "branch" : "mullvad-master",
+        "revision" : "3cf9a523bb4bdb46fcba08566a8c587de6f6d0b0"
+      }
+    }
+  ],
+  "version" : 3
+}

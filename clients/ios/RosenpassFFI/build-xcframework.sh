@@ -96,6 +96,13 @@ BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios_sim="--target=arm64-apple-ios14.0-sim
         --target aarch64-apple-ios-sim \
         --no-default-features
 
+# NOTE: macOS is built separately by clients/mac/Scripts/build-mac-framework.sh
+# into a dynamic .framework, NOT folded into this iOS xcframework. The
+# xcframework format rejects mixing static and dynamic library types;
+# the iOS slices below are static (.a). The Mac slice has to be dynamic
+# to avoid duplicate-symbol conflicts at link time with Mullvad's
+# libmaybenot (Rust-based, brings its own copy of Rust std).
+
 DEVICE_LIB="target/aarch64-apple-ios/$PROFILE_DIR/$LIB_NAME"
 SIM_LIB="target/aarch64-apple-ios-sim/$PROFILE_DIR/$LIB_NAME"
 

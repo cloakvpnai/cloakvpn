@@ -1,0 +1,313 @@
+# project.yml — xcodegen spec for LatticeMac.xcodeproj
+#
+# Regenerate the project with:
+#   cd clients/mac && xcodegen generate
+#
+# Both project.yml AND the generated LatticeMac.xcodeproj are committed
+# — the .xcodeproj is committed so a fresh checkout opens in Xcode
+# without needing xcodegen installed, but project.yml is the source of
+# truth. Structural changes (adding files, swapping bundle IDs,
+# adjusting capabilities, build configs) happen here, then regen.
+#
+# IMPORTANT: the contents of every Info.plist and .entitlements file
+# under this directory live INSIDE this project.yml (info.properties
+# and entitlements.properties blocks). xcodegen regenerates those
+# files on every run, so editing them directly will be lost. To change
+# an entitlement or plist key, edit it HERE.
+
+name: LatticeMac
+
+# ---- Swift Package dependencies -----------------------------------
+#
+# Mullvad's fork of wireguard-apple — same package the iOS target pulls
+# in. The fork includes a custom WireGuardKit ABI (Mullvad uses this in
+# production), the WireGuardKitGo bridge (a build-phase make-script
+# compiles the Go side at first-build), and macOS support.
+packages:
+  WireGuardKit:
+    url: https://github.com/mullvad/wireguard-apple.git
+    branch: mullvad-master
+
+options:
+  bundleIdPrefix: ai.latticevpn
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: '14.0'
+  developmentLanguage: en
+  groupSortPosition: top
+  defaultConfig: Debug
+  generateEmptyDirectories: true
+
+# ---- Project-wide build configurations -----------------------------
+configs:
+  Debug: debug
+  Release: release
+  Release-AppStore: release
+  Release-DirectDownload: release
+
+# ---- Project-wide build settings -----------------------------------
+settings:
+  base:
+    # Personal team for local dev. Swap to the LLC team ID once the
+    # Apple Developer migration completes — and re-register bundle IDs
+    # under that team in the dev portal.
+    DEVELOPMENT_TEAM: S6MWM954AD
+    SWIFT_VERSION: '5.0'
+    SWIFT_STRICT_CONCURRENCY: minimal
+    ENABLE_USER_SCRIPT_SANDBOXING: 'NO'
+    CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS: 'YES'
+
+# ---- Targets -------------------------------------------------------
+
+targets:
+
+  # ---- Host app: menu bar utility ---------------------------------
+  LatticeMac:
+    type: application
+    platform: macOS
+    deploymentTarget: '14.0'
+
+    sources:
+      - path: LatticeMac
+        excludes:
+          - "Resources/Info.plist"
+          - "Resources/LatticeMac.entitlements"
+      # Shared from iOS (target-membership cross-cut, no file copying)
+      - path: ../ios/CloakVPN/TunnelManager.swift
+      - path: ../ios/CloakVPN/AppGroupKeyStore.swift
+      - path: ../ios/CloakVPN/CloakAuthClient.swift
+      - path: ../ios/CloakVPN/ConfigParser.swift
+      - path: ../ios/CloakVPN/Region.swift
+      - path: ../ios/CloakVPN/RosenpassBridge.swift
+      - path: ../ios/CloakVPN/rosenpassffi.swift
+      - path: ../ios/CloakVPN/SubscriptionInfo.swift
+
+    # ---- Info.plist (FULL contents declared inline) -----------
+    info:
+      path: LatticeMac/Resources/Info.plist
+      properties:
+        CFBundleDevelopmentRegion: "$(DEVELOPMENT_LANGUAGE)"
+        CFBundleDisplayName: Lattice VPN
+        CFBundleExecutable: "$(EXECUTABLE_NAME)"
+        CFBundleIdentifier: "$(PRODUCT_BUNDLE_IDENTIFIER)"
+        CFBundleInfoDictionaryVersion: '6.0'
+        CFBundleName: "$(PRODUCT_NAME)"
+        CFBundlePackageType: APPL
+        CFBundleShortVersionString: '1.0'
+        CFBundleVersion: '1'
+        # The defining setting for a menu-bar-only app: no Dock icon,
+        # no menu bar app name, no first-run window.
+        LSUIElement: true
+        LSMinimumSystemVersion: '14.0'
+        LSApplicationCategoryType: public.app-category.utilities
+        NSHighResolutionCapable: true
+        NSNetworkUsageDescription: "Lattice VPN routes your internet traffic through a post-quantum encrypted tunnel."
+        NSLocalNetworkUsageDescription: "Lattice VPN may need to detect your local network to apply LAN-bypass rules."
+
+    # ---- Entitlements (FULL contents declared inline) ----------
+    entitlements:
+      path: LatticeMac/Resources/LatticeMac.entitlements
+      properties:
+        # App Sandbox is REQUIRED for the App Store build and recommended
+        # for Direct Download. On everywhere; selectively grant access.
+        com.apple.security.app-sandbox: true
+        # Outbound network (we initiate API calls + WireGuard handshake)
+        com.apple.security.network.client: true
+        # NetworkExtension entitlement — Apple-controlled grant.
+        com.apple.developer.networking.networkextension:
+          - packet-tunnel-provider
+        # App Group shared with the PTP extension for keystore/config IPC
+        com.apple.security.application-groups:
+          - group.ai.latticevpn.shared
+        # Shared keychain for the JWT auth flow
+        keychain-access-groups:
+          - "$(AppIdentifierPrefix)ai.latticevpn.shared"
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.latticevpn.macos
+        PRODUCT_NAME: LatticeMac
+        MARKETING_VERSION: '1.0'
+        CURRENT_PROJECT_VERSION: '1'
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: 'YES'
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        LD_RUNPATH_SEARCH_PATHS:
+          - $(inherited)
+          - "@executable_path/../Frameworks"
+      configs:
+        Release-AppStore:
+          OTHER_SWIFT_FLAGS: "$(inherited) -DAPPSTORE_BUILD"
+        Release-DirectDownload:
+          OTHER_SWIFT_FLAGS: "$(inherited) -DDIRECT_DOWNLOAD_BUILD"
+
+    dependencies:
+      - target: LatticeMacTunnel
+      # Mac uses a dedicated dynamic framework (RosenpassFFI built as a
+      # .dylib + wrapped) instead of consuming the iOS xcframework
+      # directly. Two reasons:
+      #  1) An xcframework cannot mix static (iOS) and dynamic (Mac)
+      #     library types; the Mac slice has to be dynamic to avoid
+      #     duplicate-symbol conflicts at link time with Mullvad's
+      #     libmaybenot, which also embeds Rust's std (and thus
+      #     defines `_rust_eh_personality`). A static-lib Mac slice
+      #     would re-define that symbol; a dynamic framework hides
+      #     internal symbols entirely.
+      #  2) Decoupling means we can rebuild the Mac framework
+      #     independently of the iOS xcframework when iterating.
+      - framework: Frameworks/rosenpassffiFFI.framework
+        embed: true
+
+  # ---- Packet Tunnel Provider extension ---------------------------
+  LatticeMacTunnel:
+    type: app-extension
+    platform: macOS
+    deploymentTarget: '14.0'
+
+    sources:
+      - path: LatticeMacTunnel
+        excludes:
+          - "LatticeMacTunnel-Info.plist"
+          - "LatticeMacTunnel.entitlements"
+      # Shared PTP logic from iOS (target-membership cross-cut)
+      - path: ../ios/CloakTunnel/PacketTunnelProvider.swift
+      - path: ../ios/CloakTunnel/RosenpassDriver.swift
+      # PTP also depends on these shared helpers.
+      # NOTE: RosenpassBridge.swift is NOT included here even though the
+      # host app uses it — that file declares `extension FfiError:
+      # LocalizedError`, and RosenpassDriver.swift declares the SAME
+      # extension. They're meant to live in separate targets (the iOS
+      # project does it the same way). Adding both to one target
+      # produces "invalid redeclaration of 'errorDescription'".
+      - path: ../ios/CloakVPN/AppGroupKeyStore.swift
+      - path: ../ios/CloakVPN/ConfigParser.swift
+      - path: ../ios/CloakVPN/Region.swift
+      - path: ../ios/CloakVPN/rosenpassffi.swift
+
+    # ---- Info.plist (FULL contents declared inline) -----------
+    info:
+      path: LatticeMacTunnel/LatticeMacTunnel-Info.plist
+      properties:
+        CFBundleDevelopmentRegion: "$(DEVELOPMENT_LANGUAGE)"
+        CFBundleDisplayName: Lattice VPN Tunnel
+        CFBundleExecutable: "$(EXECUTABLE_NAME)"
+        CFBundleIdentifier: "$(PRODUCT_BUNDLE_IDENTIFIER)"
+        CFBundleInfoDictionaryVersion: '6.0'
+        CFBundleName: "$(PRODUCT_NAME)"
+        CFBundlePackageType: XPC!
+        CFBundleShortVersionString: '1.0'
+        CFBundleVersion: '1'
+        # Marks this app extension AS a NetworkExtension packet tunnel
+        # provider — the principal class is our subclass of the iOS PTP.
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
+          NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).LatticeMacTunnelProvider"
+
+    # ---- Entitlements (FULL contents declared inline) ----------
+    entitlements:
+      path: LatticeMacTunnel/LatticeMacTunnel.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.developer.networking.networkextension:
+          - packet-tunnel-provider
+        com.apple.security.application-groups:
+          - group.ai.latticevpn.shared
+        keychain-access-groups:
+          - "$(AppIdentifierPrefix)ai.latticevpn.shared"
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.latticevpn.macos.tunnel
+        PRODUCT_NAME: LatticeMacTunnel
+        MARKETING_VERSION: '1.0'
+        CURRENT_PROJECT_VERSION: '1'
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: 'YES'
+        PRODUCT_TYPE: com.apple.product-type.app-extension
+        LD_RUNPATH_SEARCH_PATHS:
+          - $(inherited)
+          - "@executable_path/../../../../Frameworks"
+      configs:
+        Release-AppStore:
+          OTHER_SWIFT_FLAGS: "$(inherited) -DAPPSTORE_BUILD"
+        Release-DirectDownload:
+          OTHER_SWIFT_FLAGS: "$(inherited) -DDIRECT_DOWNLOAD_BUILD"
+
+    dependencies:
+      # PTP extension LINKS the same Mac framework (don't embed —
+      # extensions consume the parent app's embedded copy at runtime
+      # via the @executable_path/../../../../Frameworks rpath).
+      - framework: Frameworks/rosenpassffiFFI.framework
+        embed: false
+      # WireGuardKit Swift Package — provides the userspace WG state
+      # machine the PTP drives. The companion Go bridge
+      # (WireGuardKitGo) is compiled by the build phase below.
+      - package: WireGuardKit
+
+    # ---- Pre-build phase: compile WireGuardKitGo (Go side of WG) ----
+    #
+    # WireGuardKit's Swift binding calls into a Go-built static library
+    # at runtime; the package itself does NOT auto-build that Go side.
+    # We compile it once per build, walking up from BUILT_PRODUCTS_DIR
+    # to find the SourcePackages checkout (path layout differs between
+    # Debug builds and Archives, so we don't hardcode either).
+    preBuildScripts:
+      - name: Build WireGuardKitGo
+        basedOnDependencyAnalysis: false
+        shell: /bin/bash
+        script: |
+          set -euo pipefail
+          WG_GO_DIR=""
+          DIR="$BUILT_PRODUCTS_DIR"
+          while [ "$DIR" != "/" ]; do
+              CANDIDATE="$DIR/SourcePackages/checkouts/wireguard-apple/Sources/WireGuardKitGo"
+              if [ -d "$CANDIDATE" ]; then
+                  WG_GO_DIR="$CANDIDATE"
+                  break
+              fi
+              DIR="$(dirname "$DIR")"
+          done
+          [ -n "$WG_GO_DIR" ] || { echo "error: WireGuardKitGo not found"; exit 1; }
+          echo "info: building wg-go bridge in $WG_GO_DIR"
+          export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
+          cd "$WG_GO_DIR"
+          make -j$(sysctl -n hw.ncpu)
+
+# ---- Schemes -------------------------------------------------------
+schemes:
+  LatticeMac:
+    build:
+      targets:
+        LatticeMac: all
+        LatticeMacTunnel: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+
+  LatticeMac (App Store):
+    build:
+      targets:
+        LatticeMac: all
+        LatticeMacTunnel: all
+    archive:
+      config: Release-AppStore
+    run:
+      config: Release-AppStore
+
+  LatticeMac (Direct Download):
+    build:
+      targets:
+        LatticeMac: all
+        LatticeMacTunnel: all
+    archive:
+      config: Release-DirectDownload
+    run:
+      config: Release-DirectDownload

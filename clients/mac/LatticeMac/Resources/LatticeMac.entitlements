@@ -2,42 +2,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- App Sandbox is REQUIRED for the App Store build, and optional
-         (but recommended) for the Direct Download build. We turn it on
-         everywhere and selectively grant network-server access. -->
-    <key>com.apple.security.app-sandbox</key>
-    <true/>
-
-    <!-- Outbound network access (we initiate API calls + WireGuard handshake) -->
-    <key>com.apple.security.network.client</key>
-    <true/>
-
-    <!-- The NetworkExtension entitlement: lets the app install and run
-         a packet tunnel provider extension. Requires special grant from
-         Apple — request via the "Capabilities" tab in Xcode and (for
-         distribution) via developer.apple.com → Identifiers → your
-         app's bundle ID → checkbox "NetworkExtension" → Edit →
-         "Packet Tunnel". For Direct Download builds, also request
-         the System Extension entitlement (separate review). -->
-    <key>com.apple.developer.networking.networkextension</key>
-    <array>
-        <string>packet-tunnel-provider</string>
-    </array>
-
-    <!-- App Group shared between the host app and the PTP extension.
-         Used by AppGroupKeyStore.swift (shared with iOS) to persist
-         WireGuard + Rosenpass keys, JWT, region cache, etc. across
-         the app↔extension boundary. The string MUST be prefixed with
-         the team ID after Apple Developer account migration to LLC. -->
-    <key>com.apple.security.application-groups</key>
-    <array>
-        <string>group.ai.latticevpn.shared</string>
-    </array>
-
-    <!-- Keychain shared with the PTP extension (used by JWT auth flow). -->
-    <key>keychain-access-groups</key>
-    <array>
-        <string>$(AppIdentifierPrefix)ai.latticevpn.shared</string>
-    </array>
+	<key>com.apple.developer.networking.networkextension</key>
+	<array>
+		<string>packet-tunnel-provider</string>
+	</array>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.ai.latticevpn.shared</string>
+	</array>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)ai.latticevpn.shared</string>
+	</array>
 </dict>
 </plist>

@@ -2,28 +2,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- PTP extensions ALSO run sandboxed (required) -->
-    <key>com.apple.security.app-sandbox</key>
-    <true/>
-
-    <!-- The PTP is the side that actually talks WireGuard outbound -->
-    <key>com.apple.security.network.client</key>
-    <true/>
-
-    <!-- This entitlement marks the extension AS a packet tunnel provider -->
-    <key>com.apple.developer.networking.networkextension</key>
-    <array>
-        <string>packet-tunnel-provider</string>
-    </array>
-
-    <!-- Shared with host app for cross-process state -->
-    <key>com.apple.security.application-groups</key>
-    <array>
-        <string>group.ai.latticevpn.shared</string>
-    </array>
-    <key>keychain-access-groups</key>
-    <array>
-        <string>$(AppIdentifierPrefix)ai.latticevpn.shared</string>
-    </array>
+	<key>com.apple.developer.networking.networkextension</key>
+	<array>
+		<string>packet-tunnel-provider</string>
+	</array>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.ai.latticevpn.shared</string>
+	</array>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)ai.latticevpn.shared</string>
+	</array>
 </dict>
 </plist>

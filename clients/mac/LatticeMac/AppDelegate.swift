@@ -12,6 +12,7 @@ import AppKit
 import SwiftUI
 import Combine
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The status bar item we manage from app launch -> app quit.

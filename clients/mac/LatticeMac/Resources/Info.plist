@@ -2,45 +2,35 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- App identity -->
-    <key>CFBundleDevelopmentRegion</key>          <string>en</string>
-    <key>CFBundleDisplayName</key>                <string>Lattice VPN</string>
-    <key>CFBundleExecutable</key>                 <string>$(EXECUTABLE_NAME)</string>
-    <key>CFBundleIdentifier</key>                 <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-    <key>CFBundleInfoDictionaryVersion</key>      <string>6.0</string>
-    <key>CFBundleName</key>                       <string>$(PRODUCT_NAME)</string>
-    <key>CFBundlePackageType</key>                <string>APPL</string>
-    <key>CFBundleShortVersionString</key>         <string>1.0</string>
-    <key>CFBundleVersion</key>                    <string>1</string>
-
-    <!-- Menu-bar-only app: no Dock icon, no menu bar app name,
-         no first-run window. This is THE switch that makes the app
-         a menu bar utility instead of a regular Mac app. -->
-    <key>LSUIElement</key>                        <true/>
-
-    <!-- Minimum macOS we target. Sonoma (14) is a safe baseline — gives
-         us SwiftUI Settings scene improvements, modern SF Symbols, and
-         the SMAppService Login Items API. Drop to 13 only if a sizable
-         segment of Mac users on 13 actually emerges. -->
-    <key>LSMinimumSystemVersion</key>             <string>14.0</string>
-
-    <!-- App category (used in App Store + Finder Get Info) -->
-    <key>LSApplicationCategoryType</key>          <string>public.app-category.utilities</string>
-
-    <!-- Don't show a "Open Recent" menu — irrelevant for a VPN. -->
-    <key>NSDocumentClass</key>                    <string></string>
-
-    <!-- High-DPI rendering -->
-    <key>NSHighResolutionCapable</key>            <true/>
-
-    <!-- Privacy declarations. None of these are *strictly* required
-         for our current functionality (we don't access camera, mic,
-         contacts, etc.), but App Store review flags any reach into
-         protected resources. Listed here for future-proofing — remove
-         keys we definitely don't need before submission. -->
-    <key>NSNetworkUsageDescription</key>
-        <string>Lattice VPN routes your internet traffic through a post-quantum encrypted tunnel.</string>
-    <key>NSLocalNetworkUsageDescription</key>
-        <string>Lattice VPN may need to detect your local network to apply LAN-bypass rules.</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Lattice VPN</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Lattice VPN may need to detect your local network to apply LAN-bypass rules.</string>
+	<key>NSNetworkUsageDescription</key>
+	<string>Lattice VPN routes your internet traffic through a post-quantum encrypted tunnel.</string>
 </dict>
 </plist>

@@ -41,7 +41,12 @@ import NetworkExtension
 import os.log
 import WireGuardKit
 
-final class PacketTunnelProvider: NEPacketTunnelProvider {
+// Dropped `final` 2026-05-18: the macOS app (clients/mac/) subclasses
+// this in LatticeMacTunnelProvider to add Mac-specific overrides
+// (diagnostic log flush on Direct-Download builds, etc.). The runtime
+// cost is negligible — only one Swift class lookup gets a v-table
+// dispatch instead of static, and PTP methods are not hot.
+class PacketTunnelProvider: NEPacketTunnelProvider {
     private let log = OSLog(subsystem: "ai.cloakvpn.CloakVPN.tunnel", category: "tunnel")
 
     /// The WireGuardKit adapter. Lazily constructed so initialization

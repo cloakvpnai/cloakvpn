@@ -84,7 +84,9 @@ final class ConnectionViewModel: ObservableObject {
         // TODO[Phase 3]: call TunnelManager.shared.stop() (the wrapper
         //   over NETunnelProviderSession.stopVPNTunnel()).
         guard status == .connected || status == .connecting else { return }
-        await transition(to: .disconnecting)
+        // We don't model an explicit `.disconnecting` state in the menu
+        // bar UI — too short-lived to be useful, just go straight from
+        // the current state to `.disconnected` after the (mock) hand-off.
         try? await Task.sleep(nanoseconds: 600_000_000)
         await transition(to: .disconnected)
         tunnelIP = nil

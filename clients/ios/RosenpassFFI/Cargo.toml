@@ -60,3 +60,21 @@ thiserror = "1"
 
 [build-dependencies]
 uniffi      = { version = "0.27", features = ["build"] }
+
+# Release profile — `panic = "abort"` eliminates the `_rust_eh_personality`
+# symbol from the static lib. This is REQUIRED for the macOS app build:
+# when LatticeMacTunnel links both librosenpassffi.a AND libmaybenot.a
+# (the Mullvad WireGuard traffic-obfuscation lib, also Rust-based), the
+# Apple linker rejects the duplicate eh_personality definition.
+#
+# Also a sensible default for a crypto static lib that runs inside a
+# NetworkExtension — panic = abort means a panic immediately terminates
+# the process (which the OS restarts), instead of unwinding through C
+# FFI boundaries (undefined behavior in some scenarios). Smaller binary
+# (~10-15%) is a nice bonus.
+#
+# The iOS app build also picks this up; on iOS the duplicate symbol
+# happens to work because of weak-symbol dedup in the iOS link pass,
+# but having one symbol instead of two is strictly better either way.
+[profile.release]
+panic = "abort"
