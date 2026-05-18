@@ -75,9 +75,31 @@ final class ConnectionViewModel: ObservableObject {
 
     /// Connect to a specific region. Called when the user clicks a
     /// region row in the popover's region picker.
+    ///
+    /// Three behaviors based on current state:
+    ///   - Already on this region                 → no-op (or reconnect if errored)
+    ///   - Disconnected, picking any region        → just update selection,
+    ///                                                don't auto-connect (matches
+    ///                                                NordVPN UX — user has to
+    ///                                                press Connect explicitly)
+    ///   - Connected/connecting, picking different → disconnect, swap region,
+    ///                                                reconnect to the new one
     func connect(to region: RegionSummary) async {
-        selectedRegion = region
-        await connect()
+        let switchingRegion = (selectedRegion?.id != region.id)
+        let wasConnected = status.isConnected || status.isBusy
+        selectedRegion = region   // Always update selection so the checkmark moves
+
+        // Same region as before? Nothing else to do.
+        guard switchingRegion else { return }
+
+        // If we were connected/connecting, hand off cleanly through the
+        // disconnected state so the popover visually shows the transition.
+        if wasConnected {
+            await disconnect()
+            await connect()
+        }
+        // If we were disconnected, just update the selection — user will
+        // press the primary Connect button when they want to actually go.
     }
 
     func disconnect() async {
