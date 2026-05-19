@@ -39,11 +39,23 @@ options:
   generateEmptyDirectories: true
 
 # ---- Project-wide build configurations -----------------------------
+#
+# All four configurations base on Secrets.xcconfig so the
+# CLOAK_BOOTSTRAP_KEY (used by CloakAuthClient when calling the
+# cloak-api-server /auth/exchange endpoint) is injected at build time.
+# The xcconfig is gitignored and lives next to the iOS one — single
+# source of truth for the bootstrap key across iOS and Mac.
 configs:
   Debug: debug
   Release: release
   Release-AppStore: release
   Release-DirectDownload: release
+
+configFiles:
+  Debug: ../ios/CloakVPN/Secrets.xcconfig
+  Release: ../ios/CloakVPN/Secrets.xcconfig
+  Release-AppStore: ../ios/CloakVPN/Secrets.xcconfig
+  Release-DirectDownload: ../ios/CloakVPN/Secrets.xcconfig
 
 # ---- Project-wide build settings -----------------------------------
 settings:
@@ -103,6 +115,11 @@ targets:
         NSHighResolutionCapable: true
         NSNetworkUsageDescription: "Lattice VPN routes your internet traffic through a post-quantum encrypted tunnel."
         NSLocalNetworkUsageDescription: "Lattice VPN may need to detect your local network to apply LAN-bypass rules."
+        # Injected from clients/ios/CloakVPN/Secrets.xcconfig at build
+        # time via the configFiles base. Read at runtime by
+        # CloakRegion.bootstrapKey to authenticate the initial
+        # /auth/exchange call to cloak-api-server before we have a JWT.
+        CLOAK_BOOTSTRAP_KEY: "$(CLOAK_BOOTSTRAP_KEY)"
 
     # ---- Entitlements (FULL contents declared inline) ----------
     entitlements:

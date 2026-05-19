@@ -90,6 +90,7 @@
 		C70211E508CDEF32A95D730E /* LatticeMacTunnel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LatticeMacTunnel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC9FBB5322F6F153C7A6F6CC /* rosenpassffi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = rosenpassffi.swift; sourceTree = "<group>"; };
 		D644E46B01404B2CEB8C71A7 /* TunnelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelManager.swift; sourceTree = "<group>"; };
+		E4EC78ABF23F8C1F80FE35EB /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
 		E9B7BFEB82A2EC83CE1EB469 /* LatticeMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LatticeMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F2B61018460812E8825BC010 /* AppGroupKeyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroupKeyStore.swift; sourceTree = "<group>"; };
 		F3C0F849BCC964CB369C2C52 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -207,6 +208,7 @@
 				53012357CF1AF36AA615A567 /* Region.swift */,
 				5F5AC903F93485FEF3A202DC /* RosenpassBridge.swift */,
 				CC9FBB5322F6F153C7A6F6CC /* rosenpassffi.swift */,
+				E4EC78ABF23F8C1F80FE35EB /* Secrets.xcconfig */,
 				248EA2AACC0AF36FA694C8FE /* SubscriptionInfo.swift */,
 				D644E46B01404B2CEB8C71A7 /* TunnelManager.swift */,
 			);
@@ -286,11 +288,9 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					399998A5F0AD1F59A9639B1B = {
-						DevelopmentTeam = S6MWM954AD;
 						ProvisioningStyle = Automatic;
 					};
 					EFFB998CEE24A0FEF371E615 = {
-						DevelopmentTeam = S6MWM954AD;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -396,6 +396,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -417,6 +418,7 @@
 		};
 		1F119A203A66828AFBDE358D /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E4EC78ABF23F8C1F80FE35EB /* Secrets.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -481,6 +483,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -503,6 +506,7 @@
 		};
 		5E0AE23E9225D8CBAEAB66D3 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E4EC78ABF23F8C1F80FE35EB /* Secrets.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -575,6 +579,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -595,6 +600,7 @@
 		};
 		A4F49EF768621E441A1D1FB4 /* Release-DirectDownload */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E4EC78ABF23F8C1F80FE35EB /* Secrets.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -659,6 +665,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -680,6 +687,7 @@
 		};
 		BFEF8CA99F2770588044E572 /* Release-AppStore */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E4EC78ABF23F8C1F80FE35EB /* Secrets.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -745,6 +753,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -772,6 +781,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -797,6 +807,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -824,6 +835,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",

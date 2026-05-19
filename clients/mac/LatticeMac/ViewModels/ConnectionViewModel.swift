@@ -120,6 +120,68 @@ final class ConnectionViewModel: ObservableObject {
     func bootstrap() async {
         await tunnel.load()
         await tunnel.refreshPublicIPIfNotConnected()
+        // Pre-generate the rosenpass keypair on a big-stack thread, BEFORE
+        // any selectRegion call has a chance to invoke TunnelManager's
+        // Task.detached path (which spinlocks on macOS — see comment in
+        // generateRosenpassKeypairOnBigStackThread).
+        await ensureRosenpassKeypairMacWorkaround()
+    }
+
+    // MARK: - Mac-specific rosenpass keypair workaround
+
+    /// macOS-only: generate + persist the rosenpass static keypair on a
+    /// thread with a deliberately-large stack, so the McEliece-460896
+    /// public-key buffer (~524 KB) has room without overflowing.
+    ///
+    /// Why this exists:
+    ///   - The shared `TunnelManager.generateAndPersistLocalKeypair`
+    ///     uses `Task.detached(priority: .userInitiated)`, which runs
+    ///     on Swift's cooperative thread pool.
+    ///   - macOS cooperative-pool threads have ~512 KB stacks. The
+    ///     McEliece keygen materializes a 524 KB public-key buffer
+    ///     on the stack (Rust release builds rely on LLVM's RVO to
+    ///     copy-elide it into the destination heap allocation; on
+    ///     macOS that elision doesn't always fire for our dylib
+    ///     build flavor).
+    ///   - End result: stack pointer crosses the guard page, the
+    ///     thread spinlocks inside the keygen at a constant PC.
+    ///     Same Rust source works fine on iOS because iOS's release-build
+    ///     code generation does apply RVO consistently.
+    ///
+    /// Workaround: pre-create the keypair ourselves on a `Thread` with
+    /// `stackSize = 16 MB`, save it into the App Group container, and
+    /// then TunnelManager's own `ensureLocalKeypair` will hit the fast
+    /// `hasLocalKeypair() == true` path and never invoke the broken
+    /// Task.detached codepath.
+    ///
+    /// Idempotent — checks the App Group first and returns immediately
+    /// if a keypair is already on disk.
+    private func ensureRosenpassKeypairMacWorkaround() async {
+        if AppGroupKeyStore.hasLocalKeypair() {
+            return
+        }
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            let thread = Thread {
+                do {
+                    let kp = try generateStaticKeypair()
+                    let secretB64 = kp.secretKey.base64EncodedString()
+                    let publicB64 = kp.publicKey.base64EncodedString()
+                    try AppGroupKeyStore.saveLocalKeypair(secretB64: secretB64, publicB64: publicB64)
+                } catch {
+                    // Surface to UI via lastError on the next attempt;
+                    // we don't want to crash bootstrap on a one-off
+                    // keygen failure.
+                    DispatchQueue.main.async { [weak self] in
+                        self?.lastError = "Post-quantum keypair generation failed: \(error.localizedDescription)"
+                    }
+                }
+                cont.resume()
+            }
+            thread.stackSize = 16 * 1024 * 1024   // 16 MB, way over the 524 KB needed
+            thread.qualityOfService = .userInitiated
+            thread.name = "ai.latticevpn.macos.rosenpass-keygen"
+            thread.start()
+        }
     }
 
     // MARK: - Connection actions

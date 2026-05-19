@@ -61,20 +61,14 @@ thiserror = "1"
 [build-dependencies]
 uniffi      = { version = "0.27", features = ["build"] }
 
-# Release profile — `panic = "abort"` eliminates the `_rust_eh_personality`
-# symbol from the static lib. This is REQUIRED for the macOS app build:
-# when LatticeMacTunnel links both librosenpassffi.a AND libmaybenot.a
-# (the Mullvad WireGuard traffic-obfuscation lib, also Rust-based), the
-# Apple linker rejects the duplicate eh_personality definition.
-#
-# Also a sensible default for a crypto static lib that runs inside a
-# NetworkExtension — panic = abort means a panic immediately terminates
-# the process (which the OS restarts), instead of unwinding through C
-# FFI boundaries (undefined behavior in some scenarios). Smaller binary
-# (~10-15%) is a nice bonus.
-#
-# The iOS app build also picks this up; on iOS the duplicate symbol
-# happens to work because of weak-symbol dedup in the iOS link pass,
-# but having one symbol instead of two is strictly better either way.
-[profile.release]
-panic = "abort"
+# We briefly set `[profile.release] panic = "abort"` here on 2026-05-18
+# to work around a duplicate _rust_eh_personality link error against
+# Mullvad's libmaybenot in the macOS app build. That was the wrong fix:
+#   - The fix changed code generation globally (affects iOS too) and
+#     turned out to break Classic McEliece keygen on macOS (PK gen
+#     spinlocked at PQCLEAN_MCELIECE460896_CLEAN_pk_gen+48).
+#   - The right fix was to ship the macOS slice as a *dynamic* framework
+#     (rosenpassffiFFI.framework) instead of a static .a, which hides
+#     eh_personality inside the dylib and makes the link succeed
+#     without touching the panic strategy. iOS stays static.
+# Removing this profile to restore default panic=unwind behavior.
