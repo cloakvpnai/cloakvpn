@@ -10,13 +10,13 @@
 	<true/>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.ai.latticevpn.shared</string>
+		<string>group.ai.cloakvpn.CloakVPN</string>
 	</array>
 	<key>com.apple.security.network.client</key>
 	<true/>
 	<key>keychain-access-groups</key>
 	<array>
-		<string>$(AppIdentifierPrefix)ai.latticevpn.shared</string>
+		<string>$(AppIdentifierPrefix)ai.cloakvpn.CloakVPN</string>
 	</array>
 </dict>
 </plist>

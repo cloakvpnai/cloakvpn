@@ -118,10 +118,18 @@ targets:
           - packet-tunnel-provider
         # App Group shared with the PTP extension for keystore/config IPC
         com.apple.security.application-groups:
-          - group.ai.latticevpn.shared
+          # Matches the iOS app's hardcoded `AppGroupKeyStore.appGroupID`
+          # so the shared file "just works" on Mac without per-platform
+          # branching. App Groups are device-local + team-scoped (not
+          # iOS/Mac-shared at runtime), so reusing the same identifier
+          # is safe — the iPhone and the Mac each get their own
+          # isolated container under this group name.
+          - group.ai.cloakvpn.CloakVPN
         # Shared keychain for the JWT auth flow
         keychain-access-groups:
-          - "$(AppIdentifierPrefix)ai.latticevpn.shared"
+          # Matches the iOS app's keychain group so the shared
+          # CloakAuthClient code can read/write JWTs on Mac.
+          - "$(AppIdentifierPrefix)ai.cloakvpn.CloakVPN"
 
     settings:
       base:
@@ -212,9 +220,17 @@ targets:
         com.apple.developer.networking.networkextension:
           - packet-tunnel-provider
         com.apple.security.application-groups:
-          - group.ai.latticevpn.shared
+          # Matches the iOS app's hardcoded `AppGroupKeyStore.appGroupID`
+          # so the shared file "just works" on Mac without per-platform
+          # branching. App Groups are device-local + team-scoped (not
+          # iOS/Mac-shared at runtime), so reusing the same identifier
+          # is safe — the iPhone and the Mac each get their own
+          # isolated container under this group name.
+          - group.ai.cloakvpn.CloakVPN
         keychain-access-groups:
-          - "$(AppIdentifierPrefix)ai.latticevpn.shared"
+          # Matches the iOS app's keychain group so the shared
+          # CloakAuthClient code can read/write JWTs on Mac.
+          - "$(AppIdentifierPrefix)ai.cloakvpn.CloakVPN"
 
     settings:
       base:
