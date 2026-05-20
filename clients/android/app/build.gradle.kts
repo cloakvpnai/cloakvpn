@@ -62,6 +62,12 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
+    // JNA — required by the uniffi-generated Kotlin bindings
+    // (uniffi/rosenpassffi/rosenpassffi.kt) to load + call into the
+    // native librosenpassffi.so. The @aar classifier pulls the Android
+    // build of JNA which bundles its own native .so per ABI.
+    implementation("net.java.dev.jna:jna:5.14.0@aar")
+
     // DataStore for persisting config (encrypted via Android Keystore wrapping)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 

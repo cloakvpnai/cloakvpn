@@ -1,49 +1,69 @@
 package ai.latticevpn.android.vpn
 
+import uniffi.rosenpassffi.RosenpassSession
+import uniffi.rosenpassffi.StaticKeypair
+import uniffi.rosenpassffi.StepResult
+import uniffi.rosenpassffi.generateStaticKeypair
+import uniffi.rosenpassffi.rosenpassVersion
+
 /**
- * JNI bridge to the Rosenpass post-quantum key-exchange daemon.
+ * Bridge to the Rosenpass post-quantum key-exchange library.
  *
- * Build steps:
- *   1. Install `cargo-ndk`:
- *        cargo install cargo-ndk
- *        rustup target add aarch64-linux-android x86_64-linux-android
- *   2. From the RosenpassFFI source tree, build a JNI-compatible cdylib:
- *        cargo ndk -t arm64-v8a -t x86_64 \
- *          -o clients/android/app/src/main/jniLibs \
- *          build --release --features ffi
- *   3. Expose `Java_ai_latticevpn_android_vpn_RosenpassBridge_nativeStart`
- *      etc. from the FFI crate.
+ * The heavy lifting is in `librosenpassffi.so` (Rust + liboqs),
+ * cross-compiled by `Scripts/build-rosenpass-android.sh` and surfaced
+ * to Kotlin through the uniffi-generated bindings in
+ * `uniffi/rosenpassffi/rosenpassffi.kt`. uniffi loads the native
+ * library lazily (via JNA) on the first call — no explicit
+ * System.loadLibrary needed.
  *
- * Until the FFI crate lands, `start()` and `stop()` are no-ops. Tunnel still
- * works; PQC is enforced server-side via Rosenpass there (the WireGuard
- * handshake is still PSK-mixed).
+ * This object exposes the three primitives the tunnel needs:
+ *   - generateKeypair(): create this device's long-term Rosenpass
+ *     static keypair (Classic McEliece + ML-KEM). Called once at
+ *     first launch; the keypair is persisted in the App Group store.
+ *   - libraryVersion(): the rosenpass crate revision, for diagnostics.
+ *   - newSession(): start a Rosenpass handshake against a server,
+ *     used by the PSK-rotation loop.
+ *
+ * The full rotation loop (UDP socket, message pump, re-keying timer)
+ * lives in the tunnel manager — see Phase A5. This file deliberately
+ * stays a thin, testable wrapper.
+ *
+ * THREADING NOTE: generateKeypair() materializes a ~524 KB Classic
+ * McEliece public key. On macOS the equivalent call had to be moved
+ * off the small cooperative-pool stack; on Android, callers should
+ * run it on a Thread with an ample stack (see callers in Phase A5)
+ * or simply on a normal background Thread (JVM background threads
+ * default to a 512 KB-1 MB stack; if a StackOverflowError shows up,
+ * bump it with Thread(null, runnable, name, 16L * 1024 * 1024)).
  */
 object RosenpassBridge {
-    // init { System.loadLibrary("rosenpass") }
 
-    fun start(cfg: LatticeConfig) {
-        // nativeStart(
-        //     cfg.clientRPSecretKeyB64,
-        //     cfg.clientRPPublicKeyB64,
-        //     cfg.serverRPPublicKeyB64,
-        //     cfg.rpEndpoint,
-        //     cfg.pskRotationSeconds
-        // )
-    }
+    /** rosenpass crate revision string — for the diagnostics screen. */
+    fun libraryVersion(): String = rosenpassVersion()
 
-    fun stop() {
-        // nativeStop()
-    }
+    /**
+     * Generate this device's long-term Rosenpass static keypair.
+     * Heavy (post-quantum keygen) — call off the main thread.
+     */
+    fun generateKeypair(): StaticKeypair = generateStaticKeypair()
 
-    /** Returns the current 32-byte PSK as hex, or null if not established. */
-    fun currentPsk(peerPublicKey: String): String? = null
-
-    // external fun nativeStart(
-    //     clientSecretB64: String,
-    //     clientPublicB64: String,
-    //     serverPublicB64: String,
-    //     serverEndpoint: String,
-    //     rotationSeconds: Int
-    // ): Int
-    // external fun nativeStop(): Int
+    /**
+     * Open a new Rosenpass session as the initiator against a server.
+     * The caller drives it: `initiate()` to get the first message,
+     * then feed server replies through `handleMessage()` until a PSK
+     * is derived; read it with `lastDerivedPsk()`.
+     *
+     * Keys are base64-decoded by the caller into raw bytes.
+     */
+    fun newSession(
+        ourSecretKey: ByteArray,
+        ourPublicKey: ByteArray,
+        peerPublicKey: ByteArray
+    ): RosenpassSession = RosenpassSession(ourSecretKey, ourPublicKey, peerPublicKey)
 }
+
+// Convenience aliases so the rest of the app can refer to the
+// post-quantum types without importing the uniffi package path
+// directly. (Kotlin typealiases must be top-level, not nested.)
+typealias RosenpassKeypair = StaticKeypair
+typealias RosenpassExchangeStep = StepResult
