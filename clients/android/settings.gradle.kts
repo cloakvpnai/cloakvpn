@@ -15,5 +15,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "CloakVPN"
+rootProject.name = "LatticeVPN"
 include(":app")

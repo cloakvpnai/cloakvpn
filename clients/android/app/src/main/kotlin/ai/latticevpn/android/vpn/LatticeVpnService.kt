@@ -1,4 +1,4 @@
-package com.cloakvpn.app.vpn
+package ai.latticevpn.android.vpn
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -9,15 +9,14 @@ import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
 import androidx.core.app.NotificationCompat
-import com.cloakvpn.app.MainActivity
-import com.cloakvpn.app.R
+import ai.latticevpn.android.MainActivity
 
 /**
  * Foreground VPN service. Owns the ParcelFileDescriptor returned by
  * VpnService.Builder.establish() and delegates actual tunnel I/O to
  * wireguard-android's GoBackend via [TunnelRepository].
  */
-class CloakVpnService : VpnService() {
+class LatticeVpnService : VpnService() {
 
     override fun onCreate() {
         super.onCreate()
@@ -46,7 +45,7 @@ class CloakVpnService : VpnService() {
         if (existing == null) {
             val ch = NotificationChannel(
                 CHANNEL_ID,
-                "Cloak VPN tunnel",
+                "Lattice VPN tunnel",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Keeps the VPN tunnel alive while connected."
@@ -63,7 +62,7 @@ class CloakVpnService : VpnService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val notif: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Cloak VPN connected")
+            .setContentTitle("Lattice VPN connected")
             .setContentText("Post-quantum tunnel active")
             .setSmallIcon(android.R.drawable.ic_lock_idle_lock) // replace with real icon
             .setContentIntent(pi)
@@ -81,7 +80,7 @@ class CloakVpnService : VpnService() {
     }
 
     companion object {
-        private const val CHANNEL_ID = "cloak_vpn_tunnel"
-        private const val NOTIF_ID = 0xC10AC
+        private const val CHANNEL_ID = "lattice_vpn_tunnel"
+        private const val NOTIF_ID = 0x1A771C
     }
 }

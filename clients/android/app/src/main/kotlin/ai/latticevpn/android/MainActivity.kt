@@ -1,4 +1,4 @@
-package com.cloakvpn.app
+package ai.latticevpn.android
 
 import android.content.Intent
 import android.net.VpnService
@@ -6,8 +6,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import com.cloakvpn.app.ui.CloakApp
-import com.cloakvpn.app.vpn.TunnelRepository
+import ai.latticevpn.android.ui.LatticeApp
+import ai.latticevpn.android.vpn.TunnelRepository
 
 class MainActivity : ComponentActivity() {
 
@@ -22,7 +22,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            CloakApp(
+            LatticeApp(
                 onConnect = {
                     val intent = VpnService.prepare(this)
                     if (intent != null) prepareVpn.launch(intent)

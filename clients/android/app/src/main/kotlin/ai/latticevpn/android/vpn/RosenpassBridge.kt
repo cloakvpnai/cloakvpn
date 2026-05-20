@@ -1,4 +1,4 @@
-package com.cloakvpn.app.vpn
+package ai.latticevpn.android.vpn
 
 /**
  * JNI bridge to the Rosenpass post-quantum key-exchange daemon.
@@ -7,12 +7,12 @@ package com.cloakvpn.app.vpn
  *   1. Install `cargo-ndk`:
  *        cargo install cargo-ndk
  *        rustup target add aarch64-linux-android x86_64-linux-android
- *   2. From the rosenpass source tree, build a JNI-compatible cdylib:
+ *   2. From the RosenpassFFI source tree, build a JNI-compatible cdylib:
  *        cargo ndk -t arm64-v8a -t x86_64 \
  *          -o clients/android/app/src/main/jniLibs \
  *          build --release --features ffi
- *   3. Expose `Java_com_cloakvpn_app_vpn_RosenpassBridge_nativeStart` etc.
- *      from the FFI crate.
+ *   3. Expose `Java_ai_latticevpn_android_vpn_RosenpassBridge_nativeStart`
+ *      etc. from the FFI crate.
  *
  * Until the FFI crate lands, `start()` and `stop()` are no-ops. Tunnel still
  * works; PQC is enforced server-side via Rosenpass there (the WireGuard
@@ -21,7 +21,7 @@ package com.cloakvpn.app.vpn
 object RosenpassBridge {
     // init { System.loadLibrary("rosenpass") }
 
-    fun start(cfg: CloakConfig) {
+    fun start(cfg: LatticeConfig) {
         // nativeStart(
         //     cfg.clientRPSecretKeyB64,
         //     cfg.clientRPPublicKeyB64,

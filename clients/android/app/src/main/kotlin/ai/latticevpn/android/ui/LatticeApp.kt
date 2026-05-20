@@ -1,4 +1,4 @@
-package com.cloakvpn.app.ui
+package ai.latticevpn.android.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,12 +11,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.cloakvpn.app.vpn.TunnelRepository
-import com.cloakvpn.app.vpn.TunnelState
+import ai.latticevpn.android.vpn.TunnelRepository
+import ai.latticevpn.android.vpn.TunnelState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CloakApp(
+fun LatticeApp(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit
 ) {
@@ -29,7 +29,7 @@ fun CloakApp(
     var err by remember { mutableStateOf<String?>(null) }
 
     MaterialTheme {
-        Scaffold(topBar = { TopAppBar(title = { Text("Cloak VPN") }) }) { pad ->
+        Scaffold(topBar = { TopAppBar(title = { Text("Lattice VPN") }) }) { pad ->
             Column(
                 modifier = Modifier.padding(pad).padding(16.dp).fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,

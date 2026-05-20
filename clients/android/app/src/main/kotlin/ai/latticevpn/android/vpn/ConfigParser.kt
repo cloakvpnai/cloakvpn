@@ -1,8 +1,8 @@
-package com.cloakvpn.app.vpn
+package ai.latticevpn.android.vpn
 
 import org.json.JSONObject
 
-data class CloakConfig(
+data class LatticeConfig(
     val wgPrivateKey: String,
     val addressV4: String,
     val addressV6: String,
@@ -36,9 +36,9 @@ data class CloakConfig(
     }.toString()
 
     companion object {
-        fun deserialize(raw: String): CloakConfig {
+        fun deserialize(raw: String): LatticeConfig {
             val j = JSONObject(raw)
-            return CloakConfig(
+            return LatticeConfig(
                 wgPrivateKey = j.getString("wgPrivateKey"),
                 addressV4 = j.getString("addressV4"),
                 addressV6 = j.getString("addressV6"),
@@ -64,7 +64,7 @@ data class CloakConfig(
  * a config both platforms understand.
  */
 object ConfigParser {
-    fun parse(text: String): CloakConfig {
+    fun parse(text: String): LatticeConfig {
         val sections = mutableMapOf<String, MutableMap<String, String>>()
         var current: String? = null
         for (raw in text.split("\n")) {
@@ -90,7 +90,7 @@ object ConfigParser {
         fun list(section: String, key: String): List<String> =
             get(section, key).split(",").map { it.trim() }
 
-        return CloakConfig(
+        return LatticeConfig(
             wgPrivateKey = get("wireguard", "private_key"),
             addressV4 = get("wireguard", "address_v4"),
             addressV6 = get("wireguard", "address_v6"),

@@ -1,4 +1,4 @@
-package com.cloakvpn.app.vpn
+package ai.latticevpn.android.vpn
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -31,8 +31,8 @@ class TunnelRepository private constructor(private val appCtx: Context) {
     private val _state = MutableStateFlow(TunnelState.DISCONNECTED)
     val state: StateFlow<TunnelState> = _state.asStateFlow()
 
-    private val _config = MutableStateFlow<CloakConfig?>(loadPersisted())
-    val config: StateFlow<CloakConfig?> = _config.asStateFlow()
+    private val _config = MutableStateFlow<LatticeConfig?>(loadPersisted())
+    val config: StateFlow<LatticeConfig?> = _config.asStateFlow()
 
     fun importConfig(text: String) {
         val parsed = ConfigParser.parse(text)
@@ -44,7 +44,7 @@ class TunnelRepository private constructor(private val appCtx: Context) {
         val cfg = _config.value ?: return
         _state.value = TunnelState.CONNECTING
         // Start the foreground service — required for API 34+.
-        val intent = Intent(appCtx, CloakVpnService::class.java)
+        val intent = Intent(appCtx, LatticeVpnService::class.java)
         ContextCompat.startForegroundService(appCtx, intent)
 
         // TODO: wire wireguard-android GoBackend:
@@ -58,21 +58,21 @@ class TunnelRepository private constructor(private val appCtx: Context) {
         _state.value = TunnelState.DISCONNECTING
         // TODO: backend.setState(tunnel, Tunnel.State.DOWN, null)
         // RosenpassBridge.stop()
-        appCtx.stopService(Intent(appCtx, CloakVpnService::class.java))
+        appCtx.stopService(Intent(appCtx, LatticeVpnService::class.java))
         _state.value = TunnelState.DISCONNECTED
     }
 
     // MARK: - Simple persistence
 
-    private fun persist(cfg: CloakConfig) {
-        val p = appCtx.getSharedPreferences("cloak", Context.MODE_PRIVATE)
+    private fun persist(cfg: LatticeConfig) {
+        val p = appCtx.getSharedPreferences("lattice", Context.MODE_PRIVATE)
         p.edit().putString("config", cfg.serialize()).apply()
     }
 
-    private fun loadPersisted(): CloakConfig? {
-        val p = appCtx.getSharedPreferences("cloak", Context.MODE_PRIVATE)
+    private fun loadPersisted(): LatticeConfig? {
+        val p = appCtx.getSharedPreferences("lattice", Context.MODE_PRIVATE)
         val raw = p.getString("config", null) ?: return null
-        return runCatching { CloakConfig.deserialize(raw) }.getOrNull()
+        return runCatching { LatticeConfig.deserialize(raw) }.getOrNull()
     }
 
     companion object {
