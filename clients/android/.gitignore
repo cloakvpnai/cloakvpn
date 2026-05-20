@@ -23,3 +23,10 @@ local.properties
 
 # NDK / Rust intermediate
 app/src/main/jniLibs/*/lib*.so.tmp
+
+# The repo-root .gitignore has a global `*.so` rule. The rosenpass
+# native libraries under jniLibs ARE intentionally committed (so a
+# fresh checkout builds a complete APK without the full Rust+NDK
+# chain), so re-include them here. Regenerate via
+# Scripts/build-rosenpass-android.sh.
+!app/src/main/jniLibs/**/librosenpassffi.so
