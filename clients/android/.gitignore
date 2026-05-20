@@ -1,0 +1,25 @@
+# Gradle / Android build artifacts
+.gradle/
+build/
+app/build/
+captures/
+.cxx/
+
+# Local machine-specific SDK path
+local.properties
+
+# IDE
+.idea/
+*.iml
+.kotlin/
+
+# macOS
+.DS_Store
+
+# Keystore — never commit signing keys
+*.jks
+*.keystore
+!debug.keystore
+
+# NDK / Rust intermediate
+app/src/main/jniLibs/*/lib*.so.tmp

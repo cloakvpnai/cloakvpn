@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "com.cloakvpn.app"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.cloakvpn.app"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
 
@@ -43,6 +43,12 @@ android {
 dependencies {
     // WireGuard — the official Android library from the wireguard-android repo.
     implementation("com.wireguard.android:tunnel:1.0.20230706")
+
+    // Material Components — provides the XML application theme referenced
+    // by AndroidManifest.xml (Theme.Material3.*). The Compose UI uses
+    // Compose Material3 separately; this dependency only supplies the
+    // base activity theme + splash background.
+    implementation("com.google.android.material:material:1.12.0")
 
     // AndroidX / Compose
     implementation("androidx.core:core-ktx:1.13.1")
