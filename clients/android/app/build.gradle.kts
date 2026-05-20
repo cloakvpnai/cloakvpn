@@ -1,8 +1,20 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+// Load build-time secrets from clients/android/secrets.properties.
+// That file is gitignored — copy secrets.properties.example to
+// secrets.properties and fill in the live value. The Android
+// equivalent of the iOS Secrets.xcconfig -> Info.plist path.
+val latticeSecrets = Properties().apply {
+    val f = rootProject.file("secrets.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+val cloakBootstrapKey: String = latticeSecrets.getProperty("CLOAK_BOOTSTRAP_KEY", "")
 
 android {
     namespace = "ai.latticevpn.android"
@@ -19,6 +31,11 @@ android {
             // Restrict to the ABIs we actually ship rosenpass .so for.
             abiFilters += setOf("arm64-v8a", "x86_64")
         }
+
+        // Bootstrap key for the /api/v1/auth/exchange call. Read at
+        // build time from secrets.properties (see top of file) and
+        // surfaced to Kotlin as BuildConfig.CLOAK_BOOTSTRAP_KEY.
+        buildConfigField("String", "CLOAK_BOOTSTRAP_KEY", "\"$cloakBootstrapKey\"")
     }
 
     buildTypes {
@@ -34,6 +51,7 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -61,6 +79,10 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    // OkHttp — HTTP client for the cloak-api-server auth + peer
+    // provisioning calls (AuthClient, ProvisioningClient).
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // JNA — required by the uniffi-generated Kotlin bindings
     // (uniffi/rosenpassffi/rosenpassffi.kt) to load + call into the

@@ -8,6 +8,9 @@ captures/
 # Local machine-specific SDK path
 local.properties
 
+# Build secrets (bootstrap key) — never commit; see secrets.properties.example
+secrets.properties
+
 # IDE
 .idea/
 *.iml
