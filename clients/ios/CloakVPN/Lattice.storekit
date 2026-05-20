@@ -1,0 +1,143 @@
+{
+  "appPolicies" : {
+    "eula" : "",
+    "policies" : [
+      {
+        "locale" : "en_US",
+        "policyText" : "",
+        "policyURL" : ""
+      }
+    ]
+  },
+  "identifier" : "F1A77CE0-0001-4000-A000-LATTICEVPN01",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_billingIssuesEnabled" : false,
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "B2A77CE0-0010-4000-A000-LATTICEGRP01",
+      "localizations" : [
+
+      ],
+      "name" : "Lattice VPN",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "4.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "C3A77CE0-0100-4000-A000-BASICMONTHLY",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Post-quantum VPN. 3 devices, core EU + US locations.",
+              "displayName" : "Lattice Basic — Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "ai.cloakvpn.CloakVPN.basic.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Basic Monthly",
+          "subscriptionGroupID" : "B2A77CE0-0010-4000-A000-LATTICEGRP01",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "49.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "C3A77CE0-0101-4000-A000-BASICYEARLY0",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Post-quantum VPN, billed yearly. 3 devices, core EU + US locations.",
+              "displayName" : "Lattice Basic — Annual",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "ai.cloakvpn.CloakVPN.basic.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Basic Annual",
+          "subscriptionGroupID" : "B2A77CE0-0010-4000-A000-LATTICEGRP01",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "9.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "C3A77CE0-0102-4000-A000-PROMONTHLY00",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Post-quantum VPN with the AI threat shield, split tunneling, all locations. 10 devices.",
+              "displayName" : "Lattice Pro — Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "ai.cloakvpn.CloakVPN.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Pro Monthly",
+          "subscriptionGroupID" : "B2A77CE0-0010-4000-A000-LATTICEGRP01",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "99.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "C3A77CE0-0103-4000-A000-PROYEARLY000",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Post-quantum VPN with the AI threat shield, split tunneling, all locations, billed yearly. 10 devices.",
+              "displayName" : "Lattice Pro — Annual",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "ai.cloakvpn.CloakVPN.pro.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Pro Annual",
+          "subscriptionGroupID" : "B2A77CE0-0010-4000-A000-LATTICEGRP01",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

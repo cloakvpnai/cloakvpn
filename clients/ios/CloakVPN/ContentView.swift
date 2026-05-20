@@ -99,6 +99,10 @@ struct ContentView: View {
     // here so the main view stays clean.
     @State private var showingMoreSheet = false
 
+    /// Presents the subscription paywall (StoreKit 2). Driven from the
+    /// account header in the Settings drawer.
+    @State private var showingPaywall = false
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -610,9 +614,8 @@ struct ContentView: View {
                             Text(sub.displayLine)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
-                            Button("Manage subscription") {
-                                // Placeholder — wire to App Store
-                                // subscription manager when IAP ships.
+                            Button("View plans") {
+                                showingPaywall = true
                             }
                             .font(.caption)
                             .padding(.top, 2)
@@ -714,6 +717,11 @@ struct ContentView: View {
         // chevrons, and toolbar buttons inside the sheet stay grey
         // instead of falling back to system blue.
         .tint(CloakDesign.brandGrey)
+        // StoreKit 2 paywall — presented over the Settings drawer when
+        // the user taps "View plans" in the account header.
+        .sheet(isPresented: $showingPaywall) {
+            PaywallView()
+        }
     }
 
     /// "Account" detail view — placeholder for now. Will hold subscription

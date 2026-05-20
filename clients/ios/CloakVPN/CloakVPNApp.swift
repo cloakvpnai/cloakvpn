@@ -37,6 +37,12 @@ struct CloakVPNApp: App {
                     // "icon changed" alert).
                     SubscriptionInfo.applyIconForCurrentTier()
 
+                    // Start the StoreKit 2 layer: begins the lifetime
+                    // transaction listener and loads subscription
+                    // products + the current entitlement. Must run
+                    // once, here at launch — see StoreKitManager.start().
+                    StoreKitManager.shared.start()
+
                     // Warm-up: kick off a background provision call for
                     // the user's most-likely-to-tap region (last-used or
                     // default). Doesn't block UI — by the time the user
