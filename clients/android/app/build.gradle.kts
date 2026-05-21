@@ -55,6 +55,11 @@ android {
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        // The customized libwg-go.so (built by
+        // Scripts/build-libwg-go-android.sh — it adds wgSetConfig for
+        // seamless Rosenpass PSK rotation) must take precedence over the
+        // copy bundled inside the wireguard-android AAR.
+        jniLibs.pickFirsts += "**/libwg-go.so"
     }
 }
 

@@ -103,14 +103,18 @@ worth knowing:
   and is robust on a standard Linux WireGuard server. The first rotation
   therefore runs only once the tunnel is up — same ordering as iOS.
 
-- **PSK rotation currently bounces the tunnel.** The stock
+- **PSK rotation is seamless via a customized `libwg-go`.** The stock
   `com.wireguard.android:tunnel` artifact exposes no live-reconfigure
-  call: `GoBackend.setState(UP)` on a running tunnel tears it down and
-  brings it back up, and its `libwg-go` opens no usable UAPI socket on
-  Android. So each 2-minute rotation causes a brief reconnect (TCP flows
-  generally survive via retransmit). `PskApplicator` is an interface
-  precisely so this can be upgraded: add a small
-  `wgSetConfig(handle, settings)` JNI export to `libwg-go` (calling
-  `device.IpcSet`), then a `UapiPskApplicator` rotates the PSK in place
-  with no flicker — exactly how the iOS client behaves. **Recommended as
-  the next hardening step for seamless rotation.**
+  call — `GoBackend.setState(UP)` on a running tunnel tears it down and
+  brings it back up. So the project builds its own `libwg-go.so` with
+  one added entry point, `wgSetConfig`, which calls `device.IpcSet` to
+  update the peer's preshared key on the running tunnel **in place** —
+  no teardown. `UapiPskApplicator` uses it. See `libwg-go/README.md`
+  and `Scripts/build-libwg-go-android.sh`.
+
+  If the custom library was not built (a plain checkout has the
+  committed `.so`; otherwise run the script), `UapiPskApplicator`
+  detects the missing JNI symbol and falls back automatically to
+  `ReconfiguringPskApplicator`, which applies the new PSK via a brief
+  tunnel reconnect. Either path rotates the key every cycle — the
+  custom library just removes the ~1–2 s flicker.

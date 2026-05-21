@@ -27,9 +27,14 @@ secrets.properties
 # NDK / Rust intermediate
 app/src/main/jniLibs/*/lib*.so.tmp
 
-# The repo-root .gitignore has a global `*.so` rule. The rosenpass
-# native libraries under jniLibs ARE intentionally committed (so a
-# fresh checkout builds a complete APK without the full Rust+NDK
-# chain), so re-include them here. Regenerate via
-# Scripts/build-rosenpass-android.sh.
+# Scratch dir for the libwg-go native build (clone + Go toolchain).
+.libwg-go-build/
+
+# The repo-root .gitignore has a global `*.so` rule. The native
+# libraries under jniLibs ARE intentionally committed (so a fresh
+# checkout builds a complete APK without the full native toolchain),
+# so re-include them here.
+#   librosenpassffi.so — regenerate via Scripts/build-rosenpass-android.sh
+#   libwg-go.so        — regenerate via Scripts/build-libwg-go-android.sh
 !app/src/main/jniLibs/**/librosenpassffi.so
+!app/src/main/jniLibs/**/libwg-go.so

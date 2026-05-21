@@ -368,7 +368,13 @@ class TunnelManager private constructor(appCtx: Context) {
             serverHost = endpoint.first,
             serverPort = endpoint.second,
             rotationSeconds = cfg.pskRotationSeconds,
-            applicator = ReconfiguringPskApplicator(repository),
+            // Seamless in-place rotation via the custom libwg-go's
+            // wgSetConfig; automatically falls back to a tunnel
+            // reconfigure if that native library is not present.
+            applicator = UapiPskApplicator(
+                peerPublicKeyB64 = cfg.peerPublicKey,
+                fallback = ReconfiguringPskApplicator(repository),
+            ),
         )
         rotator = r
         r.start()
