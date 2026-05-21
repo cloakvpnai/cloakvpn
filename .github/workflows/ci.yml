@@ -48,7 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
-        with: { distribution: 'temurin', java-version: '17' }
+        with: { distribution: 'temurin', java-version: '17', cache: 'gradle' }
       - name: Build debug APK
         working-directory: clients/android
         run: ./gradlew :app:assembleDebug --no-daemon
