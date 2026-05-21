@@ -62,8 +62,12 @@ Remaining phases:
   to Android `.so` (arm64-v8a, armeabi-v7a, x86_64) via `cargo-ndk`,
   wire up the JNI bindings in `RosenpassBridge.kt`.
 - **A4** — WireGuard + VpnService: drive the real `GoBackend` tunnel.
-- **A5** — Tunnel manager: port the iOS auth / region / provisioning logic
-  to Kotlin coroutines (talks to cloak-api-server).
+- **A5 — done** — Tunnel manager: peer provisioning + Rosenpass PSK
+  rotation, ported from the iOS `TunnelManager` / `RosenpassBridge` to
+  Kotlin coroutines. New files: `vpn/TunnelManager.kt`,
+  `vpn/RosenpassRotator.kt`, `vpn/RosenpassTransport.kt`,
+  `vpn/PskApplicator.kt`, `vpn/KeyStore.kt`, `data/ProvisioningClient.kt`.
+  See "Phase A5 notes" below.
 - **A6** — Full Jetpack Compose UI (region picker, settings, kill switch).
 - **A7** — Polish + Play Store: adaptive icon, screenshots, release
   signing, store listing.
@@ -75,10 +79,38 @@ Remaining phases:
   thin-wraps it.
 - **Rosenpass** runs via JNI — build the RosenpassFFI crate with
   `cargo-ndk` and drop the `.so` files into
-  `app/src/main/jniLibs/<abi>/`. `RosenpassBridge.kt` is stubbed for
-  Phase 0; the tunnel works without it (the WireGuard handshake is still
-  PSK-mixed; the server enforces PQC posture).
+  `app/src/main/jniLibs/<abi>/`. `RosenpassBridge.kt` is the thin JNI
+  wrapper; `RosenpassRotator.kt` drives the periodic post-quantum
+  handshake and PSK rotation (Phase A5).
 - **Foreground service** with a persistent notification is required for
   Android 14+ to keep the tunnel alive.
 - **Always-on VPN** and **block-non-VPN-traffic** are supported out of the
   box by `VpnService`; the settings screen exposing them is Phase A6.
+
+## Phase A5 notes
+
+Peer provisioning and the Rosenpass 2-minute PSK rotation are wired end
+to end. `TunnelManager` is the orchestrator (region selection, identity
+keygen, config import, connect/disconnect); `RosenpassRotator` runs the
+post-quantum handshake loop once the tunnel is up. Two design points
+worth knowing:
+
+- **Rosenpass UDP routes through the tunnel.** `GoBackend` owns its own
+  `VpnService`, so app code cannot `protect()` a socket to send the
+  handshake outside the tunnel (the way iOS does via `excludedRoutes`).
+  Instead the Rosenpass UDP travels inside the full tunnel and is
+  delivered locally at the concentrator. This needs no native changes
+  and is robust on a standard Linux WireGuard server. The first rotation
+  therefore runs only once the tunnel is up — same ordering as iOS.
+
+- **PSK rotation currently bounces the tunnel.** The stock
+  `com.wireguard.android:tunnel` artifact exposes no live-reconfigure
+  call: `GoBackend.setState(UP)` on a running tunnel tears it down and
+  brings it back up, and its `libwg-go` opens no usable UAPI socket on
+  Android. So each 2-minute rotation causes a brief reconnect (TCP flows
+  generally survive via retransmit). `PskApplicator` is an interface
+  precisely so this can be upgraded: add a small
+  `wgSetConfig(handle, settings)` JNI export to `libwg-go` (calling
+  `device.IpcSet`), then a `UapiPskApplicator` rotates the PSK in place
+  with no flicker — exactly how the iOS client behaves. **Recommended as
+  the next hardening step for seamless rotation.**

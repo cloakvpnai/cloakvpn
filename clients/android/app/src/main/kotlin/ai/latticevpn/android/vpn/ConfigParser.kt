@@ -91,7 +91,12 @@ object ConfigParser {
             get(section, key).split(",").map { it.trim() }
 
         return LatticeConfig(
-            wgPrivateKey = get("wireguard", "private_key"),
+            // private_key is OPTIONAL: configs returned by
+            // cloak-api-server omit it (the device holds its own locally
+            // generated WireGuard keypair). TunnelManager fills this in
+            // from KeyStore before the config reaches the tunnel. Legacy
+            // pasted configs that DO carry private_key still work.
+            wgPrivateKey = get("wireguard", "private_key", ""),
             addressV4 = get("wireguard", "address_v4"),
             addressV6 = get("wireguard", "address_v6"),
             dns = list("wireguard", "dns"),
