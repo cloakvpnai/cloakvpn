@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Lattice VPN adaptive launcher icon. The background layer is the
+    brand navy; the foreground is the Lattice shield mark, sized inside
+    the adaptive-icon safe zone so every launcher mask (circle,
+    squircle, rounded square) frames it cleanly.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/lattice_navy" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>

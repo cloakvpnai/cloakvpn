@@ -66,12 +66,19 @@ class TunnelRepository private constructor(private val appCtx: Context) {
     private val backend: Backend by lazy { GoBackend(appCtx) }
 
     /**
-     * The current Rosenpass-derived preshared key, or null when the
-     * tunnel is running with no post-quantum PSK yet. Baked into the
+     * The current Rosenpass-derived preshared key for the active server,
+     * or null when there is no post-quantum PSK yet. Baked into the
      * WireGuard config by [buildWgConfig]; written by [applyPresharedKey].
+     *
+     * Persisted per server (keyed by the server's WireGuard public key)
+     * and reloaded on launch and whenever a config is installed. This is
+     * what lets a disconnect -> reconnect succeed: the server keeps the
+     * PSK it last negotiated, so the client must reconnect with the SAME
+     * key — WireGuard mixes the PSK into its handshake, so a mismatch
+     * makes the handshake (and the whole tunnel) fail silently.
      */
     @Volatile
-    private var currentPsk: ByteArray? = null
+    private var currentPsk: ByteArray? = _config.value?.let { loadPsk(it.peerPublicKey) }
 
     /**
      * True only while [applyPresharedKey] is bouncing the tunnel to apply
@@ -112,6 +119,10 @@ class TunnelRepository private constructor(private val appCtx: Context) {
     fun applyConfig(cfg: LatticeConfig) {
         _config.value = cfg
         persist(cfg)
+        // Load the PSK last negotiated with *this* server, so a connect
+        // (including after switching regions) presents the key the server
+        // still holds. Null when this server has never been connected to.
+        currentPsk = loadPsk(cfg.peerPublicKey)
     }
 
     // MARK: - Tunnel control
@@ -138,9 +149,11 @@ class TunnelRepository private constructor(private val appCtx: Context) {
     fun disconnect() {
         if (_state.value == TunnelState.DISCONNECTED) return
         _state.value = TunnelState.DISCONNECTING
-        // Drop the post-quantum PSK: the next connect starts a fresh
-        // Rosenpass session, and the server resets this peer's PSK too.
-        currentPsk = null
+        // The post-quantum PSK is deliberately KEPT (and stays persisted).
+        // The server does not reset this peer's PSK on disconnect, so the
+        // next connect must re-present the same key for the WireGuard
+        // handshake to succeed; the Rosenpass rotator refreshes it once
+        // the tunnel is back up.
         scope.launch {
             try {
                 tunnelMutex.withLock {
@@ -177,6 +190,9 @@ class TunnelRepository private constructor(private val appCtx: Context) {
         require(psk.size == 32) { "PresharedKey must be 32 bytes, got ${psk.size}" }
         currentPsk = psk
         val cfg = _config.value ?: return
+        // Persist per server so a later reconnect re-presents this exact
+        // key — the server keeps it until the next rotation.
+        persistPsk(cfg.peerPublicKey, psk)
         // Not up yet — the PSK is recorded and will be applied at connect.
         if (_state.value != TunnelState.CONNECTED) return
         tunnelMutex.withLock {
@@ -249,6 +265,35 @@ class TunnelRepository private constructor(private val appCtx: Context) {
         val p = appCtx.getSharedPreferences("lattice", Context.MODE_PRIVATE)
         val raw = p.getString("config", null) ?: return null
         return runCatching { LatticeConfig.deserialize(raw) }.getOrNull()
+    }
+
+    // ---- Per-server PSK persistence ------------------------------------
+    //
+    // The Rosenpass PSK is stored per server (keyed by the server's
+    // WireGuard public key) so that disconnect -> reconnect — and region
+    // switches — re-present the exact key the server still holds. Without
+    // this the client reconnects with no PSK while the server keeps the
+    // last one, the WireGuard handshake fails on the PSK mismatch, and
+    // the tunnel deadlocks (Rosenpass can't recover — its handshake rides
+    // inside the dead tunnel).
+
+    private fun pskKey(serverPublicKey: String): String =
+        "psk_" + serverPublicKey.filter { it.isLetterOrDigit() }
+
+    private fun persistPsk(serverPublicKey: String, psk: ByteArray) {
+        appCtx.getSharedPreferences("lattice", Context.MODE_PRIVATE)
+            .edit()
+            .putString(pskKey(serverPublicKey), Base64.getEncoder().encodeToString(psk))
+            .apply()
+    }
+
+    /** The last PSK negotiated with [serverPublicKey], or null if none. */
+    private fun loadPsk(serverPublicKey: String): ByteArray? {
+        val raw = appCtx.getSharedPreferences("lattice", Context.MODE_PRIVATE)
+            .getString(pskKey(serverPublicKey), null) ?: return null
+        return runCatching { Base64.getDecoder().decode(raw) }
+            .getOrNull()
+            ?.takeIf { it.size == 32 }
     }
 
     companion object {

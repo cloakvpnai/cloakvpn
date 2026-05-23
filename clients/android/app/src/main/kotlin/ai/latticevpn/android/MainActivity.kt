@@ -13,6 +13,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 
 /**
  * Single-activity host for the Phase A6 Compose UI.
@@ -39,6 +40,9 @@ class MainActivity : ComponentActivity() {
     ) { /* best-effort — the tunnel still runs if the user declines */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Show the branded splash until the first frame is ready, then
+        // hand off to Theme.Lattice (see Theme.Lattice.Starting).
+        installSplashScreen()
         super.onCreate(savedInstanceState)
 
         requestNotificationPermissionIfNeeded()

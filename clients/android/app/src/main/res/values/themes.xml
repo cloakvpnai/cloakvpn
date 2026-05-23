@@ -13,4 +13,18 @@
         <item name="android:navigationBarColor">@color/lattice_navy</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
+
+    <!--
+        Launch theme. The androidx core-splashscreen library shows the
+        Lattice shield on the brand navy while the app starts, then hands
+        off to Theme.Lattice once the first frame is ready.
+    -->
+    <style name="Theme.Lattice.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/lattice_navy</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/lattice_shield</item>
+        <item name="postSplashScreenTheme">@style/Theme.Lattice</item>
+        <item name="android:statusBarColor">@color/lattice_navy</item>
+        <item name="android:navigationBarColor">@color/lattice_navy</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
 </resources>

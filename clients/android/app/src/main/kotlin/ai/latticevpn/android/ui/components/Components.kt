@@ -1,7 +1,7 @@
 package ai.latticevpn.android.ui.components
 
+import ai.latticevpn.android.R
 import ai.latticevpn.android.ui.theme.LatticeAmber
-import ai.latticevpn.android.ui.theme.LatticeMint
 import ai.latticevpn.android.vpn.TunnelState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -11,6 +11,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,13 +45,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
  * Shared Compose building blocks for the Phase A6 UI — the Lattice
@@ -62,34 +61,18 @@ import kotlin.math.sin
 // ---------------------------------------------------------------------------
 
 /**
- * The Lattice glyph — a hexagonal lattice of connected nodes, echoing
- * the app logo. Drawn rather than bundled so it scales crisply and
- * tints to any color.
+ * The Lattice VPN brand mark — the shield logo, bundled as a bitmap
+ * (`res/drawable/lattice_shield.png`, derived from the master artwork).
+ * The image already carries its glow on transparency, so it sits
+ * cleanly on the app's navy surfaces at any size.
  */
 @Composable
-fun LatticeMark(
-    modifier: Modifier = Modifier,
-    color: Color = LatticeMint,
-) {
-    Canvas(modifier) {
-        val center = Offset(size.width / 2f, size.height / 2f)
-        val radius = size.minDimension / 2f * 0.92f
-        val points = (0 until 6).map { i ->
-            val angle = (-90.0 + 60.0 * i) * PI / 180.0
-            Offset(
-                center.x + radius * cos(angle).toFloat(),
-                center.y + radius * sin(angle).toFloat(),
-            )
-        }
-        val stroke = size.minDimension * 0.065f
-        for (i in 0 until 6) {
-            drawLine(color, points[i], points[(i + 1) % 6], stroke, StrokeCap.Round)
-            drawLine(color.copy(alpha = 0.5f), center, points[i], stroke, StrokeCap.Round)
-        }
-        val dot = size.minDimension * 0.075f
-        points.forEach { drawCircle(color, dot, it) }
-        drawCircle(color, dot * 1.2f, center)
-    }
+fun LatticeLogo(modifier: Modifier = Modifier) {
+    Image(
+        painter = painterResource(R.drawable.lattice_shield),
+        contentDescription = "Lattice VPN",
+        modifier = modifier,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +117,7 @@ fun ConnectControl(
 
     Box(
         modifier = modifier
-            .size(230.dp)
+            .size(200.dp)
             .clip(CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,

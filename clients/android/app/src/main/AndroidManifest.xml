@@ -10,9 +10,11 @@
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="Lattice VPN"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Lattice"
+        android:theme="@style/Theme.Lattice.Starting"
         tools:targetApi="34"
         xmlns:tools="http://schemas.android.com/tools">
 

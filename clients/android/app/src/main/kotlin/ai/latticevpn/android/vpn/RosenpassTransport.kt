@@ -3,6 +3,7 @@ package ai.latticevpn.android.vpn
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.SocketTimeoutException
 
 /** UDP transport failures surfaced to the rotation loop. */
@@ -57,30 +58,41 @@ class RosenpassTransportException(message: String, cause: Throwable? = null) :
 class RosenpassTransport(private val host: String, private val port: Int) {
 
     private var socket: DatagramSocket? = null
+    private var remote: InetSocketAddress? = null
 
     /**
-     * Resolve [host] and open a fresh connected UDP socket. Any prior
-     * socket on this instance is closed first.
+     * Resolve [host] and open a fresh UDP socket. Any prior socket on
+     * this instance is closed first.
+     *
+     * The socket is deliberately left **unconnected**. The Cloak
+     * concentrator receives the handshake addressed to its *public* IP
+     * (the packet travels inside the WireGuard tunnel), but the Linux
+     * kernel sources the *reply* from the server's wg0 address
+     * (10.99.0.1) — the route back to the client — not the public IP.
+     * A `connect()`-ed [DatagramSocket] only accepts datagrams from the
+     * exact peer it dialed, so it silently drops that reply and every
+     * handshake times out (the symptom debugged on 2026-05-23). An
+     * unconnected socket accepts the reply whatever its source address;
+     * Rosenpass's own cryptographic session validation is the real
+     * authentication, so source-IP filtering here would add nothing.
      */
     fun connect() {
         close()
         try {
             val addr = InetAddress.getByName(host)
-            val s = DatagramSocket() // binds a fresh ephemeral local port
-            // "Connecting" a UDP socket pins the default destination and
-            // filters inbound datagrams to that peer.
-            s.connect(addr, port)
-            socket = s
+            remote = InetSocketAddress(addr, port)
+            socket = DatagramSocket() // binds a fresh ephemeral local port
         } catch (e: Exception) {
             throw RosenpassTransportException("failed to open UDP socket to $host:$port", e)
         }
     }
 
-    /** Send one Rosenpass datagram. */
+    /** Send one Rosenpass datagram to the configured server endpoint. */
     fun send(data: ByteArray) {
         val s = socket ?: throw RosenpassTransportException("transport not connected")
+        val dest = remote ?: throw RosenpassTransportException("transport not connected")
         try {
-            s.send(DatagramPacket(data, data.size))
+            s.send(DatagramPacket(data, data.size, dest))
         } catch (e: Exception) {
             throw RosenpassTransportException("UDP send failed", e)
         }

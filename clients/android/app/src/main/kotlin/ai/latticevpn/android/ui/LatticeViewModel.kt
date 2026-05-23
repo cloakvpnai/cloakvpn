@@ -1,5 +1,6 @@
 package ai.latticevpn.android.ui
 
+import ai.latticevpn.android.data.IpAddressClient
 import ai.latticevpn.android.data.LatticeRegion
 import ai.latticevpn.android.vpn.RosenpassStatus
 import ai.latticevpn.android.vpn.TunnelManager
@@ -8,6 +9,8 @@ import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +18,13 @@ import kotlinx.coroutines.launch
 
 /** The three top-level destinations in the A6 UI. */
 enum class Screen { HOME, REGIONS, SETTINGS }
+
+/** State of the public-IP lookup shown on the home screen. */
+sealed class IpState {
+    data object Loading : IpState()
+    data class Known(val ip: String) : IpState()
+    data object Unavailable : IpState()
+}
 
 /**
  * UI-facing state holder for Phase A6.
@@ -29,6 +39,7 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val tm = TunnelManager.get(app)
     private val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val ipClient = IpAddressClient()
 
     // ---- Tunnel / region state — delegated straight from TunnelManager ----
 
@@ -39,6 +50,18 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     val lastRegionError: StateFlow<String?> get() = tm.lastRegionError
     val rosenpassStatus: StateFlow<RosenpassStatus> get() = tm.rosenpassStatus
     val localRosenpassPublicKeyB64: StateFlow<String?> get() = tm.localRosenpassPublicKeyB64
+
+    // ---- Public IP -------------------------------------------------------
+
+    private val _publicIp = MutableStateFlow<IpState>(IpState.Loading)
+    /** Current public IP — the real address when off, the server's when on. */
+    val publicIp: StateFlow<IpState> = _publicIp.asStateFlow()
+    private var ipJob: Job? = null
+
+    private val _realIp = MutableStateFlow<String?>(null)
+    /** The user's real (VPN-off) IP, kept so the home screen can show the
+     *  before/after once the tunnel is up. */
+    val realIp: StateFlow<String?> = _realIp.asStateFlow()
 
     // ---- Navigation ------------------------------------------------------
 
@@ -86,6 +109,18 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
                 tm.warmUpPreferredRegion()
             }
         }
+        // Refresh the displayed public IP whenever the tunnel settles.
+        // collect() replays the current value, so this also performs the
+        // initial lookup on launch.
+        viewModelScope.launch {
+            tm.tunnelState.collect { state ->
+                when (state) {
+                    TunnelState.CONNECTED -> scheduleIpRefresh(1500L)
+                    TunnelState.DISCONNECTED, TunnelState.ERROR -> scheduleIpRefresh(0L)
+                    TunnelState.CONNECTING, TunnelState.DISCONNECTING -> { /* transient */ }
+                }
+            }
+        }
     }
 
     // ---- Actions ---------------------------------------------------------
@@ -105,6 +140,31 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     fun connect() = tm.connect()
 
     fun disconnect() = tm.disconnect()
+
+    // ---- Public IP -------------------------------------------------------
+
+    /** Re-run the public-IP lookup, optionally after a [delayMs] settle wait. */
+    private fun scheduleIpRefresh(delayMs: Long) {
+        ipJob?.cancel()
+        ipJob = viewModelScope.launch {
+            if (delayMs > 0L) delay(delayMs)
+            _publicIp.value = IpState.Loading
+            try {
+                val ip = ipClient.fetchPublicIp()
+                _publicIp.value = IpState.Known(ip)
+                // A lookup made while the tunnel is down sees the user's
+                // real, exposed IP — remember it for the before/after.
+                if (tm.tunnelState.value == TunnelState.DISCONNECTED) {
+                    _realIp.value = ip
+                }
+            } catch (e: Exception) {
+                _publicIp.value = IpState.Unavailable
+            }
+        }
+    }
+
+    /** User-triggered retry of the public-IP lookup. */
+    fun refreshPublicIp() = scheduleIpRefresh(0L)
 
     /** Parse and apply a manually pasted config block. */
     fun importConfig(text: String, onSuccess: () -> Unit) {
