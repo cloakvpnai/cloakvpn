@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Brand navy. Used as the activity window background so the launch
+        window matches the Compose UI's background instead of flashing
+        white before the first frame draws.
+    -->
+    <color name="lattice_navy">#FF0A1628</color>
+</resources>

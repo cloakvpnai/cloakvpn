@@ -79,6 +79,12 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.09.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
+    // Material icon set used by the A6 UI (Settings, Lock, Check,
+    // ArrowBack, chevrons). Versioned by the Compose BOM above. The
+    // -extended artifact is a strict superset of -core; R8 strips the
+    // unused icons from release builds, so the shipped APK is unaffected.
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.animation:animation")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
 

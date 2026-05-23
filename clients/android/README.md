@@ -29,13 +29,19 @@ clients/android/
     src/main/
       AndroidManifest.xml
       kotlin/ai/latticevpn/android/
-        MainActivity.kt
-        ui/LatticeApp.kt
-        vpn/LatticeVpnService.kt
-        vpn/TunnelRepository.kt
+        MainActivity.kt            # single-activity host
+        ui/
+          LatticeApp.kt            # nav root (Home / Regions / Settings)
+          LatticeViewModel.kt      # Compose-facing layer over TunnelManager
+          theme/                   # brand Material 3 theme (Color, Theme)
+          components/Components.kt  # connect control, brand mark, rows
+          screens/                 # Home, RegionPicker, Settings
+        vpn/TunnelManager.kt       # A5 orchestrator
+        vpn/TunnelRepository.kt    # GoBackend tunnel wrapper
         vpn/ConfigParser.kt        # LatticeConfig + INI parser
-        vpn/RosenpassBridge.kt     # JNI bridge (stubbed in Phase 0)
-      res/values/strings.xml
+        vpn/RosenpassBridge.kt     # JNI bridge to librosenpassffi
+        data/                      # Region catalog, AuthClient, ProvisioningClient
+      res/values/                  # strings, colors, themes
 ```
 
 ## Quickstart
@@ -48,29 +54,36 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@17   # or your JDK 17 path
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-First launch → paste the config block produced by `server/scripts/setup.sh`
-→ tap **Connect** → Android asks for VPN permission → tunnel is up.
+First launch → tap the location card → pick a region (the app provisions
+a peer against that region's `cloak-api-server`) → tap the shield to
+connect → Android asks for VPN permission → tunnel is up. A raw config
+block can still be pasted under **Settings → Advanced**.
 
 ## Status
 
-This is a **Phase 0 skeleton**, rebranded to Lattice VPN
-(`ai.latticevpn.android`). It builds into an installable APK and shows the
-connect UI, but the tunnel bring-up and post-quantum bridge are stubbed.
+The Android client is feature-complete through **Phase A6**. It builds
+into an installable APK with the real WireGuard tunnel (A4), the
+Rosenpass post-quantum PSK rotation (A3/A5), region provisioning (A5),
+and the full Jetpack Compose UI (A6). Only store-readiness polish (A7)
+remains.
 
-Remaining phases:
-- **A3** — Rosenpass JNI library: cross-compile the RosenpassFFI Rust crate
-  to Android `.so` (arm64-v8a, armeabi-v7a, x86_64) via `cargo-ndk`,
-  wire up the JNI bindings in `RosenpassBridge.kt`.
-- **A4** — WireGuard + VpnService: drive the real `GoBackend` tunnel.
+Phase status:
+- **A3 — done** — Rosenpass JNI library cross-compiled to Android `.so`
+  (arm64-v8a, armeabi-v7a, x86_64) via `cargo-ndk`, wired through
+  `RosenpassBridge.kt`.
+- **A4 — done** — real `GoBackend` WireGuard tunnel via `VpnService`.
 - **A5 — done** — Tunnel manager: peer provisioning + Rosenpass PSK
   rotation, ported from the iOS `TunnelManager` / `RosenpassBridge` to
   Kotlin coroutines. New files: `vpn/TunnelManager.kt`,
   `vpn/RosenpassRotator.kt`, `vpn/RosenpassTransport.kt`,
   `vpn/PskApplicator.kt`, `vpn/KeyStore.kt`, `data/ProvisioningClient.kt`.
   See "Phase A5 notes" below.
-- **A6** — Full Jetpack Compose UI (region picker, settings, kill switch).
-- **A7** — Polish + Play Store: adaptive icon, screenshots, release
-  signing, store listing.
+- **A6 — done** — Full Jetpack Compose UI: brand Material 3 theme, a
+  redesigned connection home screen, the region picker, and a settings
+  screen (incl. the always-on / kill-switch hand-off). See "Phase A6
+  notes" below.
+- **A7 — pending** — Polish + Play Store: adaptive icon, screenshots,
+  release signing, store listing.
 
 ## Notes
 
@@ -85,7 +98,8 @@ Remaining phases:
 - **Foreground service** with a persistent notification is required for
   Android 14+ to keep the tunnel alive.
 - **Always-on VPN** and **block-non-VPN-traffic** are supported out of the
-  box by `VpnService`; the settings screen exposing them is Phase A6.
+  box by `VpnService`. Android does not let an app toggle them itself, so
+  the Settings screen deep-links to the system VPN settings instead.
 
 ## Phase A5 notes
 
@@ -118,3 +132,36 @@ worth knowing:
   `ReconfiguringPskApplicator`, which applies the new PSK via a brief
   tunnel reconnect. Either path rotates the key every cycle — the
   custom library just removes the ~1–2 s flicker.
+
+## Phase A6 notes
+
+The Compose UI is a single-activity, three-screen app — Home, region
+picker, settings — cross-faded by `LatticeApp`. State lives where A5 put
+it: `LatticeViewModel` is a thin Compose-shaped layer over the
+process-wide `TunnelManager`, adding only in-app navigation, the
+auto-connect preference, and a `viewModelScope` for firing the manager's
+`suspend` actions. Four points worth knowing:
+
+- **No sign-in screen.** Auth is headless — `AuthClient` mints a JWT
+  from a per-install UUID + the bootstrap key — so the user never sees a
+  login. Region selection alone drives provisioning.
+
+- **The kill switch is a system setting.** Android does not expose an
+  API for an app to turn on always-on VPN or "block connections without
+  VPN". The Settings screen is honest about this: it deep-links to
+  `Settings.ACTION_VPN_SETTINGS` where the user enables both for Lattice.
+
+- **`VpnService.prepare` lives in the activity.** Bringing the tunnel up
+  may need the system VPN-consent dialog, which needs an `Activity`
+  result launcher. `MainActivity` owns that flow and the launch-time
+  auto-connect; the view model only exposes `connect()` / `disconnect()`.
+
+- **The brand mark and connect control are drawn, not bundled.** Both
+  are Compose `Canvas` code (`ui/components/Components.kt`), so they
+  scale crisply and re-tint per tunnel state with no image assets. The
+  adaptive launcher icon is still Phase A7.
+
+The activity XML theme (`res/values/themes.xml`, `Theme.Lattice`) only
+sets the window background and system-bar colors to the brand navy so
+cold start does not flash white — the actual UI palette is the Compose
+`LatticeTheme`.

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Activity-level theme for Lattice VPN. The Compose UI supplies its
+        own brand Material 3 color scheme (see ui/theme/Theme.kt); this
+        XML theme only governs the window chrome — the launch background
+        and the system bars — so they match the dark-navy Compose canvas
+        with no white flash on cold start.
+    -->
+    <style name="Theme.Lattice" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/lattice_navy</item>
+        <item name="android:statusBarColor">@color/lattice_navy</item>
+        <item name="android:navigationBarColor">@color/lattice_navy</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
