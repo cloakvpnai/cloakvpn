@@ -20,7 +20,9 @@ _peer-config*.ini
 **/iphone-prod-*.config.ini
 **/iphone-prod-*.config.txt
 
-# iOS
+# Xcode per-user state (iOS + macOS clients) — never belongs in git
+xcuserdata/
+*.xcuserstate
 clients/ios/*.xcodeproj/xcuserdata/
 clients/ios/*.xcworkspace/xcuserdata/
 clients/ios/DerivedData/
