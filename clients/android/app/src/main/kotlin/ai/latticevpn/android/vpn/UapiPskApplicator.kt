@@ -24,6 +24,7 @@ import java.util.Base64
  */
 class UapiPskApplicator(
     private val peerPublicKeyB64: String,
+    private val repository: TunnelRepository,
     private val fallback: PskApplicator,
 ) : PskApplicator {
 
@@ -49,8 +50,15 @@ class UapiPskApplicator(
 
         val applied = withContext(Dispatchers.IO) { WgUapi.setConfig(payload) }
         if (applied) {
+            // The key is live on wireguard-go now, but the seamless path
+            // bypasses TunnelRepository entirely — record it so a later
+            // reconnect re-presents the same key instead of desyncing
+            // against the server (which keeps the rotated key).
+            repository.recordRotatedPsk(psk)
             Log.i(TAG, "PSK rotated in place via UAPI — no tunnel bounce")
         } else {
+            // The fallback (ReconfiguringPskApplicator) records + persists
+            // the PSK itself via TunnelRepository.applyPresharedKey.
             Log.w(TAG, "seamless UAPI path unavailable; falling back to tunnel reconfigure")
             fallback.apply(psk)
         }

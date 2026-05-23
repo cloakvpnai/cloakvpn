@@ -276,13 +276,17 @@ private fun IpRow(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Both sides are weighted so a long label ("Server IP · <region>")
+        // and a long value ("Unavailable — tap to retry") each stay
+        // inside their own half and wrap downward instead of overrunning
+        // the row and bleeding into the line below.
         Text(
             text = label,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 13.sp,
+            modifier = Modifier.weight(1f),
         )
         Spacer(Modifier.width(12.dp))
         Text(
@@ -290,6 +294,8 @@ private fun IpRow(
             color = valueColor,
             fontSize = 16.sp,
             fontWeight = if (valueBold) FontWeight.Bold else FontWeight.SemiBold,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f),
         )
     }
 }

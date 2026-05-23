@@ -46,7 +46,16 @@ ANDROID_PACKAGE_NAME="ai.latticevpn.android"
 ANDROID_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 JNILIBS="$ANDROID_DIR/app/src/main/jniLibs"
 SRC_DIR="$ANDROID_DIR/libwg-go"             # api-uapi.go + jni-uapi.c live here
-BUILD_DIR="$ANDROID_DIR/.libwg-go-build"    # scratch; gitignored
+
+# Build scratch MUST live outside the repo: the repo path contains
+# spaces ("Cloak VPN App - ..."), and `make` cannot handle spaces in
+# target / prerequisite paths. Only the final `cp` touches the repo.
+# Override with LIBWG_BUILD_DIR if $HOME itself contains spaces.
+BUILD_DIR="${LIBWG_BUILD_DIR:-$HOME/.cache/lattice-libwg-go}"
+case "$BUILD_DIR" in
+	*[[:space:]]*) echo "BUILD_DIR must not contain spaces: $BUILD_DIR" >&2; exit 1 ;;
+esac
+
 NDK="${ANDROID_NDK_HOME:-$HOME/Library/Android/sdk/ndk/28.2.13676358}"
 
 color() { printf "\033[1;34m[libwg-go]\033[0m %s\n" "$*"; }
@@ -95,8 +104,12 @@ done
 SHIM
 	chmod +x "$SHIM_DIR/flock"
 fi
-if ! command -v sha256sum >/dev/null 2>&1; then
-	color "providing a sha256sum shim over shasum"
+# The Makefile needs a GNU-compatible `sha256sum -c` (reads checksum
+# lines from stdin). macOS either lacks sha256sum or ships a BSD one
+# that cannot. Shim it over `shasum` (a Perl script always present on
+# macOS) unless a genuine GNU sha256sum is on PATH.
+if ! sha256sum --version 2>/dev/null | grep -qi gnu; then
+	color "providing a GNU-compatible sha256sum shim over shasum"
 	cat > "$SHIM_DIR/sha256sum" <<'SHIM'
 #!/bin/sh
 exec shasum -a 256 "$@"

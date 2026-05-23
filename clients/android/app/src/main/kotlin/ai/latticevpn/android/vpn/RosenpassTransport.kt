@@ -1,5 +1,10 @@
 package ai.latticevpn.android.vpn
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.util.Log
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -11,81 +16,117 @@ class RosenpassTransportException(message: String, cause: Throwable? = null) :
     Exception(message, cause)
 
 /**
- * UDP transport for the Rosenpass handshake — a plain [DatagramSocket]
- * to the concentrator's Rosenpass listener (`<region>.cloakvpn.ai:9999`).
+ * UDP transport for the Rosenpass handshake — a [DatagramSocket] to the
+ * concentrator's Rosenpass listener (`<region>:9999`).
  *
- * ## Why this is a plain, *un-protected* socket
+ * ## The socket is routed OUTSIDE the WireGuard tunnel
  *
- * The iOS client relays Rosenpass UDP through its NetworkExtension
- * process and carves the Rosenpass server IP out of the tunnel
- * (`excludedRoutes`). It has to: under `includeAllNetworks = true`,
- * iOS's NECP forbids host-app sockets from bypassing the tunnel.
+ * The Rosenpass handshake must not depend on the health of the WireGuard
+ * tunnel. If it travelled *inside* the tunnel (the pre-2026-05-23
+ * behaviour) a PSK desync would black the tunnel and trap the very
+ * handshake that would re-key and recover it — a circular dependency
+ * that made live PSK rotation deadlock.
  *
- * Android's constraints are different. The tunnel is driven by
- * wireguard-android's `GoBackend`, which owns its own `VpnService`.
- * Only that service can `protect()` a socket, and it is not exposed to
- * app code — so we cannot make this socket bypass the tunnel.
+ * So [connect] binds this socket to the device's underlying physical
+ * network (WiFi / cellular) via [ConnectivityManager] — the Android
+ * analogue of the iOS client's `excludedRoutes`. Handshake packets then
+ * go straight to the concentrator's public `:9999` listener, bypassing
+ * the tunnel, so a rotation always completes regardless of tunnel state
+ * and a desync self-heals on the next cycle. DNS for [host] is resolved
+ * on that same underlying network. If no non-VPN network is found the
+ * socket is left unbound and falls back to the in-tunnel path.
  *
- * Instead, this socket deliberately routes *through* the tunnel:
+ * This leaks no new metadata: an observer already sees the device
+ * talking to the concentrator's public IP for WireGuard transport
+ * (`:51820`); a Rosenpass `:9999` flow to the same host adds nothing.
  *
- *   - Rosenpass packets are addressed to the concentrator's public IP
- *     on UDP/9999.
- *   - Under full-tunnel routing (`AllowedIPs = 0.0.0.0/0, ::/0`) that
- *     traffic is encrypted and delivered to the concentrator over
- *     WireGuard.
- *   - The concentrator receives a packet destined to one of its own
- *     local addresses and delivers it to the Rosenpass listener
- *     locally. The reply travels back through the tunnel.
+ * ## Why the socket is left *unconnected*
  *
- * This is correct and robust on a standard Linux WireGuard concentrator,
- * needs no native changes, and avoids the fragile route of reflecting
- * into `GoBackend`'s private `VpnService`. The only cost is that the
- * first rotation cannot run until the WireGuard tunnel is up — which is
- * already true on iOS too (Rosenpass refines an already-classical
- * tunnel; WireGuard works without a PSK in the meantime).
+ * The socket is deliberately not `connect()`-ed. The Cloak concentrator
+ * receives the handshake addressed to its public IP, but the Linux
+ * kernel may source the *reply* from a different local address. A
+ * `connect()`-ed [DatagramSocket] only accepts datagrams from the exact
+ * peer it dialed, so it would silently drop that reply and every
+ * handshake would time out (the symptom debugged on 2026-05-23). An
+ * unconnected socket accepts the reply whatever its source address;
+ * Rosenpass's own cryptographic session validation is the real
+ * authentication, so source-IP filtering here would add nothing.
  *
  * ## Lifecycle
  *
- * One-shot, single-handshake. The rotation loop builds a fresh
- * transport for each handshake and [close]s it afterwards — exactly as
- * the iOS `RosenpassDriver` opens and closes its `NWConnection` per
- * handshake. A fresh ephemeral source port plus an empty receive buffer
- * each time prevents a stale datagram from a previous handshake being
- * consumed by the next one and failing session-ID validation.
+ * One-shot, single-handshake. The rotation loop builds a fresh transport
+ * for each handshake and [close]s it afterwards. A fresh ephemeral
+ * source port plus an empty receive buffer each time prevents a stale
+ * datagram from a previous handshake being consumed by the next one.
  *
  * All methods are blocking and must be called off the main thread.
  */
-class RosenpassTransport(private val host: String, private val port: Int) {
+class RosenpassTransport(
+    private val context: Context,
+    private val host: String,
+    private val port: Int,
+) {
 
     private var socket: DatagramSocket? = null
     private var remote: InetSocketAddress? = null
 
     /**
-     * Resolve [host] and open a fresh UDP socket. Any prior socket on
-     * this instance is closed first.
-     *
-     * The socket is deliberately left **unconnected**. The Cloak
-     * concentrator receives the handshake addressed to its *public* IP
-     * (the packet travels inside the WireGuard tunnel), but the Linux
-     * kernel sources the *reply* from the server's wg0 address
-     * (10.99.0.1) — the route back to the client — not the public IP.
-     * A `connect()`-ed [DatagramSocket] only accepts datagrams from the
-     * exact peer it dialed, so it silently drops that reply and every
-     * handshake times out (the symptom debugged on 2026-05-23). An
-     * unconnected socket accepts the reply whatever its source address;
-     * Rosenpass's own cryptographic session validation is the real
-     * authentication, so source-IP filtering here would add nothing.
+     * Resolve [host] and open a fresh UDP socket, bound to the underlying
+     * non-VPN network so the handshake bypasses the WireGuard tunnel (see
+     * the class doc). Any prior socket on this instance is closed first.
      */
     fun connect() {
         close()
         try {
-            val addr = InetAddress.getByName(host)
+            val underlying = underlyingNonVpnNetwork()
+            val addr = resolveHost(host, underlying)
             remote = InetSocketAddress(addr, port)
-            socket = DatagramSocket() // binds a fresh ephemeral local port
+            val s = DatagramSocket() // binds a fresh ephemeral local port
+            if (underlying != null) {
+                try {
+                    underlying.bindSocket(s)
+                    Log.i(TAG, "Rosenpass socket bound to underlying network — out of tunnel")
+                } catch (e: Exception) {
+                    // The network vanished between query and bind — proceed
+                    // unbound rather than fail; the handshake can still work
+                    // while the tunnel is healthy.
+                    Log.w(TAG, "could not bind Rosenpass socket out of tunnel: ${e.message}")
+                }
+            } else {
+                Log.w(TAG, "no non-VPN network found — Rosenpass socket will use the tunnel")
+            }
+            socket = s
         } catch (e: Exception) {
             throw RosenpassTransportException("failed to open UDP socket to $host:$port", e)
         }
     }
+
+    /**
+     * The device's underlying physical (non-VPN) network with internet,
+     * or null if none is available.
+     */
+    @Suppress("DEPRECATION") // getAllNetworks: still the simplest cross-version query
+    private fun underlyingNonVpnNetwork(): Network? {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return null
+        return cm.allNetworks.firstOrNull { n ->
+            val caps = cm.getNetworkCapabilities(n) ?: return@firstOrNull false
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+        }
+    }
+
+    /** Resolve [host] on [network] when available, else with the default resolver. */
+    private fun resolveHost(host: String, network: Network?): InetAddress =
+        if (network != null) {
+            try {
+                network.getByName(host)
+            } catch (e: Exception) {
+                InetAddress.getByName(host)
+            }
+        } else {
+            InetAddress.getByName(host)
+        }
 
     /** Send one Rosenpass datagram to the configured server endpoint. */
     fun send(data: ByteArray) {
@@ -127,6 +168,8 @@ class RosenpassTransport(private val host: String, private val port: Int) {
     }
 
     companion object {
+        private const val TAG = "RosenpassTransport"
+
         // Generous enough for any Rosenpass datagram (the large McEliece
         // public keys are exchanged out-of-band at provisioning time;
         // handshake messages only carry small KEM ciphertexts).

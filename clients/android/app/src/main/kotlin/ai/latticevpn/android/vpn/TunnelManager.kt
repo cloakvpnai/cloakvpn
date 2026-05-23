@@ -15,9 +15,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Base64
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -93,6 +95,20 @@ class TunnelManager private constructor(appCtx: Context) {
     @Volatile
     private var rotator: RosenpassRotator? = null
     private var rotatorStatusJob: Job? = null
+    private var rotatorWatchdogJob: Job? = null
+
+    /** True while [recoverDeadTunnel] is running, to suppress re-entry. */
+    @Volatile
+    private var recoveryInProgress = false
+
+    /**
+     * Automatic recover→reconnect cycles performed with no intervening
+     * healthy rotation. Bounds the loop when the fault is durable (e.g.
+     * the concentrator is down) instead of bouncing the tunnel forever.
+     * Reset to 0 on the first [RosenpassStatus.Established] after a start.
+     */
+    @Volatile
+    private var recoveryAttempts = 0
 
     init {
         // Restore the last-selected region so the picker highlights it
@@ -331,7 +347,7 @@ class TunnelManager private constructor(appCtx: Context) {
     private suspend fun startRotatorIfNeeded() {
         if (rotator?.isRunning() == true) return
         // A prior rotator that is no longer running must be torn down
-        // (status-forwarding job cancelled, executor released) before a
+        // (status + watchdog jobs cancelled, executor released) before a
         // fresh one is created.
         if (rotator != null) stopRotator()
         val cfg = repository.config.value ?: return
@@ -340,8 +356,66 @@ class TunnelManager private constructor(appCtx: Context) {
             return
         }
 
-        // Heavy key reads (the McEliece blobs are ~700 KB) off the main
-        // thread.
+        // Live mid-session PSK rotation is gated behind LIVE_ROTATION_ENABLED
+        // (currently OFF — see that constant). OFF: one handshake per
+        // connection (SESSION_PSK_LIFETIME_SEC), no watchdog — the
+        // proven-stable mode. ON: re-key every cfg.pskRotationSeconds with
+        // the desync watchdog active. The handshake hardening, seamless-path
+        // PSK persistence and watchdog/recovery code all stay compiled in
+        // either way; only this gate changes behaviour.
+        val rotationSeconds =
+            if (LIVE_ROTATION_ENABLED) cfg.pskRotationSeconds else SESSION_PSK_LIFETIME_SEC
+        val r = buildRotator(rotationSeconds) ?: return
+        rotator = r
+        r.start()
+        rotatorStatusJob = scope.launch {
+            r.status.collect { st ->
+                _rosenpassStatus.value = st
+                // A healthy rotation means whatever was wrong is resolved
+                // — refill the recovery budget.
+                if (st is RosenpassStatus.Established) recoveryAttempts = 0
+            }
+        }
+        // The desync watchdog only makes sense while rotation is live —
+        // with one handshake per connection there is nothing to recover.
+        if (LIVE_ROTATION_ENABLED) {
+            rotatorWatchdogJob = scope.launch {
+                r.consecutiveFailures.collect { fails ->
+                    if (fails >= DESYNC_FAILURE_THRESHOLD) triggerRecovery()
+                }
+            }
+        }
+        Log.i(TAG, "Rosenpass rotator started (rotation=${rotationSeconds}s, " +
+            "live rotation ${if (LIVE_ROTATION_ENABLED) "ENABLED" else "disabled"})")
+    }
+
+    private fun stopRotator() {
+        rotatorStatusJob?.cancel()
+        rotatorStatusJob = null
+        rotatorWatchdogJob?.cancel()
+        rotatorWatchdogJob = null
+        rotator?.let {
+            it.stop()
+            Log.i(TAG, "Rosenpass rotator stopped")
+        }
+        rotator = null
+        _rosenpassStatus.value = RosenpassStatus.Idle
+    }
+
+    /**
+     * Construct a [RosenpassRotator] from the active config + stored key
+     * material, or null if anything required is missing (the reason is
+     * logged and surfaced on [rosenpassStatus]).
+     *
+     * [rotationSeconds] is the interval between handshakes — the live
+     * rotation cadence for the steady-state rotator, or
+     * [SESSION_PSK_LIFETIME_SEC] for the one-shot recovery handshake.
+     */
+    private suspend fun buildRotator(rotationSeconds: Int): RosenpassRotator? {
+        val cfg = repository.config.value ?: return null
+        if (!cfg.pqEnabled) return null
+
+        // Heavy key reads (the McEliece blobs are ~700 KB) off the main thread.
         val keyMaterial: Pair<KeyStore.Keypair, String> = try {
             withContext(Dispatchers.IO) {
                 keyStore.loadLocalKeypair() to keyStore.loadServerPublicKey()
@@ -349,50 +423,114 @@ class TunnelManager private constructor(appCtx: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "cannot start Rosenpass — key material missing: ${e.message}")
             _rosenpassStatus.value = RosenpassStatus.Error("PQC keys unavailable")
-            return
+            return null
         }
-        val rpKeys = keyMaterial.first
-        val serverPub = keyMaterial.second
 
         val endpoint = parseEndpoint(cfg.rpEndpoint)
         if (endpoint == null) {
             Log.e(TAG, "cannot start Rosenpass — bad endpoint '${cfg.rpEndpoint}'")
             _rosenpassStatus.value = RosenpassStatus.Error("bad rosenpass endpoint")
-            return
+            return null
         }
 
-        val r = RosenpassRotator(
-            clientSecretKeyB64 = rpKeys.secretB64,
-            clientPublicKeyB64 = rpKeys.publicB64,
-            serverPublicKeyB64 = serverPub,
+        return RosenpassRotator(
+            context = context,
+            clientSecretKeyB64 = keyMaterial.first.secretB64,
+            clientPublicKeyB64 = keyMaterial.first.publicB64,
+            serverPublicKeyB64 = keyMaterial.second,
             serverHost = endpoint.first,
             serverPort = endpoint.second,
-            rotationSeconds = cfg.pskRotationSeconds,
-            // Seamless in-place rotation via the custom libwg-go's
-            // wgSetConfig; automatically falls back to a tunnel
-            // reconfigure if that native library is not present.
+            rotationSeconds = rotationSeconds,
+            // Seamless in-place apply via the custom libwg-go's wgSetConfig;
+            // falls back to a tunnel reconfigure if that library is absent.
             applicator = UapiPskApplicator(
                 peerPublicKeyB64 = cfg.peerPublicKey,
+                repository = repository,
                 fallback = ReconfiguringPskApplicator(repository),
             ),
         )
-        rotator = r
-        r.start()
-        rotatorStatusJob = scope.launch {
-            r.status.collect { _rosenpassStatus.value = it }
-        }
-        Log.i(TAG, "Rosenpass rotator started (rotation=${cfg.pskRotationSeconds}s)")
     }
 
-    private fun stopRotator() {
-        rotatorStatusJob?.cancel()
-        rotatorStatusJob = null
-        rotator?.let {
-            it.stop()
-            Log.i(TAG, "Rosenpass rotator stopped")
+    // ---- Desync recovery ------------------------------------------------
+
+    /**
+     * Launch [recoverDeadTunnel] unless a recovery is already running or
+     * the recovery budget for this connection is spent.
+     */
+    private fun triggerRecovery() {
+        if (recoveryInProgress) return
+        if (recoveryAttempts >= MAX_AUTO_RECOVERIES) {
+            Log.e(TAG, "post-quantum auto-recovery budget spent ($recoveryAttempts) — " +
+                "leaving the tunnel for a manual reconnect")
+            return
         }
-        rotator = null
-        _rosenpassStatus.value = RosenpassStatus.Idle
+        recoveryInProgress = true
+        scope.launch {
+            try {
+                recoverDeadTunnel()
+            } catch (e: Exception) {
+                Log.e(TAG, "tunnel recovery failed: ${e.message}")
+            } finally {
+                recoveryInProgress = false
+            }
+        }
+    }
+
+    /**
+     * Repair a tunnel that a post-quantum PSK desync has deadlocked.
+     *
+     * A desync is unrecoverable from *inside* the tunnel: the Rosenpass
+     * handshake rides within it, so once the tunnel is black the handshake
+     * that would fix it cannot get out. The escape is to tear the tunnel
+     * down first — with it down, the very same handshake travels over the
+     * plain internet straight to the concentrator's public Rosenpass
+     * listener. That re-keys both ends (the server installs the derived
+     * PSK on its `wg0` exactly as in steady state), after which a normal
+     * reconnect comes up with client and server agreed again.
+     */
+    private suspend fun recoverDeadTunnel() {
+        recoveryAttempts += 1
+        Log.w(TAG, "post-quantum desync suspected — recovering tunnel (attempt $recoveryAttempts)")
+
+        stopRotator()
+        disconnect()
+        awaitTunnelState(TunnelState.DISCONNECTED, SETTLE_TIMEOUT_MS)
+        delay(500) // brief beat for the VpnService to fully release
+        _rosenpassStatus.value = RosenpassStatus.Error("recovering tunnel…")
+
+        // One Rosenpass handshake with the tunnel DOWN. Its PSK apply
+        // finds no live tunnel and so just records + persists the key
+        // (TunnelRepository.applyPresharedKey); the connect() below then
+        // bakes it into the fresh tunnel.
+        val recoveryRotator = buildRotator(SESSION_PSK_LIFETIME_SEC)
+        if (recoveryRotator != null) {
+            recoveryRotator.start()
+            val ok = awaitFirstRotation(recoveryRotator, RECOVERY_HANDSHAKE_TIMEOUT_MS)
+            recoveryRotator.stop()
+            if (ok) {
+                Log.i(TAG, "recovery handshake complete — fresh PSK in place")
+            } else {
+                Log.e(TAG, "recovery handshake did not complete in time")
+            }
+        }
+
+        // Reconnect. The CONNECTED transition restarts the steady-state
+        // rotator (and its watchdog) via the tunnel-state collector.
+        connect()
+    }
+
+    /** Suspend until the rotator reports its first successful rotation, or [timeoutMs] elapses. */
+    private suspend fun awaitFirstRotation(r: RosenpassRotator, timeoutMs: Long): Boolean =
+        withTimeoutOrNull(timeoutMs) {
+            r.status.first { it is RosenpassStatus.Established }
+            true
+        } ?: false
+
+    /** Suspend until the tunnel reaches [target], or [timeoutMs] elapses. */
+    private suspend fun awaitTunnelState(target: TunnelState, timeoutMs: Long) {
+        withTimeoutOrNull(timeoutMs) {
+            repository.state.first { it == target }
+        }
     }
 
     // ---- Internals ------------------------------------------------------
@@ -457,8 +595,50 @@ class TunnelManager private constructor(appCtx: Context) {
         private const val KEY_SELECTED_REGION = "selected_region_id"
         private const val KEY_PROVISIONED_PREFIX = "provisioned_config_"
 
-        /** How long to wait for the tunnel to settle DOWN during a region switch. */
+        /**
+         * Master switch for mid-session post-quantum PSK rotation.
+         *
+         * OFF (current): one Rosenpass handshake per connection — the
+         * proven-stable mode. The key is still post-quantum; it simply is
+         * not re-keyed mid-session, and the desync watchdog is dormant.
+         *
+         * ON: re-key every `cfg.pskRotationSeconds` with the watchdog
+         * active. Enabled now that the Rosenpass handshake runs OUTSIDE
+         * the WireGuard tunnel (RosenpassTransport binds its socket to the
+         * underlying network) — a rotation no longer depends on tunnel
+         * health, so it cannot deadlock and a desync self-heals on the
+         * next cycle. See SESSION_HANDOVER_2026-05-23_pqc-rotation.md.
+         */
+        private const val LIVE_ROTATION_ENABLED = true
+
+        /**
+         * Rotation interval used both for the one-shot recovery rotator
+         * and, while [LIVE_ROTATION_ENABLED] is false, for the steady
+         * rotator — large enough that it performs exactly one handshake
+         * per connection and then idles. 24 h exceeds any real session.
+         */
+        private const val SESSION_PSK_LIFETIME_SEC = 24 * 60 * 60
+
+        /** How long to wait for the tunnel to settle DOWN during a region switch or recovery. */
         private const val SETTLE_TIMEOUT_MS = 8_000L
+
+        /**
+         * Consecutive Rosenpass handshake failures that trip the desync
+         * watchdog. A black tunnel fails *every* handshake (the Rosenpass
+         * UDP rides inside it), so a run this long is conclusive while
+         * still tolerating isolated transient losses.
+         */
+        private const val DESYNC_FAILURE_THRESHOLD = 4
+
+        /**
+         * Cap on automatic recover→reconnect cycles per connection with no
+         * intervening healthy rotation — stops an endless bounce loop when
+         * the fault is durable (e.g. the concentrator is down).
+         */
+        private const val MAX_AUTO_RECOVERIES = 3
+
+        /** How long the recovery handshake gets to complete before reconnecting anyway. */
+        private const val RECOVERY_HANDSHAKE_TIMEOUT_MS = 60_000L
 
         private const val LARGE_STACK_BYTES = 16L * 1024 * 1024
     }

@@ -149,16 +149,26 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
         ipJob = viewModelScope.launch {
             if (delayMs > 0L) delay(delayMs)
             _publicIp.value = IpState.Loading
-            try {
-                val ip = ipClient.fetchPublicIp()
-                _publicIp.value = IpState.Known(ip)
-                // A lookup made while the tunnel is down sees the user's
-                // real, exposed IP — remember it for the before/after.
-                if (tm.tunnelState.value == TunnelState.DISCONNECTED) {
-                    _realIp.value = ip
+            // A freshly-connected tunnel can take several seconds to
+            // start carrying traffic, so retry a few times before
+            // reporting the lookup as unavailable.
+            repeat(IP_LOOKUP_ATTEMPTS) { attempt ->
+                try {
+                    val ip = ipClient.fetchPublicIp()
+                    _publicIp.value = IpState.Known(ip)
+                    // A lookup made while the tunnel is down sees the
+                    // user's real, exposed IP — remember it.
+                    if (tm.tunnelState.value == TunnelState.DISCONNECTED) {
+                        _realIp.value = ip
+                    }
+                    return@launch
+                } catch (e: Exception) {
+                    if (attempt == IP_LOOKUP_ATTEMPTS - 1) {
+                        _publicIp.value = IpState.Unavailable
+                    } else {
+                        delay(IP_LOOKUP_RETRY_MS)
+                    }
                 }
-            } catch (e: Exception) {
-                _publicIp.value = IpState.Unavailable
             }
         }
     }
@@ -182,5 +192,10 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val PREFS = "lattice"
         private const val KEY_AUTO_CONNECT = "pref_auto_connect"
+
+        /** Public-IP lookup: attempts and the wait between them, to ride
+         *  out the few seconds a freshly-connected tunnel needs to settle. */
+        private const val IP_LOOKUP_ATTEMPTS = 4
+        private const val IP_LOOKUP_RETRY_MS = 2_500L
     }
 }

@@ -1,5 +1,6 @@
 package ai.latticevpn.android.vpn
 
+import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -85,6 +86,7 @@ sealed class RosenpassStatus {
  * [RosenpassRotator] for the next tunnel session.
  */
 class RosenpassRotator(
+    private val context: Context,
     private val clientSecretKeyB64: String,
     private val clientPublicKeyB64: String,
     private val serverPublicKeyB64: String,
@@ -101,6 +103,16 @@ class RosenpassRotator(
 
     private val _status = MutableStateFlow<RosenpassStatus>(RosenpassStatus.Idle)
     val status: StateFlow<RosenpassStatus> = _status.asStateFlow()
+
+    private val _consecutiveFailures = MutableStateFlow(0)
+    /**
+     * Handshake attempts that have failed back-to-back (0 while healthy).
+     * [TunnelManager] watches this: because the Rosenpass handshake UDP
+     * travels *inside* the WireGuard tunnel, a sustained run of failures
+     * means the tunnel itself has stopped passing traffic — the cue to
+     * tear it down and recover (see `TunnelManager.recoverDeadTunnel`).
+     */
+    val consecutiveFailures: StateFlow<Int> = _consecutiveFailures.asStateFlow()
 
     // Dedicated large-stack thread for the Rosenpass FFI + blocking UDP.
     private val ffiExecutor: ExecutorService =
@@ -164,7 +176,6 @@ class RosenpassRotator(
         serverPublic: ByteArray,
     ) {
         var rotations = 0
-        var consecutiveFailures = 0
 
         while (coroutineContext.isActive) {
             _status.value = RosenpassStatus.Handshaking
@@ -173,7 +184,7 @@ class RosenpassRotator(
                     singleHandshake(clientSecret, clientPublic, serverPublic)
                 }
                 rotations += 1
-                consecutiveFailures = 0
+                _consecutiveFailures.value = 0
                 _status.value = RosenpassStatus.Established(rotations)
                 Log.i(TAG, "rotation #$rotations succeeded (${psk.size}-byte PSK)")
 
@@ -193,13 +204,14 @@ class RosenpassRotator(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                consecutiveFailures += 1
+                val fails = _consecutiveFailures.value + 1
+                _consecutiveFailures.value = fails
                 val msg = e.message ?: e.javaClass.simpleName
-                Log.e(TAG, "handshake failed ($consecutiveFailures consecutive): $msg")
+                Log.e(TAG, "handshake failed ($fails consecutive): $msg")
                 _status.value = RosenpassStatus.Error(msg)
                 // Exponential backoff, capped at 60 s — matches the iOS
                 // RosenpassDriver: min(60, 1 << min(failures, 6)).
-                val backoff = min(MAX_BACKOFF_SEC, 1 shl min(consecutiveFailures, 6))
+                val backoff = min(MAX_BACKOFF_SEC, 1 shl min(fails, 6))
                 delay(backoff * 1000L)
             }
         }
@@ -207,19 +219,33 @@ class RosenpassRotator(
 
     /**
      * One round-trip of the Rosenpass V03 protocol:
-     *   tx InitHello → rx RespHello → tx InitConf → done.
+     *   tx InitHello → rx RespHello → tx InitConf → (rx EmptyData ack).
      *
      * V03 surfaces the PSK as `SendMessage(InitConf)` rather than
      * `DerivedPsk`: the InitConf bytes MUST be sent for the responder to
      * commit, so the FFI returns them as an outbound message and stashes
-     * the PSK. After sending we fetch it via `lastDerivedPsk()`. Dropping
-     * InitConf here would leave the server's WireGuard with no PSK
-     * installed — the exact bug the iOS comments document at length.
+     * the PSK, which we fetch via `lastDerivedPsk()`.
+     *
+     * ## Why this is in two phases
+     *
+     * The responder commits the post-quantum key only when it *receives*
+     * our InitConf. The pre-2026-05-24 code returned the PSK the instant
+     * it *sent* InitConf once — so a single dropped datagram left the
+     * client holding a key the server never installed. That silent
+     * client/server PSK desync is invisible until the next WireGuard
+     * rekey (~120 s), which then fails on the PSK mismatch and deadlocks
+     * the tunnel — the "rotation #2 deadlock" symptom. And because the
+     * Rosenpass handshake rides inside the tunnel, it cannot recover.
+     *
+     * Phase 1 drives the handshake until the PSK is derived. Phase 2 then
+     * retransmits InitConf a few times (best-effort) so the odds of every
+     * copy being lost are negligible; the responder treats duplicates
+     * idempotently. Any residual desync is caught by the TunnelManager
+     * watchdog, which tears the tunnel down and re-keys from the outside.
      *
      * A fresh transport (and therefore a fresh ephemeral UDP source port
-     * and empty receive buffer) is used per handshake so a stale
-     * datagram from a previous cycle cannot be mistaken for this
-     * session's reply.
+     * and empty receive buffer) is used per handshake so a stale datagram
+     * from a previous cycle cannot be mistaken for this session's reply.
      *
      * Runs on [ffiDispatcher]; all calls here are blocking.
      */
@@ -228,15 +254,18 @@ class RosenpassRotator(
         clientPublic: ByteArray,
         serverPublic: ByteArray,
     ): ByteArray {
-        val transport = RosenpassTransport(serverHost, serverPort)
+        val transport = RosenpassTransport(context, serverHost, serverPort)
         val session = RosenpassBridge.newSession(clientSecret, clientPublic, serverPublic)
         try {
             transport.connect()
             transport.send(session.initiate())
 
-            // Up to 6 iterations: covers V03's 1.5-RTT pattern plus a few
-            // server-side retransmits under packet loss.
-            repeat(MAX_MESSAGES) {
+            // ---- Phase 1 — drive the handshake until the PSK is derived.
+            // Up to MAX_MESSAGES iterations: covers V03's 1.5-RTT pattern
+            // plus a few server-side retransmits under packet loss.
+            var psk: ByteArray? = null
+            var initConf: ByteArray? = null
+            for (i in 0 until MAX_MESSAGES) {
                 coroutineContext.ensureActive()
                 val inbound = transport.receive(RECEIVE_TIMEOUT_SEC)
                 when (val result = session.handleMessage(inbound)) {
@@ -246,8 +275,12 @@ class RosenpassRotator(
                         // handle_message call that produced these bytes
                         // (the RespHello that requires us to emit
                         // InitConf). Fetch it from the session stash.
-                        val psk = session.lastDerivedPsk()
-                        if (psk != null && psk.size == 32) return psk
+                        val derived = session.lastDerivedPsk()
+                        if (derived != null && derived.size == 32) {
+                            psk = derived
+                            initConf = result.bytes
+                            break
+                        }
                     }
                     is StepResult.DerivedPsk -> {
                         if (result.psk.size != 32) {
@@ -256,12 +289,45 @@ class RosenpassRotator(
                         return result.psk
                     }
                     StepResult.Idle -> {
-                        val psk = session.lastDerivedPsk()
-                        if (psk != null && psk.size == 32) return psk
+                        val derived = session.lastDerivedPsk()
+                        if (derived != null && derived.size == 32) return derived
                     }
                 }
             }
-            throw RosenpassException("handshake exceeded message budget")
+            val derivedPsk = psk ?: throw RosenpassException("handshake exceeded message budget")
+
+            // ---- Phase 2 — harden InitConf delivery (best-effort).
+            // We already hold a valid PSK, so nothing here may fail the
+            // rotation: every step is wrapped so a transient socket error
+            // is swallowed. The Rosenpass FFI exposes no unambiguous
+            // delivery ack, so instead of parsing replies we simply
+            // retransmit InitConf. A short wait between sends both paces
+            // the retransmits and lets us process any reply — a
+            // retransmitted RespHello makes the session re-emit InitConf;
+            // an EmptyData ack is harmless to feed in and ignore.
+            var lastInitConf: ByteArray = initConf ?: return derivedPsk
+            for (i in 0 until INITCONF_RETRANSMITS) {
+                coroutineContext.ensureActive()
+                val reply = try {
+                    transport.receive(INITCONF_ACK_TIMEOUT_SEC)
+                } catch (e: Exception) {
+                    null
+                }
+                if (reply != null) {
+                    val step = try {
+                        session.handleMessage(reply)
+                    } catch (e: Exception) {
+                        null
+                    }
+                    if (step is StepResult.SendMessage) lastInitConf = step.bytes
+                }
+                try {
+                    transport.send(lastInitConf)
+                } catch (e: Exception) {
+                    Log.w(TAG, "InitConf retransmit ${i + 1} failed: ${e.message}")
+                }
+            }
+            return derivedPsk
         } finally {
             transport.close()
             runCatching { session.close() }
@@ -279,6 +345,17 @@ class RosenpassRotator(
 
         /** Per-message inbound UDP timeout. */
         private const val RECEIVE_TIMEOUT_SEC = 8
+
+        /**
+         * Best-effort InitConf retransmits after the first send — the
+         * mitigation for the dropped-InitConf PSK desync. Three extra
+         * copies make total loss negligible without materially slowing
+         * the rotation.
+         */
+        private const val INITCONF_RETRANSMITS = 3
+
+        /** Short per-retransmit wait for an InitConf reply/ack. */
+        private const val INITCONF_ACK_TIMEOUT_SEC = 1
 
         /** Backoff ceiling between failed handshakes. */
         private const val MAX_BACKOFF_SEC = 60

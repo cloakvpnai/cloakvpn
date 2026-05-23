@@ -219,6 +219,26 @@ class TunnelRepository private constructor(private val appCtx: Context) {
         }
     }
 
+    /**
+     * Record a PSK that has ALREADY been applied to the live tunnel out
+     * of band — i.e. by the seamless [UapiPskApplicator], which updates
+     * wireguard-go directly via `wgSetConfig` and never goes through
+     * [applyPresharedKey].
+     *
+     * Without this, every seamless rotation leaves [currentPsk] and the
+     * persisted per-server PSK stale: the next reconnect (or region
+     * switch, or a later fallback bounce) rebuilds the config from the
+     * wrong key, and the WireGuard handshake then desyncs against the
+     * server, which still holds the rotated key. This keeps the persisted
+     * record in lockstep with what is actually live on the tunnel. It
+     * does NOT touch the tunnel — the key is already in effect.
+     */
+    fun recordRotatedPsk(psk: ByteArray) {
+        require(psk.size == 32) { "PresharedKey must be 32 bytes, got ${psk.size}" }
+        currentPsk = psk
+        _config.value?.let { persistPsk(it.peerPublicKey, psk) }
+    }
+
     // MARK: - LatticeConfig -> wireguard Config
 
     /**
