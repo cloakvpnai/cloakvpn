@@ -236,6 +236,96 @@ func (c *Controller) Provision(usedIPs []string) (*ClientConfig, error) {
 	}, nil
 }
 
+// ProvisionWithKeys is the "add a new device" flow when the CLIENT has
+// generated its own WireGuard + Rosenpass keypairs and sends only the
+// public keys — the no-account model, where private keys never leave the
+// device. Unlike Provision it generates nothing: it writes the client's
+// Rosenpass public key to disk, registers both keys, and returns a
+// ClientConfig with the private-key fields left empty (the app holds them).
+//
+// wgPubkeyB64 is a standard 32-byte WireGuard public key; rosenpassPubkeyB64
+// is the client's Classic McEliece Rosenpass public key (~524 KB raw).
+func (c *Controller) ProvisionWithKeys(usedIPs []string, wgPubkeyB64, rosenpassPubkeyB64 string) (*ClientConfig, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	wgPub := strings.TrimSpace(wgPubkeyB64)
+	rpPubB64 := strings.TrimSpace(rosenpassPubkeyB64)
+
+	// Validate the inputs are the right KIND of key BEFORE touching any
+	// system state — a malformed Rosenpass key would crash the rosenpass
+	// service for every peer on the next restart.
+	wgRaw, err := base64.StdEncoding.DecodeString(wgPub)
+	if err != nil || len(wgRaw) != 32 {
+		return nil, fmt.Errorf("wg public key must be base64 of 32 bytes")
+	}
+	rpRaw, err := base64.StdEncoding.DecodeString(rpPubB64)
+	if err != nil {
+		return nil, fmt.Errorf("rosenpass public key is not valid base64")
+	}
+	// A Classic McEliece-460896 public key is ~524 KB; a 32-byte wg key
+	// sent here by mistake is the realistic error to catch.
+	if len(rpRaw) < 500_000 {
+		return nil, fmt.Errorf("rosenpass public key too small (%d bytes) — not a McEliece key", len(rpRaw))
+	}
+
+	ip, err := c.nextFreeIP(usedIPs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Peer name is derived from the wg pubkey, exactly as in Provision, so
+	// Revoke() can still find the rosenpass file without a lookup table.
+	peerName := peerNameFromWG(wgPub)
+	publicPath := filepath.Join(c.cfg.RosenpassDir, peerName+".rosenpass-public")
+
+	if err := os.WriteFile(publicPath, rpRaw, 0600); err != nil {
+		return nil, fmt.Errorf("write rosenpass public: %w", err)
+	}
+
+	// --- Register in server.toml -----------------------------------------
+	if err := c.appendRosenpassPeer(peerName, publicPath); err != nil {
+		_ = os.Remove(publicPath)
+		return nil, fmt.Errorf("append to server.toml: %w", err)
+	}
+
+	// --- Add WG peer ------------------------------------------------------
+	if out, err := exec.Command("wg", "set", c.cfg.Iface,
+		"peer", wgPub,
+		"allowed-ips", ip+"/32").CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("wg set: %w: %s", err, out)
+	}
+	if out, err := exec.Command("wg-quick", "save", c.cfg.Iface).CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("wg-quick save: %w: %s", err, out)
+	}
+
+	// --- Restart rosenpass so the new peer is picked up ------------------
+	if err := c.restartRosenpass(); err != nil {
+		return nil, fmt.Errorf("restart rosenpass: %w", err)
+	}
+
+	serverRPB64, err := readFileB64(c.cfg.ServerRosenpassPubPath)
+	if err != nil {
+		return nil, fmt.Errorf("read server rosenpass pub: %w", err)
+	}
+
+	host := strings.Split(c.cfg.Endpoint, ":")[0]
+	// Private-key fields are intentionally empty: the device generated and
+	// kept its own WireGuard + Rosenpass secrets.
+	return &ClientConfig{
+		InterfacePublicKey: wgPub,
+		InterfaceAddress:   ip + "/32",
+		InterfaceDNS:       c.cfg.DNS,
+		PeerPublicKey:      c.cfg.ServerPub,
+		PeerEndpoint:       c.cfg.Endpoint,
+		PeerAllowedIPs:     c.cfg.AllowedIPs,
+		RosenpassPeerPub:   serverRPB64,
+		RosenpassListen:    fmt.Sprintf("%s:%d", host, c.cfg.RosenpassPort),
+		RosenpassClientPK:  rpPubB64,
+		AssignedIP:         ip,
+	}, nil
+}
+
 // Revoke removes a peer from WireGuard AND Rosenpass, then restarts the
 // Rosenpass service to drop the now-defunct [[peers]] block. Idempotent: if
 // the peer files are already gone, the call still succeeds as long as the

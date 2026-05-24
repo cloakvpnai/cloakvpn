@@ -82,6 +82,13 @@ func NewDeviceHandler(db *store.DB, wgc *wg.Controller, accountSecret string) *D
 	return &DeviceHandler{db: db, wgc: wgc, accountSecret: accountSecret}
 }
 
+// provisionReq is the POST /v1/device body: the device's own public keys.
+// Private keys are generated on the device and never sent.
+type provisionReq struct {
+	WGPubkey        string `json:"wg_pubkey"`
+	RosenpassPubkey string `json:"rosenpass_pubkey"`
+}
+
 type provisionResp struct {
 	Config *wg.ClientConfig `json:"config"`
 	Tier   store.Tier       `json:"tier"`
@@ -131,6 +138,19 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The device generates its own WireGuard + Rosenpass keypairs and
+	// sends only the public keys — private keys never leave the device.
+	// The Rosenpass public key is ~700 KB base64, hence the 2 MiB cap.
+	var req provisionReq
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20)).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if req.WGPubkey == "" || req.RosenpassPubkey == "" {
+		http.Error(w, "wg_pubkey and rosenpass_pubkey required", http.StatusBadRequest)
+		return
+	}
+
 	existing, err := h.db.DevicesForAccount(acct.ID)
 	if err != nil {
 		http.Error(w, "server", http.StatusInternalServerError)
@@ -145,7 +165,7 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 	for _, d := range existing {
 		used = append(used, d.WGIP)
 	}
-	cfg, err := h.wgc.Provision(used)
+	cfg, err := h.wgc.ProvisionWithKeys(used, req.WGPubkey, req.RosenpassPubkey)
 	if err != nil {
 		log.Printf("wg provision: %v", err)
 		http.Error(w, "provision failed", http.StatusInternalServerError)
