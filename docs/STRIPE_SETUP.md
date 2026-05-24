@@ -1,10 +1,15 @@
 # Stripe setup — from zero to taking payments
 
-End-to-end walk-through for wiring Stripe into Cloak VPN. Assumes you have
-a Stripe account in test mode. Follow in order; total time ~45 minutes.
+End-to-end walk-through for wiring Stripe into **Lattice VPN**. Assumes
+you have a Stripe account in test mode. Follow in order; ~45 minutes.
 
-Paired with `server/api/internal/stripe/webhook.go` — any changes here
-should also be reflected in the code comments there.
+This is **Phase 1** of the rollout in
+[`BILLING_INTEGRATION.md`](BILLING_INTEGRATION.md) — the no-account
+model: paying generates a random **account number**, not a user
+account. Steps 1–4 here are Stripe Dashboard actions only you can do.
+Paired with `server/api/internal/stripe/webhook.go`.
+
+Do everything in Stripe **Test mode** until step 7.
 
 ---
 
@@ -60,18 +65,18 @@ Create one Stripe **Product** per pricing tier, with two recurring
 
 Dashboard → **Product catalog** → **Create product**. Repeat four times:
 
-| Product name      | Price | Interval | Notes                                    |
-|-------------------|-------|----------|------------------------------------------|
-| Cloak VPN Basic   | $4.99 | Monthly  | 3 devices, EU+US core                    |
-| Cloak VPN Basic   | $49.99| Yearly   | Same as above, yearly billing            |
-| Cloak VPN Pro     | $9.99 | Monthly  | 10 devices, all locations, AI shield off |
-| Cloak VPN Pro     | $99.99| Yearly   | Same, yearly billing                     |
+| Product name        | Price  | Interval | Notes                          |
+|---------------------|--------|----------|--------------------------------|
+| Lattice VPN Basic   | $4.99  | Monthly  | 3 devices, EU+US core          |
+| Lattice VPN Basic   | $49.99 | Yearly   | Same as above, yearly billing  |
+| Lattice VPN Pro     | $9.99  | Monthly  | 10 devices, all locations      |
+| Lattice VPN Pro     | $99.99 | Yearly   | Same, yearly billing           |
 
 (Matches `docs/PRICING.md`. AI Shield is currently deferred per the
 revenue-focused roadmap.)
 
 **After each price is created, copy its `price_...` ID.** You'll need
-all four in step 4.
+all four in step 5.
 
 ---
 
@@ -82,46 +87,63 @@ For each of the 4 prices:
 1. Open the price in the dashboard
 2. Click **Create payment link**
 3. Under **Options**:
-   - **Collect customer email** → **Yes** (required — the webhook uses
-     it as the account primary key)
+   - **Collect customer email** → **Yes** (required — Stripe needs it
+     for billing, receipts, and account-number recovery; the VPN
+     service itself never stores it)
    - **Allow promotion codes** → optional
    - **Confirmation behaviour** → "Don't show a confirmation page,
-     redirect to: `https://cloakvpn.ai/welcome?session_id={CHECKOUT_SESSION_ID}`"
-     (build this page later; for now you can redirect to `cloakvpn.ai`)
+     redirect to: `https://latticevpn.ai/welcome?session_id={CHECKOUT_SESSION_ID}`"
+     (`{CHECKOUT_SESSION_ID}` is a literal Stripe placeholder — paste it
+     exactly. The `/welcome` page is built in Phase 3.)
 4. Click **Create link** → copy the `https://buy.stripe.com/...` URL
-5. Paste it into the `cloakvpn.ai` Subscribe button for that tier
+5. These URLs go on the `latticevpn.ai` Subscribe buttons (Phase 3)
 
 ---
 
-## 4. Create the webhook endpoint
+## 4. Enable the customer billing portal
 
-Dashboard → **Developers** → **Webhooks** → **Add endpoint**:
-
-- **Endpoint URL:** `https://api.cloakvpn.ai/v1/webhook/stripe`
-  - For now you can use ngrok against cloak-fi1 until the `api.` DNS
-    is wired. Run `ngrok http 8080` on the box.
-- **API version:** "default" (which is now `2025-03-30` after step 1)
-- **Events to send:** select exactly these three:
-  - `checkout.session.completed`
-  - `customer.subscription.updated`
-  - `customer.subscription.deleted`
-
-Click **Add endpoint**. On the next page you'll see a **Signing secret**
-(`whsec_...`). Copy it — this is `STRIPE_WEBHOOK_SECRET` in step 5.
+Dashboard → **Settings** → **Billing** → **Customer portal** → activate
+it and allow customers to cancel their subscription. This powers both
+cancellation and account-number recovery
+(`BILLING_INTEGRATION.md` §6) — without it, customers have no
+self-service path.
 
 ---
 
-## 5. Configure environment variables on the concentrator
+## 5. Create the webhook endpoint
 
-The API process (`cloakvpn-api`) reads these from env. For cloak-fi1
-we'll put them in `/etc/cloakvpn/api.env` and load via the systemd unit.
+The webhook must reach `cloakvpn-api`, which isn't deployed until
+Phase 2. So:
+
+- **During Phase 2 development**, skip the dashboard endpoint and use
+  the **Stripe CLI** (see step 6) — it forwards events to a local
+  process and prints its own signing secret.
+- **Create the real endpoint** once `api.latticevpn.ai` is live:
+  Dashboard → **Developers** → **Webhooks** → **Add endpoint**:
+  - **Endpoint URL:** `https://api.latticevpn.ai/v1/webhook/stripe`
+    (until the `api.` DNS is wired you can point it at an `ngrok`
+    tunnel on the server box — `ngrok http 8080`)
+  - **API version:** "default" (now `2025-03-30` after step 1)
+  - **Events to send** — exactly these three:
+    - `checkout.session.completed`
+    - `customer.subscription.updated`
+    - `customer.subscription.deleted`
+  - Click **Add endpoint** → copy the **Signing secret** (`whsec_...`).
+
+---
+
+## 6. Configure environment variables
+
+The API process (`cloakvpn-api`) reads these from env — server-side,
+file mode `0600`, never committed. The host topology (one central API
+vs. per-region) is decided in `BILLING_INTEGRATION.md` §7.
 
 ```ini
-# /etc/cloakvpn/api.env — owned by root, 0600
+# api.env — owned by root, chmod 600
 LISTEN_ADDR=127.0.0.1:8080
 DB_PATH=/var/lib/cloakvpn/cloakvpn.db
 
-STRIPE_WEBHOOK_SECRET=whsec_...                    # from step 4
+STRIPE_WEBHOOK_SECRET=whsec_...                    # from step 5
 STRIPE_PRICE_BASIC_MONTH=price_...                 # from step 2
 STRIPE_PRICE_BASIC_YEAR=price_...
 STRIPE_PRICE_PRO_MONTH=price_...
@@ -129,23 +151,21 @@ STRIPE_PRICE_PRO_YEAR=price_...
 
 WG_IFACE=wg0
 WG_SERVER_PUB=$(cat /etc/wireguard/server.pub)     # expand at install time
-WG_ENDPOINT=fi1.cloakvpn.ai:51820                  # OR de1.cloakvpn.ai for de1
+WG_ENDPOINT=<region endpoint>:51820
 WG_DNS=10.99.0.1
 WG_ALLOWED_IPS=0.0.0.0/0, ::/0
 WG_SUBNET=10.99.0.0/24
 ```
 
-**Security note:** file should be `chmod 600 /etc/cloakvpn/api.env`,
-owned by root. The webhook secret is the difference between "my API is
-secure" and "anyone can mint active subscriptions."
+**Security note:** the webhook secret is the difference between "my API
+is secure" and "anyone can mint active subscriptions." Keep the file
+`0600` and root-owned.
 
 ---
 
-## 6. Test the flow end-to-end with Stripe CLI
+## 7. Test the flow end-to-end with Stripe CLI
 
-Before pointing the real Payment Link at the live endpoint, dry-run it.
-
-On your laptop:
+Before pointing a real Payment Link at the live endpoint, dry-run it.
 
 ```bash
 # Install if you don't have it
@@ -154,74 +174,72 @@ brew install stripe/stripe-cli/stripe
 # Login
 stripe login
 
-# Forward events to the running API (locally or via ssh tunnel to fi1)
+# Forward events to the running API (locally or via ssh tunnel)
 stripe listen --forward-to http://localhost:8080/v1/webhook/stripe
 
 # In another terminal, trigger a fake event
 stripe trigger checkout.session.completed
 ```
 
-You should see the forwarded event hit your API and log a line like
-`POST /v1/webhook/stripe 200 OK`. If you see signature-verify failures,
-the `STRIPE_WEBHOOK_SECRET` env isn't being picked up — the `stripe
-listen` command prints its own test secret, which is *different* from
-the one in the dashboard. Use `--skip-verify` for CLI testing OR set
+You should see the forwarded event hit your API and log `POST
+/v1/webhook/stripe 200 OK`. If you see signature-verify failures, the
+`STRIPE_WEBHOOK_SECRET` env isn't being picked up — `stripe listen`
+prints its own test secret, *different* from the dashboard one. Set
 `STRIPE_WEBHOOK_SECRET` to the `whsec_...` the CLI prints on startup.
 
 ---
 
-## 7. Go live (test-mode first)
+## 8. Go live
 
 1. Flip the dashboard from **Test mode** to **Live mode** only when
    you're ready to take real money
-2. Re-do steps 2, 3, 4 in live mode — products, payment links, and
+2. Re-do steps 2, 3, 5 in live mode — products, payment links, and
    webhook endpoints are scoped per-mode
-3. Update `/etc/cloakvpn/api.env` with the live `whsec_...` and live
-   `price_...` IDs (they're prefixed `price_1Live...` vs
-   `price_1Test...`)
-4. Restart `cloakvpn-api.service`
-5. Buy a subscription yourself with a real card to prove the full
-   path works before telling anyone it's open
+3. Update the live `api.env` with the live `whsec_...` and live
+   `price_...` IDs (prefixed `price_1Live...` vs `price_1Test...`)
+4. Restart `cloakvpn-api`
+5. Buy a subscription yourself with a real card to prove the full path
+   works before telling anyone it's open
 
 ---
 
-## 8. What happens when someone subscribes
+## 9. What happens when someone subscribes
 
-The flow that makes all of this actually work:
+The no-account flow (full detail in `BILLING_INTEGRATION.md` §4):
 
-1. User clicks "Subscribe" on `cloakvpn.ai` → redirected to
+1. User clicks "Subscribe" on `latticevpn.ai` → redirected to
    `https://buy.stripe.com/...`
-2. User enters email + card, pays
+2. User enters email + card on Stripe's page, pays
 3. Stripe sends `checkout.session.completed` → our webhook
-4. Our webhook calls `UpsertAccountByStripeCustomer`, creating the
-   account row with `tier`, `device_limit`, `active_until = now + 35d`
-5. User is redirected to `cloakvpn.ai/welcome?session_id=cs_...` where
-   the page instructs them to open the Cloak app and sign in with the
-   email they paid with
-6. The Cloak app calls `POST /v1/device` with that email → server
-   checks the account is active → `wg.Controller.Provision` mints
-   WG+Rosenpass keys, adds the peer, returns the config → app imports
-   it into the TunnelManager
-7. Monthly/yearly renewal: Stripe charges the card → emits
-   `customer.subscription.updated` → webhook refreshes `active_until`
-   to the new period end + 3 days grace
+4. The webhook generates a random **account number**, stores its hash
+   with `tier` / `device_limit` / `active_until`, and writes the number
+   into the Stripe customer's metadata (for later recovery)
+5. User is redirected to `latticevpn.ai/welcome?session_id=cs_...`,
+   which displays the **account number** prominently — "save this, it's
+   your only key"
+6. User opens the Lattice VPN app and enters the account number once.
+   The app calls `POST /v1/device` with it → the server checks the
+   subscription is active → provisions a WireGuard + Rosenpass peer →
+   returns the config → the app connects
+7. Renewal: Stripe charges the card → `customer.subscription.updated` →
+   webhook refreshes `active_until` to the new period end + 3 days grace
 8. Cancellation: Stripe emits `customer.subscription.deleted` → webhook
-   deactivates the account → on next app call `/v1/device` returns 402
-   Payment Required
+   deactivates the account → the next `POST /v1/device` returns 402
+
+No email, password, or user account is ever created on the VPN side —
+the account number is the only credential.
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 - **Webhook retries:** Stripe retries 4xx/5xx responses for up to 3
-  days. If you're debugging locally, check Dashboard → Developers →
-  Webhooks → your endpoint → Event deliveries for the raw payload of
-  failed events.
+  days. Debugging locally, check Dashboard → Developers → Webhooks →
+  your endpoint → Event deliveries for the raw payload of failed events.
 - **Yearly subscribers expire at 35 days:** you forgot step 1 (pin API
   version). Fix it, then manually run `UPDATE accounts SET active_until
   = datetime('now', '+400 days') WHERE stripe_customer_id = 'cus_...';`
-  to restore affected customers. Future updates will then refresh
-  correctly.
+  to restore affected customers. Future updates then refresh correctly.
 - **New checkout emits `checkout.session.completed` but no account is
   created:** the `price_...` in the event doesn't match any of the 4
   env vars. Check the log for `"checkout completed for unknown price
