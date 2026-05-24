@@ -16,6 +16,14 @@ val latticeSecrets = Properties().apply {
 }
 val cloakBootstrapKey: String = latticeSecrets.getProperty("CLOAK_BOOTSTRAP_KEY", "")
 
+// Release signing — credentials live in the gitignored secrets.properties
+// (see secrets.properties.example). Absent on a plain checkout or a debug
+// build, in which case the release build is simply left unsigned.
+val releaseStoreFile: String = latticeSecrets.getProperty("RELEASE_STORE_FILE", "")
+val releaseStorePassword: String = latticeSecrets.getProperty("RELEASE_STORE_PASSWORD", "")
+val releaseKeyAlias: String = latticeSecrets.getProperty("RELEASE_KEY_ALIAS", "")
+val releaseKeyPassword: String = latticeSecrets.getProperty("RELEASE_KEY_PASSWORD", "")
+
 android {
     namespace = "ai.latticevpn.android"
     compileSdk = 35
@@ -38,10 +46,31 @@ android {
         buildConfigField("String", "CLOAK_BOOTSTRAP_KEY", "\"$cloakBootstrapKey\"")
     }
 
+    signingConfigs {
+        create("release") {
+            // Populated only when secrets.properties supplies the keystore
+            // details; otherwise left empty and the release build stays
+            // unsigned (it still builds — it just can't be uploaded to
+            // Play until a keystore is configured). Keystore files are
+            // gitignored (*.jks / *.keystore); never commit them.
+            if (releaseStoreFile.isNotEmpty()) {
+                storeFile = rootProject.file(releaseStoreFile)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Sign with the release key when secrets.properties provides
+            // one. Left unsigned otherwise so a plain checkout still builds.
+            if (releaseStoreFile.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
