@@ -252,6 +252,55 @@ func (d *DB) DeviceByID(id, accountID int64) (*Device, error) {
 	return &dv, nil
 }
 
+// DeviceByPubkey looks up a device by its WireGuard public key, which is
+// globally unique. POST /v1/device uses it to detect a re-provision: the
+// app keeps a stable keypair, so a reconnect (or a reinstall that kept
+// app data, or the same phone moving to a new account number) presents
+// the same wg_pubkey. Returns ErrNotFound when the device is new.
+func (d *DB) DeviceByPubkey(pubkey string) (*Device, error) {
+	var dv Device
+	err := d.QueryRow(`SELECT id, account_id, wg_pubkey, wg_ip, created_at
+	                     FROM devices WHERE wg_pubkey = ?`, pubkey).
+		Scan(&dv.ID, &dv.AccountID, &dv.WGPubkey, &dv.WGIP, &dv.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &dv, nil
+}
+
+// AllDeviceIPs returns every allocated tunnel IP across ALL accounts.
+// wg_ip is globally unique — every peer on wg0 needs a distinct address —
+// so IP allocation for a new device must avoid the whole set, not just
+// the requesting account's own devices.
+func (d *DB) AllDeviceIPs() ([]string, error) {
+	rows, err := d.Query(`SELECT wg_ip FROM devices`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ips []string
+	for rows.Next() {
+		var ip string
+		if err := rows.Scan(&ip); err != nil {
+			return nil, err
+		}
+		ips = append(ips, ip)
+	}
+	return ips, rows.Err()
+}
+
+// ReassignDevice moves a device row to a different account — used when the
+// same physical device (same wg_pubkey) signs in under a new account
+// number on the same phone.
+func (d *DB) ReassignDevice(deviceID, newAccountID int64) error {
+	_, err := d.Exec(`UPDATE devices SET account_id = ? WHERE id = ?`,
+		newAccountID, deviceID)
+	return err
+}
+
 func (d *DB) AddDevice(accountID int64, pub, ip string) (*Device, error) {
 	res, err := d.Exec(`INSERT INTO devices(account_id, wg_pubkey, wg_ip) VALUES (?, ?, ?)`,
 		accountID, pub, ip)

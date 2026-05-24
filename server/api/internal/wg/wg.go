@@ -250,7 +250,7 @@ func (c *Controller) Provision(usedIPs []string) (*ClientConfig, error) {
 //
 // wgPubkeyB64 is a standard 32-byte WireGuard public key; rosenpassPubkeyB64
 // is the client's Classic McEliece Rosenpass public key (~524 KB raw).
-func (c *Controller) ProvisionWithKeys(usedIPs []string, wgPubkeyB64, rosenpassPubkeyB64 string) (*ClientConfig, error) {
+func (c *Controller) ProvisionWithKeys(usedIPs []string, reuseIP, wgPubkeyB64, rosenpassPubkeyB64 string) (*ClientConfig, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -274,9 +274,16 @@ func (c *Controller) ProvisionWithKeys(usedIPs []string, wgPubkeyB64, rosenpassP
 		return nil, fmt.Errorf("rosenpass public key too small (%d bytes) — not a McEliece key", len(rpRaw))
 	}
 
-	ip, err := c.nextFreeIP(usedIPs)
-	if err != nil {
-		return nil, err
+	// IP allocation: a re-provision of an existing device passes that
+	// device's current tunnel address as reuseIP and keeps it; a brand-new
+	// device passes reuseIP="" and gets the next IP free across EVERY peer
+	// (usedIPs must be the global set — see store.AllDeviceIPs).
+	ip := strings.TrimSpace(reuseIP)
+	if ip == "" {
+		ip, err = c.nextFreeIP(usedIPs)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Peer name is derived from the wg pubkey, exactly as in Provision, so
@@ -378,6 +385,13 @@ func (c *Controller) Revoke(wgPubkey string) error {
 // write-to-temp + atomic-rename so a crash or ENOSPC mid-write can't leave
 // the config file partially populated.
 func (c *Controller) appendRosenpassPeer(peerName, publicPath string) error {
+	// Idempotent: re-provisioning an existing device would otherwise append
+	// a second [[peers]] block for the same peer. Drop any existing block
+	// for this peer first, so the result is always exactly one block.
+	if err := c.removeRosenpassPeer(publicPath); err != nil {
+		return err
+	}
+
 	// protocol_version = "V03" MUST be present. Without it rosenpass falls
 	// back to an older protocol and the handshake with a V03 client silently
 	// fails — no PSK is ever derived, so the tunnel never goes post-quantum.

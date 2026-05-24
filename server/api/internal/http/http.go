@@ -151,8 +151,47 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Is this device already known? The app keeps a stable WireGuard
+	// keypair, so a reconnect — or a reinstall that kept app data, or the
+	// same phone signing in under a new account number — re-sends the same
+	// wg_pubkey. Provisioning must be idempotent: reuse the existing device
+	// row and its tunnel IP rather than INSERTing a colliding one.
+	known, err := h.db.DeviceByPubkey(req.WGPubkey)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		log.Printf("device lookup: %v", err)
+		http.Error(w, "server", http.StatusInternalServerError)
+		return
+	}
+
+	if known != nil {
+		// Re-provision in place: same device, same tunnel IP. The wg +
+		// rosenpass peer operations on this path are all idempotent.
+		cfg, err := h.wgc.ProvisionWithKeys(nil, known.WGIP, req.WGPubkey, req.RosenpassPubkey)
+		if err != nil {
+			log.Printf("wg reprovision: %v", err)
+			http.Error(w, "provision failed", http.StatusInternalServerError)
+			return
+		}
+		// The same phone may have switched to a new account number — hand
+		// the device row to whichever account just authenticated.
+		if known.AccountID != acct.ID {
+			if err := h.db.ReassignDevice(known.ID, acct.ID); err != nil {
+				log.Printf("device reassign: %v", err)
+				http.Error(w, "server", http.StatusInternalServerError)
+				return
+			}
+			known.AccountID = acct.ID
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(provisionResp{Config: cfg, Tier: acct.Tier, Device: *known})
+		return
+	}
+
+	// New device. The per-account device limit applies only here — a
+	// re-provision of an existing device never consumes a fresh slot.
 	existing, err := h.db.DevicesForAccount(acct.ID)
 	if err != nil {
+		log.Printf("devices for account: %v", err)
 		http.Error(w, "server", http.StatusInternalServerError)
 		return
 	}
@@ -161,11 +200,15 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	used := make([]string, 0, len(existing))
-	for _, d := range existing {
-		used = append(used, d.WGIP)
+	// Allocate an IP free across EVERY account's devices: wg_ip is globally
+	// unique because each peer on wg0 needs a distinct tunnel address.
+	usedIPs, err := h.db.AllDeviceIPs()
+	if err != nil {
+		log.Printf("all device ips: %v", err)
+		http.Error(w, "server", http.StatusInternalServerError)
+		return
 	}
-	cfg, err := h.wgc.ProvisionWithKeys(used, req.WGPubkey, req.RosenpassPubkey)
+	cfg, err := h.wgc.ProvisionWithKeys(usedIPs, "", req.WGPubkey, req.RosenpassPubkey)
 	if err != nil {
 		log.Printf("wg provision: %v", err)
 		http.Error(w, "provision failed", http.StatusInternalServerError)
@@ -175,6 +218,7 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Roll back the wg + rosenpass peer so we don't leak capacity. NB:
 		// revoke the CLIENT's pubkey, not cfg.PeerPublicKey (the server's).
+		log.Printf("add device: %v", err)
 		_ = h.wgc.Revoke(cfg.InterfacePublicKey)
 		http.Error(w, "server", http.StatusInternalServerError)
 		return
