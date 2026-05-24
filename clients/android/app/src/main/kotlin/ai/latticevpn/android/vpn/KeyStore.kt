@@ -19,8 +19,8 @@ import java.io.File
  *     individual files under `filesDir/keystore/` instead.
  *   - **WireGuard keypair** (Curve25519 — 32 raw bytes, 44 base64
  *     chars each). Tiny; kept in the shared `"lattice"` SharedPreferences
- *     alongside the JWT/install-UUID that [ai.latticevpn.android.data.AuthClient]
- *     already manages.
+ *     alongside the account number and tunnel config the rest of the
+ *     app stores there.
  *
  * Privacy model (ported verbatim from iOS): both private keys are
  * generated on-device and never leave it. Provisioning sends only the
@@ -181,7 +181,7 @@ class KeyStore(appCtx: Context) {
     }
 
     companion object {
-        /** Shared with AuthClient + TunnelRepository so all app prefs live in one store. */
+        /** Shared with AccountStore + TunnelRepository so all app prefs live in one store. */
         private const val PREFS_NAME = "lattice"
 
         private const val KEYSTORE_DIR = "keystore"

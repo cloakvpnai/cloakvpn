@@ -1,7 +1,5 @@
 package ai.latticevpn.android.data
 
-import ai.latticevpn.android.BuildConfig
-
 /**
  * Lattice VPN region catalog — the Kotlin port of the iOS Region.swift.
  *
@@ -10,10 +8,12 @@ import ai.latticevpn.android.BuildConfig
  * has connectivity. New regions ship with new app versions — an
  * acceptable cadence.
  *
- * `serverURL` is the per-region HTTPS cloak-api-server endpoint (used
- * for auth + peer provisioning). `endpointIP` is the WireGuard tunnel
- * endpoint — kept separate because the provisioning API and the tunnel
- * endpoint could in principle live on different hosts.
+ * `serverURL` is the region's own cloak-api-server endpoint. With the
+ * account-number model the app provisions through the central
+ * [LatticeApi.BASE_URL] instead, so `serverURL` is retained only for
+ * reference and the future multi-region work (BILLING_INTEGRATION.md
+ * §7). `endpointIP` is the WireGuard tunnel endpoint, shown in the
+ * region picker.
  */
 data class LatticeRegion(
     val id: String,            // stable internal id, e.g. "us-west-1"
@@ -60,18 +60,5 @@ data class LatticeRegion(
         )
 
         fun byId(id: String): LatticeRegion? = all.firstOrNull { it.id == id }
-
-        /**
-         * Bootstrap key — authenticates ONLY the /api/v1/auth/exchange
-         * call that mints a per-install JWT. Provisioning calls
-         * authorize via the minted JWT, not this key.
-         *
-         * Injected at build time from clients/android/secrets.properties
-         * (gitignored) into BuildConfig — the Android equivalent of the
-         * iOS Secrets.xcconfig -> Info.plist path. Same value as the iOS
-         * app and /etc/cloak/bootstrap-key on every region.
-         */
-        val bootstrapKey: String
-            get() = BuildConfig.CLOAK_BOOTSTRAP_KEY
     }
 }

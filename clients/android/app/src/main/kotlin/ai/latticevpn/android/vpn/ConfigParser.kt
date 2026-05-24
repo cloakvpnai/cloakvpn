@@ -1,5 +1,6 @@
 package ai.latticevpn.android.vpn
 
+import ai.latticevpn.android.data.ProvisionedConfig
 import org.json.JSONObject
 
 data class LatticeConfig(
@@ -98,7 +99,9 @@ object ConfigParser {
             // pasted configs that DO carry private_key still work.
             wgPrivateKey = get("wireguard", "private_key", ""),
             addressV4 = get("wireguard", "address_v4"),
-            addressV6 = get("wireguard", "address_v6"),
+            // address_v6 is OPTIONAL: the account-number API assigns an
+            // IPv4 tunnel address only. Legacy pasted configs may carry one.
+            addressV6 = get("wireguard", "address_v6", ""),
             dns = list("wireguard", "dns"),
             peerPublicKey = get("wireguard.peer", "public_key"),
             endpoint = get("wireguard.peer", "endpoint"),
@@ -113,3 +116,40 @@ object ConfigParser {
         )
     }
 }
+
+// Defaults for fields the JSON provisioning response does not carry —
+// the server's wg.ClientConfig omits the keepalive and the rotation
+// cadence, so the client supplies the same values the INI configs used.
+private const val DEFAULT_KEEPALIVE_SECONDS = 25
+private const val DEFAULT_PSK_ROTATION_SECONDS = 120
+
+/**
+ * Build a [LatticeConfig] from the [ProvisionedConfig] returned by
+ * POST /v1/device.
+ *
+ * The account-number API sends an IPv4-only interface address and omits
+ * both private keys (the device holds its own WireGuard + Rosenpass
+ * secrets) — [TunnelManager.importConfig] fills `wgPrivateKey` from the
+ * KeyStore, and the rotator reads the Rosenpass secret from the KeyStore
+ * directly, so an empty `clientRPSecretKeyB64` here is expected.
+ */
+fun latticeConfigFrom(p: ProvisionedConfig): LatticeConfig = LatticeConfig(
+    wgPrivateKey = "",                       // device holds it; filled on import
+    addressV4 = p.interfaceAddress,
+    addressV6 = "",                          // account-number API assigns v4 only
+    dns = p.interfaceDNS.splitCsv(),
+    peerPublicKey = p.peerPublicKey,
+    endpoint = p.peerEndpoint,
+    allowedIPs = p.peerAllowedIPs.splitCsv(),
+    persistentKeepalive = DEFAULT_KEEPALIVE_SECONDS,
+    pqEnabled = p.rosenpassPeerPub.isNotEmpty(),
+    serverRPPublicKeyB64 = p.rosenpassPeerPub,
+    rpEndpoint = p.rosenpassListen,
+    clientRPSecretKeyB64 = "",               // device holds it (see KeyStore)
+    clientRPPublicKeyB64 = p.rosenpassClientPK,
+    pskRotationSeconds = DEFAULT_PSK_ROTATION_SECONDS,
+)
+
+/** Split a comma-separated field into trimmed, non-empty entries. */
+private fun String.splitCsv(): List<String> =
+    split(",").map { it.trim() }.filter { it.isNotEmpty() }

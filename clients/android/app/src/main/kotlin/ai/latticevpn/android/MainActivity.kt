@@ -53,8 +53,10 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Honor the auto-connect preference on a fresh launch.
+        // Honor the auto-connect preference on a fresh launch — but only
+        // once the customer is signed in and a config has been provisioned.
         if (savedInstanceState == null &&
+            viewModel.isSignedIn() &&
             viewModel.autoConnectEnabled() &&
             viewModel.hasConfig()
         ) {

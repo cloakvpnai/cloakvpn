@@ -6,15 +6,15 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-// Load build-time secrets from clients/android/secrets.properties.
-// That file is gitignored — copy secrets.properties.example to
-// secrets.properties and fill in the live value. The Android
-// equivalent of the iOS Secrets.xcconfig -> Info.plist path.
+// Load build-time secrets (the release-signing credentials) from
+// clients/android/secrets.properties. That file is gitignored — copy
+// secrets.properties.example to secrets.properties and fill it in.
+// There is no build-time API key: the app authenticates to the Lattice
+// API at runtime with the customer's account number.
 val latticeSecrets = Properties().apply {
     val f = rootProject.file("secrets.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
-val cloakBootstrapKey: String = latticeSecrets.getProperty("CLOAK_BOOTSTRAP_KEY", "")
 
 // Release signing — credentials live in the gitignored secrets.properties
 // (see secrets.properties.example). Absent on a plain checkout or a debug
@@ -39,11 +39,6 @@ android {
             // Restrict to the ABIs we actually ship rosenpass .so for.
             abiFilters += setOf("arm64-v8a", "x86_64")
         }
-
-        // Bootstrap key for the /api/v1/auth/exchange call. Read at
-        // build time from secrets.properties (see top of file) and
-        // surfaced to Kotlin as BuildConfig.CLOAK_BOOTSTRAP_KEY.
-        buildConfigField("String", "CLOAK_BOOTSTRAP_KEY", "\"$cloakBootstrapKey\"")
     }
 
     signingConfigs {
@@ -122,8 +117,8 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
-    // OkHttp — HTTP client for the cloak-api-server auth + peer
-    // provisioning calls (AuthClient, ProvisioningClient).
+    // OkHttp — HTTP client for the Lattice account API calls
+    // (AccountClient) and the public-IP lookup (IpAddressClient).
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // JNA — required by the uniffi-generated Kotlin bindings

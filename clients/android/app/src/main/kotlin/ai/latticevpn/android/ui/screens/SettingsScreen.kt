@@ -3,6 +3,7 @@ package ai.latticevpn.android.ui.screens
 import ai.latticevpn.android.BuildConfig
 import ai.latticevpn.android.data.LatticeRegion
 import ai.latticevpn.android.ui.LatticeViewModel
+import ai.latticevpn.android.ui.Screen
 import ai.latticevpn.android.ui.components.InfoItem
 import ai.latticevpn.android.ui.components.RowDivider
 import ai.latticevpn.android.ui.components.SectionHeader
@@ -19,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -69,6 +71,19 @@ fun SettingsScreen(vm: LatticeViewModel) {
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            // ---- Account ----------------------------------------------------
+            SectionHeader("Account")
+            SettingsCard {
+                SettingsItem(
+                    title = "Account & subscription",
+                    subtitle = "Your plan, devices, and account number.",
+                    leadingIcon = Icons.Filled.AccountCircle,
+                    onClick = { vm.navigateTo(Screen.ACCOUNT) },
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
             // ---- Connection -------------------------------------------------
             SectionHeader("Connection")
             SettingsCard {

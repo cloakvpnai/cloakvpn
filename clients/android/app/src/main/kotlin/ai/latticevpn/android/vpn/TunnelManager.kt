@@ -1,8 +1,8 @@
 package ai.latticevpn.android.vpn
 
-import ai.latticevpn.android.data.AuthClient
+import ai.latticevpn.android.data.AccountClient
+import ai.latticevpn.android.data.AccountStore
 import ai.latticevpn.android.data.LatticeRegion
-import ai.latticevpn.android.data.ProvisioningClient
 import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
@@ -33,8 +33,8 @@ import kotlin.coroutines.resumeWithException
  *  - **Identity** — generate and persist the device's local Rosenpass
  *    static keypair and WireGuard keypair on first use. Both private
  *    keys are generated on-device and never leave it.
- *  - **Provisioning** — register the device as a peer against a Cloak
- *    region via [ProvisioningClient], import the returned config, and
+ *  - **Provisioning** — register the device as a peer via the Lattice
+ *    account API ([AccountClient]), import the returned config, and
  *    cache it per region so subsequent switches skip the server
  *    round-trip.
  *  - **Rosenpass rotation** — once the tunnel is up, drive a
@@ -56,8 +56,8 @@ class TunnelManager private constructor(appCtx: Context) {
     private val context = appCtx.applicationContext
     private val repository = TunnelRepository.get(context)
     private val keyStore = KeyStore(context)
-    private val authClient = AuthClient(context)
-    private val provisioningClient = ProvisioningClient(authClient)
+    private val accountStore = AccountStore(context)
+    private val accountClient = AccountClient()
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -222,12 +222,12 @@ class TunnelManager private constructor(appCtx: Context) {
                 }
             }
 
-            // Full provision.
-            Log.i(TAG, "selectRegion(${region.id}): provisioning via ${region.serverURL}")
-            val configText = provisionConfig(region)
-            importConfig(configText)
+            // Full provision against the Lattice account API.
+            Log.i(TAG, "selectRegion(${region.id}): provisioning device")
+            val cfg = provisionConfig()
+            importConfig(cfg)
             setSelectedRegion(region)
-            saveCachedConfig(region.id, configText)
+            saveCachedConfig(region.id, cfg)
             reconnectIfWasActive(wasActive, switching)
         } catch (e: Exception) {
             val msg = e.message ?: e.javaClass.simpleName
@@ -244,14 +244,17 @@ class TunnelManager private constructor(appCtx: Context) {
      * the iOS `warmUpPreferredRegion`.
      */
     suspend fun warmUpPreferredRegion() {
+        // Provisioning needs the customer's account number — there is
+        // nothing to warm up until they have signed in.
+        if (accountStore.accountNumber() == null) return
         val target = _selectedRegion.value
             ?: LatticeRegion.byId("us-west-1")
             ?: LatticeRegion.all.firstOrNull()
             ?: return
         if (loadCachedConfig(target.id) != null) return
         try {
-            val configText = provisionConfig(target)
-            saveCachedConfig(target.id, configText)
+            val cfg = provisionConfig()
+            saveCachedConfig(target.id, cfg)
             Log.i(TAG, "warmUp(${target.id}): cached")
         } catch (e: Exception) {
             Log.w(TAG, "warmUp(${target.id}) failed silently: ${e.message}")
@@ -259,36 +262,47 @@ class TunnelManager private constructor(appCtx: Context) {
     }
 
     /**
-     * Provision (or idempotently re-register) the device against
-     * [region] and return the raw config block. Ensures both keypairs
-     * exist first; only public keys are sent to the server.
+     * Provision (or idempotently re-register) this device against the
+     * Lattice account API and return the resulting [LatticeConfig].
+     * Ensures both keypairs exist first; only public keys are sent —
+     * the WireGuard and Rosenpass secrets never leave the device. The
+     * account number is the bearer credential.
      */
-    private suspend fun provisionConfig(region: LatticeRegion): String {
+    private suspend fun provisionConfig(): LatticeConfig {
+        val accountNumber = accountStore.accountNumber()
+            ?: throw IllegalStateException("Sign in with your account number first.")
         ensureLocalKeypair()
         ensureLocalWgKeypair()
         val keys = withContext(Dispatchers.IO) {
             keyStore.loadLocalKeypair() to keyStore.loadLocalWgKeypair()
         }
-        return provisioningClient.provision(
-            serverBase = region.serverURL,
+        val provision = accountClient.provisionDevice(
+            accountNumber = accountNumber,
             wgPubkeyB64 = keys.second.publicB64,
             rosenpassPubkeyB64 = keys.first.publicB64,
-            peerName = null, // server derives a name from the rp pubkey hash
         )
+        return latticeConfigFrom(provision.config)
+    }
+
+    /** Manual-paste path: parse a raw INI block off the main thread, then apply it. */
+    suspend fun importConfig(text: String) {
+        val cfg = withContext(Dispatchers.Default) { ConfigParser.parse(text) }
+        importConfig(cfg)
     }
 
     /**
-     * Parse a raw config block, fill in the device's WireGuard private
-     * key (server configs omit it), persist the server's Rosenpass
-     * public key, and hand the result to [TunnelRepository].
+     * Apply a parsed config: fill in the device's WireGuard private key
+     * (provisioned configs omit it — the device holds its own secret),
+     * persist the server's Rosenpass public key, and hand the result to
+     * [TunnelRepository].
      */
-    suspend fun importConfig(text: String) = withContext(Dispatchers.IO) {
-        var cfg = ConfigParser.parse(text)
+    suspend fun importConfig(cfg: LatticeConfig) = withContext(Dispatchers.IO) {
+        var c = cfg
 
-        // cloak-api-server omits private_key — the device holds its own
+        // Provisioned configs omit private_key — the device holds its own
         // WireGuard secret. Fill it in. Legacy pasted configs that carry
         // a private_key keep it untouched.
-        if (cfg.wgPrivateKey.isEmpty()) {
+        if (c.wgPrivateKey.isEmpty()) {
             val wg = try {
                 keyStore.loadLocalWgKeypair()
             } catch (e: Exception) {
@@ -296,21 +310,21 @@ class TunnelManager private constructor(appCtx: Context) {
                     "config has no private_key and no local WireGuard keypair: ${e.message}"
                 )
             }
-            cfg = cfg.copy(wgPrivateKey = wg.secretB64)
+            c = c.copy(wgPrivateKey = wg.secretB64)
         }
 
         // Persist the server's Rosenpass public key (or clear a stale one
         // when importing a non-PQ config) before the config goes live.
-        if (cfg.pqEnabled) {
-            if (cfg.serverRPPublicKeyB64.isEmpty()) {
+        if (c.pqEnabled) {
+            if (c.serverRPPublicKeyB64.isEmpty()) {
                 throw IllegalStateException("PQ enabled but server_public_key_b64 is empty")
             }
-            keyStore.saveServerPublicKey(cfg.serverRPPublicKeyB64)
+            keyStore.saveServerPublicKey(c.serverRPPublicKeyB64)
         } else {
             keyStore.clearServerPublicKey()
         }
 
-        repository.applyConfig(cfg)
+        repository.applyConfig(c)
     }
 
     /**
@@ -341,6 +355,26 @@ class TunnelManager private constructor(appCtx: Context) {
 
     /** Tear the tunnel down. The Rosenpass rotator stops with it. */
     fun disconnect() = repository.disconnect()
+
+    /**
+     * Wipe everything tied to the signed-in subscription: the live
+     * tunnel, the rotator, every cached provisioned config and the
+     * region choice. The device's own keypairs are deliberately KEPT —
+     * they are hardware identity, not account data, and regenerating the
+     * ~524 KB McEliece key is expensive. Called on sign-out.
+     */
+    fun signOutCleanup() {
+        disconnect()
+        stopRotator()
+        val editor = prefs.edit()
+        for (key in prefs.all.keys) {
+            if (key.startsWith(KEY_PROVISIONED_PREFIX)) editor.remove(key)
+        }
+        editor.remove(KEY_SELECTED_REGION)
+        editor.apply()
+        _selectedRegion.value = null
+        repository.clearConfig()
+    }
 
     // ---- Rosenpass rotator ----------------------------------------------
 
@@ -551,11 +585,15 @@ class TunnelManager private constructor(appCtx: Context) {
         prefs.edit().putString(KEY_SELECTED_REGION, region.id).apply()
     }
 
-    private fun loadCachedConfig(regionId: String): String? =
-        prefs.getString(KEY_PROVISIONED_PREFIX + regionId, null)
+    private fun loadCachedConfig(regionId: String): LatticeConfig? {
+        val raw = prefs.getString(KEY_PROVISIONED_PREFIX + regionId, null) ?: return null
+        // A stale cache entry from an older app version (or another
+        // account) simply fails to deserialize — treat it as a miss.
+        return runCatching { LatticeConfig.deserialize(raw) }.getOrNull()
+    }
 
-    private fun saveCachedConfig(regionId: String, text: String) {
-        prefs.edit().putString(KEY_PROVISIONED_PREFIX + regionId, text).apply()
+    private fun saveCachedConfig(regionId: String, cfg: LatticeConfig) {
+        prefs.edit().putString(KEY_PROVISIONED_PREFIX + regionId, cfg.serialize()).apply()
     }
 
     private fun clearCachedConfig(regionId: String) {

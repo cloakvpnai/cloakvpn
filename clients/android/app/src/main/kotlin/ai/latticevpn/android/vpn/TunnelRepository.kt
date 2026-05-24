@@ -125,6 +125,24 @@ class TunnelRepository private constructor(private val appCtx: Context) {
         currentPsk = loadPsk(cfg.peerPublicKey)
     }
 
+    /**
+     * Drop the imported config and every per-server PSK. Used on
+     * sign-out so a different account's config can never linger. Does
+     * not touch the device's own keypairs (those are hardware identity,
+     * not account data).
+     */
+    fun clearConfig() {
+        _config.value = null
+        currentPsk = null
+        val p = appCtx.getSharedPreferences("lattice", Context.MODE_PRIVATE)
+        val editor = p.edit()
+        editor.remove("config")
+        for (key in p.all.keys) {
+            if (key.startsWith("psk_")) editor.remove(key)
+        }
+        editor.apply()
+    }
+
     // MARK: - Tunnel control
 
     fun connect() {
@@ -257,7 +275,13 @@ class TunnelRepository private constructor(private val appCtx: Context) {
         val wgQuick = buildString {
             appendLine("[Interface]")
             appendLine("PrivateKey = ${cfg.wgPrivateKey}")
-            appendLine("Address = ${cfg.addressV4}, ${cfg.addressV6}")
+            // The account-number API assigns an IPv4 address only, so
+            // addressV6 is often empty — emit just the addresses we have
+            // rather than a trailing-comma "Address" the parser rejects.
+            val addresses = listOf(cfg.addressV4, cfg.addressV6)
+                .filter { it.isNotBlank() }
+                .joinToString(", ")
+            appendLine("Address = $addresses")
             if (cfg.dns.isNotEmpty()) {
                 appendLine("DNS = ${cfg.dns.joinToString(", ")}")
             }

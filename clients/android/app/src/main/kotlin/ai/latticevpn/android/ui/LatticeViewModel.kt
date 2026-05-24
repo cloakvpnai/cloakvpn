@@ -1,5 +1,9 @@
 package ai.latticevpn.android.ui
 
+import ai.latticevpn.android.data.AccountClient
+import ai.latticevpn.android.data.AccountException
+import ai.latticevpn.android.data.AccountStatus
+import ai.latticevpn.android.data.AccountStore
 import ai.latticevpn.android.data.IpAddressClient
 import ai.latticevpn.android.data.LatticeRegion
 import ai.latticevpn.android.vpn.RosenpassStatus
@@ -16,14 +20,21 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/** The three top-level destinations in the A6 UI. */
-enum class Screen { HOME, REGIONS, SETTINGS }
+/** The top-level destinations in the UI. */
+enum class Screen { SIGN_IN, HOME, REGIONS, SETTINGS, ACCOUNT }
 
 /** State of the public-IP lookup shown on the home screen. */
 sealed class IpState {
     data object Loading : IpState()
     data class Known(val ip: String) : IpState()
     data object Unavailable : IpState()
+}
+
+/** State of the subscription lookup shown on the Account screen. */
+sealed class AccountUiState {
+    data object Loading : AccountUiState()
+    data class Loaded(val status: AccountStatus) : AccountUiState()
+    data class Failed(val message: String) : AccountUiState()
 }
 
 /**
@@ -40,6 +51,8 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     private val tm = TunnelManager.get(app)
     private val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val ipClient = IpAddressClient()
+    private val accountStore = AccountStore(app)
+    private val accountClient = AccountClient()
 
     // ---- Tunnel / region state — delegated straight from TunnelManager ----
 
@@ -65,7 +78,10 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Navigation ------------------------------------------------------
 
-    private val _screen = MutableStateFlow(Screen.HOME)
+    // Land on sign-in until a validated account number is stored.
+    private val _screen = MutableStateFlow(
+        if (accountStore.isSignedIn()) Screen.HOME else Screen.SIGN_IN,
+    )
     val screen: StateFlow<Screen> = _screen.asStateFlow()
 
     fun navigateTo(target: Screen) { _screen.value = target }
@@ -186,6 +202,97 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Exception) {
                 _importError.value = e.message ?: "That config could not be parsed."
             }
+        }
+    }
+
+    // ---- Account: sign-in, sign-out, subscription status -----------------
+
+    /** True once a validated account number is stored. */
+    fun isSignedIn(): Boolean = accountStore.isSignedIn()
+
+    /** The stored account number (canonical hyphenated form), or null. */
+    fun accountNumber(): String? = accountStore.accountNumber()
+
+    private val _signInBusy = MutableStateFlow(false)
+    /** True while a [signIn] validation round-trip is in flight. */
+    val signInBusy: StateFlow<Boolean> = _signInBusy.asStateFlow()
+
+    /**
+     * Validate [accountNumber] against the server and, on success, store
+     * it and move to Home. [onResult] is invoked with null on success or
+     * a user-facing message on failure. The number is persisted only
+     * once the server has recognized it.
+     */
+    fun signIn(accountNumber: String, onResult: (error: String?) -> Unit) {
+        if (_signInBusy.value) return
+        _signInBusy.value = true
+        viewModelScope.launch {
+            val error: String? = try {
+                accountClient.fetchAccount(accountNumber) // 401 ⇒ unknown number
+                accountStore.save(accountNumber)
+                null
+            } catch (e: AccountException) {
+                e.message
+            } catch (e: Exception) {
+                e.message ?: "Sign-in failed. Please try again."
+            }
+            _signInBusy.value = false
+            if (error == null) {
+                _screen.value = Screen.HOME
+                // Signed in — generate the device identity keys and
+                // pre-provision in the background so the first connect is quick.
+                viewModelScope.launch {
+                    runCatching {
+                        tm.ensureLocalKeypair()
+                        tm.ensureLocalWgKeypair()
+                        tm.warmUpPreferredRegion()
+                    }
+                }
+            }
+            onResult(error)
+        }
+    }
+
+    /** Forget the account number, wipe the subscription's tunnel state, return to sign-in. */
+    fun signOut() {
+        tm.signOutCleanup()
+        accountStore.clear()
+        _accountState.value = AccountUiState.Loading
+        _screen.value = Screen.SIGN_IN
+    }
+
+    private val _accountState = MutableStateFlow<AccountUiState>(AccountUiState.Loading)
+    /** Subscription status for the Account screen. */
+    val accountState: StateFlow<AccountUiState> = _accountState.asStateFlow()
+
+    /** (Re)load the subscription status from the server. */
+    fun refreshAccountStatus() {
+        val number = accountStore.accountNumber() ?: return
+        _accountState.value = AccountUiState.Loading
+        viewModelScope.launch {
+            _accountState.value = try {
+                AccountUiState.Loaded(accountClient.fetchAccount(number))
+            } catch (e: Exception) {
+                AccountUiState.Failed(e.message ?: "Couldn't load your account.")
+            }
+        }
+    }
+
+    /**
+     * Release a device slot, then refresh the status. [onResult] gets
+     * null on success or a user-facing message on failure.
+     */
+    fun removeDevice(deviceId: Long, onResult: (error: String?) -> Unit) {
+        val number = accountStore.accountNumber() ?: return
+        viewModelScope.launch {
+            val error: String? = try {
+                accountClient.revokeDevice(number, deviceId)
+                null
+            } catch (e: Exception) {
+                e.message ?: "Couldn't remove the device."
+            }
+            if (error == null) refreshAccountStatus()
+            onResult(error)
         }
     }
 
