@@ -14,16 +14,16 @@
  *   Basic — $4.99/mo or $49.99/yr   (2 months free)
  *   Pro   — $9.99/mo or $99.99/yr   (2 months free)
  *
- * ▶ FILL IN: paste the four buy.stripe.com Payment Link URLs from the
- *   Stripe Dashboard (docs/STRIPE_SETUP.md step 3) into PAYMENT_LINKS.
+ * The four live buy.stripe.com Payment Link URLs, created in the Stripe
+ * Dashboard (docs/STRIPE_SETUP.md). Each redirects to /welcome.
  */
 import Layout from '@/layouts/Layout.astro';
 
 const PAYMENT_LINKS = {
-  basicMonthly: 'https://buy.stripe.com/REPLACE_basic_monthly',
-  basicYearly: 'https://buy.stripe.com/REPLACE_basic_yearly',
-  proMonthly: 'https://buy.stripe.com/REPLACE_pro_monthly',
-  proYearly: 'https://buy.stripe.com/REPLACE_pro_yearly',
+  basicMonthly: 'https://buy.stripe.com/9B600j83jfwo3Xv2SwfrW00',
+  basicYearly: 'https://buy.stripe.com/bJeeVdcjz98051zfFifrW01',
+  proMonthly: 'https://buy.stripe.com/bJefZh1EVgAs79H9gUfrW02',
+  proYearly: 'https://buy.stripe.com/8x26oHcjz0Budy53WAfrW03',
 };
 
 const plans = [
