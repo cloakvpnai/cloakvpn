@@ -203,6 +203,11 @@ func (c *Controller) Provision(usedIPs []string) (*ClientConfig, error) {
 		"allowed-ips", ip+"/32").CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("wg set: %w: %s", err, out)
 	}
+	// Record the peer's WG pubkey for cloak-psk-installer.sh — without this
+	// the rosenpass PSK is never installed onto the peer.
+	if err := writePeerWGPubkey(peerName, wgPub); err != nil {
+		return nil, fmt.Errorf("write peer wg pubkey: %w", err)
+	}
 	// Persist to /etc/wireguard/wg0.conf so it survives a reboot.
 	if out, err := exec.Command("wg-quick", "save", c.cfg.Iface).CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("wg-quick save: %w: %s", err, out)
@@ -295,6 +300,11 @@ func (c *Controller) ProvisionWithKeys(usedIPs []string, wgPubkeyB64, rosenpassP
 		"allowed-ips", ip+"/32").CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("wg set: %w: %s", err, out)
 	}
+	// Record the peer's WG pubkey for cloak-psk-installer.sh — without this
+	// the rosenpass PSK is never installed onto the peer.
+	if err := writePeerWGPubkey(peerName, wgPub); err != nil {
+		return nil, fmt.Errorf("write peer wg pubkey: %w", err)
+	}
 	if out, err := exec.Command("wg-quick", "save", c.cfg.Iface).CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("wg-quick save: %w: %s", err, out)
 	}
@@ -356,6 +366,7 @@ func (c *Controller) Revoke(wgPubkey string) error {
 	}
 	_ = os.Remove(publicPath)
 	_ = os.Remove(secretPath)
+	_ = os.Remove(filepath.Join(wgConfigDir, peerName+".pub"))
 
 	if err := c.restartRosenpass(); err != nil {
 		return fmt.Errorf("restart rosenpass: %w", err)
@@ -367,7 +378,12 @@ func (c *Controller) Revoke(wgPubkey string) error {
 // write-to-temp + atomic-rename so a crash or ENOSPC mid-write can't leave
 // the config file partially populated.
 func (c *Controller) appendRosenpassPeer(peerName, publicPath string) error {
-	block := fmt.Sprintf("\n[[peers]]\npublic_key = %q\nkey_out = \"/run/rosenpass/psk-%s\"\n",
+	// protocol_version = "V03" MUST be present. Without it rosenpass falls
+	// back to an older protocol and the handshake with a V03 client silently
+	// fails — no PSK is ever derived, so the tunnel never goes post-quantum.
+	// Every peer block server/scripts/add-peer.sh writes carries this line;
+	// this Go port has to match it.
+	block := fmt.Sprintf("\n[[peers]]\npublic_key = %q\nkey_out = \"/run/rosenpass/psk-%s\"\nprotocol_version = \"V03\"\n",
 		publicPath, peerName)
 
 	existing, err := os.ReadFile(c.cfg.ServerTomlPath)
@@ -523,6 +539,20 @@ func (c *Controller) nextFreeIP(used []string) (string, error) {
 func peerNameFromWG(wgPubkey string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(wgPubkey)))
 	return "peer-" + hex.EncodeToString(sum[:6])
+}
+
+// wgConfigDir is wg-quick's config directory.
+const wgConfigDir = "/etc/wireguard"
+
+// writePeerWGPubkey records a peer's WireGuard public key at
+// /etc/wireguard/<peerName>.pub. cloak-psk-installer.sh reads this file
+// to map a rosenpass PSK (/run/rosenpass/psk-<peerName>) back to the WG
+// peer it must be applied to. WITHOUT it the post-quantum PSK is derived
+// but never installed on the peer, so the tunnel silently never goes
+// post-quantum and ultimately fails the client-side rotation watchdog.
+func writePeerWGPubkey(peerName, wgPubkey string) error {
+	path := filepath.Join(wgConfigDir, peerName+".pub")
+	return os.WriteFile(path, []byte(strings.TrimSpace(wgPubkey)+"\n"), 0644)
 }
 
 func readFileB64(path string) (string, error) {
