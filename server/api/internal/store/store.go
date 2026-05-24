@@ -118,7 +118,7 @@ const accountCols = `id, account_number_hash, COALESCE(stripe_customer_id, ''), 
 func scanAccount(row *sql.Row) (*Account, error) {
 	var a Account
 	var tier string
-	var until time.Time
+	var until string
 	err := row.Scan(&a.ID, &a.AccountNumberHash, &a.StripeCustomerID,
 		&a.StripeSessionID, &tier, &a.DeviceLimit, &until)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -128,8 +128,22 @@ func scanAccount(row *sql.Row) (*Account, error) {
 		return nil, err
 	}
 	a.Tier = Tier(tier)
-	a.ActiveUntil = until
+	// active_until is stored as a normalized RFC3339 string (see
+	// CreateAccount). The modernc SQLite driver does not round-trip a Go
+	// time.Time directly — it serializes one with a monotonic-clock suffix
+	// that cannot be parsed back — so we control the format on both sides.
+	t, err := time.Parse(time.RFC3339Nano, until)
+	if err != nil {
+		return nil, fmt.Errorf("parse active_until %q: %w", until, err)
+	}
+	a.ActiveUntil = t
 	return &a, nil
+}
+
+// formatTime renders a time.Time for storage: UTC (which drops the
+// monotonic-clock reading) in RFC3339 with nanoseconds.
+func formatTime(t time.Time) string {
+	return t.UTC().Format(time.RFC3339Nano)
 }
 
 // CreateAccount inserts a new account keyed by the HMAC of its account
@@ -144,7 +158,7 @@ func (d *DB) CreateAccount(numberHash, stripeCustomerID, stripeSessionID string,
 		  (account_number_hash, stripe_customer_id, stripe_session_id,
 		   tier, device_limit, active_until)
 		VALUES (?, ?, ?, ?, ?, ?)`,
-		numberHash, stripeCustomerID, stripeSessionID, tier, limit, activeUntil)
+		numberHash, stripeCustomerID, stripeSessionID, tier, limit, formatTime(activeUntil))
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +202,7 @@ func (d *DB) UpdateSubscriptionByStripeCustomer(customerID string, tier Tier,
 	_, err := d.Exec(`UPDATE accounts
 	                     SET tier = ?, device_limit = ?, active_until = ?
 	                   WHERE stripe_customer_id = ?`,
-		tier, limit, activeUntil, customerID)
+		tier, limit, formatTime(activeUntil), customerID)
 	return err
 }
 

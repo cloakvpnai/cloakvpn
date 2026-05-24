@@ -45,12 +45,20 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
 
 Hetzner CX-series boxes are x86-64, hence `GOARCH=amd64`.
 
-Copy it to the box:
+Copy it to the box. `scp` straight onto `/usr/local/bin/cloakvpn-api`
+works only on the *first* deploy — once the service is running, Linux
+refuses to overwrite a file that is currently executing (`scp: dest
+open … Failure`, errno `ETXTBSY`). So always copy to a temporary name
+and `mv` it into place; a rename swaps the binary atomically, with no
+downtime, even while the old one is still running:
 
 ```bash
-scp -i ~/.ssh/cloakvpn_ed25519 cloakvpn-api root@<ip>:/usr/local/bin/cloakvpn-api
-ssh -i ~/.ssh/cloakvpn_ed25519 root@<ip> 'chmod 755 /usr/local/bin/cloakvpn-api'
+scp -i ~/.ssh/cloakvpn_ed25519 cloakvpn-api root@<ip>:/usr/local/bin/cloakvpn-api.new
+ssh -i ~/.ssh/cloakvpn_ed25519 root@<ip> \
+  'mv /usr/local/bin/cloakvpn-api.new /usr/local/bin/cloakvpn-api && chmod 755 /usr/local/bin/cloakvpn-api'
 ```
+
+On a redeploy, follow this with `systemctl restart cloakvpn-api`.
 
 ---
 
@@ -234,9 +242,13 @@ WG_PUB=$(wg genkey | tee /tmp/t.sk | wg pubkey)
 rosenpass gen-keys --secret-key /tmp/t.rp.sk --public-key /tmp/t.rp.pk
 RP_PUB=$(base64 -w0 /tmp/t.rp.pk)
 
+# The Rosenpass public key is ~700 KB base64 — too large to pass on the
+# curl command line (you'd get "Argument list too long"). Write the JSON
+# body to a file and POST it with --data-binary @file instead.
+printf '{"wg_pubkey":"%s","rosenpass_pubkey":"%s"}' "$WG_PUB" "$RP_PUB" > /tmp/dev.json
 curl -s -X POST localhost:8080/v1/device \
   -H "Authorization: Bearer XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" \
-  -d "{\"wg_pubkey\":\"$WG_PUB\",\"rosenpass_pubkey\":\"$RP_PUB\"}"
+  --data-binary @/tmp/dev.json
 # → {"config":{…},"tier":"…","device":{…}}
 
 wg show wg0        # the new peer's pubkey + 10.99.0.x should appear

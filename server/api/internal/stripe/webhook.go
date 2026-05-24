@@ -24,6 +24,7 @@ import (
 	"time"
 
 	stripego "github.com/stripe/stripe-go/v79"
+	csession "github.com/stripe/stripe-go/v79/checkout/session"
 	"github.com/stripe/stripe-go/v79/customer"
 	"github.com/stripe/stripe-go/v79/webhook"
 
@@ -68,7 +69,16 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sig := r.Header.Get("Stripe-Signature")
-	evt, err := webhook.ConstructEvent(body, sig, h.cfg.WebhookSecret)
+	// IgnoreAPIVersionMismatch: the Stripe account's default API version
+	// (e.g. 2026-04-22.dahlia) is newer than the one stripe-go/v79 pins to
+	// (2024-06-20). Without this, ConstructEvent rejects EVERY event with a
+	// 400 on the version mismatch alone — the signature is fine. We only
+	// read stable fields (checkout session id/customer/subscription/price,
+	// subscription status/period_end), and the subscription handler already
+	// has a shim for the post-Basil current_period_end move, so relaxing the
+	// version check is safe here.
+	evt, err := webhook.ConstructEventWithOptions(body, sig, h.cfg.WebhookSecret,
+		webhook.ConstructEventOptions{IgnoreAPIVersionMismatch: true})
 	if err != nil {
 		log.Printf("stripe webhook: signature verify failed: %v", err)
 		http.Error(w, "bad signature", http.StatusBadRequest)
@@ -120,13 +130,19 @@ func (h *Handler) handleCheckoutCompleted(evt stripego.Event) error {
 		return err
 	}
 
-	// Derive tier + limit from the purchased price.
+	// Derive tier + limit from the purchased price. Stripe does NOT inline
+	// line items on the checkout.session.completed event payload, so
+	// sess.LineItems is always nil here. Re-fetch the session from the API
+	// with line_items expanded to read the price ID.
 	var priceID string
-	if sess.LineItems != nil && len(sess.LineItems.Data) > 0 && sess.LineItems.Data[0].Price != nil {
-		priceID = sess.LineItems.Data[0].Price.ID
-	} else if sess.Subscription != nil && sess.Subscription.Items != nil &&
-		len(sess.Subscription.Items.Data) > 0 && sess.Subscription.Items.Data[0].Price != nil {
-		priceID = sess.Subscription.Items.Data[0].Price.ID
+	sp := &stripego.CheckoutSessionParams{}
+	sp.AddExpand("line_items")
+	full, err := csession.Get(sess.ID, sp)
+	if err != nil {
+		return fmt.Errorf("retrieve checkout session %s: %w", sess.ID, err)
+	}
+	if full.LineItems != nil && len(full.LineItems.Data) > 0 && full.LineItems.Data[0].Price != nil {
+		priceID = full.LineItems.Data[0].Price.ID
 	}
 	tier, limit := h.tierFor(priceID)
 	if tier == store.TierNone {
