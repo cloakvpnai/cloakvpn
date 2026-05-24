@@ -12,8 +12,17 @@ multi-region rollout is `BILLING_INTEGRATION.md` §7, later.
 ## 0. Prerequisites
 
 - **Go 1.25+** on your Mac to build the binary (https://go.dev/dl/).
-- SSH to one concentrator — e.g. fi1: `ssh -i ~/.ssh/cloakvpn_ed25519 root@<ip>`.
-  IPs are in `SESSION_HANDOVER_2026-05-23.md`.
+- SSH to one concentrator — pick any of the four. DNS is inconsistent,
+  so SSH by IP:
+
+  | Region    | IP             | API host                    |
+  |-----------|----------------|-----------------------------|
+  | us-west-1 | 5.78.203.171   | cloak-us-west-1.cloakvpn.ai |
+  | us-east-1 | 5.161.198.227  | cloak-us-east-1.cloakvpn.ai |
+  | de1       | 91.98.65.98    | cloak-de1.cloakvpn.ai       |
+  | fi1       | 204.168.252.70 | cloak-fi1.cloakvpn.ai       |
+
+  `ssh -i ~/.ssh/cloakvpn_ed25519 root@<ip>`
 - That box already runs WireGuard + `cloak-rosenpass` (it's a live
   concentrator).
 - The **Stripe CLI** (`brew install stripe/stripe-cli/stripe`) — it
