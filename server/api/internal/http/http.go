@@ -277,6 +277,10 @@ type accountNumberResp struct {
 }
 
 func (h *AccountNumberHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// The website welcome page (latticevpn.ai) fetches this cross-origin.
+	// A plain GET with no custom headers is a CORS "simple request", so
+	// this response header alone is enough — no preflight to handle.
+	w.Header().Set("Access-Control-Allow-Origin", "https://latticevpn.ai")
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

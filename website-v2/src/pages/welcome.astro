@@ -1,26 +1,158 @@
 ---
 /**
- * Welcome page — placeholder.
- * Phase 3 will port the full content from website/welcome.html into a
- * design-system-matching Astro template with the same legal text but
- * presented with the new Lattice visual identity. For now this stub
- * keeps the navigation working and provides a clear link to the live
- * legal content.
+ * Welcome page — shown by Stripe's redirect right after a successful
+ * checkout (Payment Link → redirect to /welcome?session_id=...).
+ *
+ * It fetches the customer's freshly minted account number from the API
+ * (GET /v1/account-number?session_id=...) and shows it. The number is
+ * the customer's ONLY credential — there is no email/password account
+ * (see docs/BILLING_INTEGRATION.md).
  */
 import Layout from '@/layouts/Layout.astro';
+
+// Production API host. The account-number lookup is a public, CORS-enabled
+// GET — see server/api/internal/http (AccountNumberHandler).
+const API_BASE = 'https://api.latticevpn.ai';
 ---
-<Layout title="Welcome" description="Lattice VPN welcome information.">
-  <div class="pt-32 pb-16 mx-auto max-w-2xl px-6 text-center">
-    <span class="inline-flex items-center gap-2 rounded-full holo-glass px-4 py-1.5 text-xs font-mono text-mint-400 mb-6">
-      PHASE 3
-    </span>
-    <h1 class="font-display font-bold text-4xl text-white mb-4">Welcome</h1>
-    <p class="text-slate-400 mb-8">
-      This page is being rebuilt with the new design system. Full content lives at the legacy URL while we finish the redesign.
-    </p>
-    <a href="https://cloakvpn.ai/welcome" class="inline-flex items-center gap-2 rounded-full holo-glass-strong text-white font-medium text-sm px-6 py-3 hover:border-mint-500/40 transition-all">
-      Read current welcome page
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 17L17 7M7 7h10v10"/></svg>
-    </a>
+<Layout
+  title="Welcome to Lattice VPN"
+  description="Your Lattice VPN account number — the only key you need."
+>
+  <div class="pt-32 pb-20 mx-auto max-w-2xl px-6">
+    <div class="text-center">
+      <span class="inline-flex items-center gap-2 rounded-full holo-glass px-4 py-1.5 text-xs font-mono text-mint-400 mb-6">
+        PAYMENT CONFIRMED
+      </span>
+      <h1 class="font-display font-bold text-4xl md:text-5xl text-white mb-4">
+        Welcome to <span class="text-gradient-mint-amber">Lattice VPN</span>
+      </h1>
+      <p class="text-slate-300 mb-10">
+        Here is your account number. It is the only thing you need to use
+        Lattice — there is no email or password to remember.
+      </p>
+    </div>
+
+    <!-- Account-number card -->
+    <div class="holo-glass-strong rounded-2xl p-8">
+      <p class="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">
+        Your account number
+      </p>
+
+      <!-- State: loading -->
+      <div id="an-loading" class="py-6 text-center">
+        <p class="text-slate-300 font-mono text-sm animate-pulse">
+          Setting up your account…
+        </p>
+      </div>
+
+      <!-- State: ready -->
+      <div id="an-ready" class="hidden">
+        <div class="rounded-xl border border-mint-500/40 bg-navy-900/60 px-4 py-5 text-center">
+          <code id="an-value" class="font-mono font-bold text-2xl md:text-3xl text-mint-400 tracking-wider break-all"></code>
+        </div>
+        <button
+          id="an-copy"
+          type="button"
+          class="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-full bg-mint-500 hover:bg-mint-400 text-navy-900 font-semibold text-sm px-5 py-3 transition-all"
+        >
+          Copy account number
+        </button>
+        <div class="mt-5 rounded-xl border border-amber-500/40 bg-amber-500/5 px-4 py-3">
+          <p class="text-sm text-amber-300">
+            <strong>Save this somewhere safe now.</strong> It is the only key
+            to your subscription. You can also find it on every Stripe payment
+            receipt we email you.
+          </p>
+        </div>
+      </div>
+
+      <!-- State: error / timeout -->
+      <div id="an-error" class="hidden py-4">
+        <p class="text-sm text-slate-300">
+          Your payment went through, but we couldn't display your account
+          number here. It is on the Stripe payment receipt emailed to you —
+          search your inbox for <span class="font-mono text-mint-400">Lattice VPN account number</span>.
+          Still stuck? Email
+          <a href="mailto:support@latticevpn.ai" class="text-mint-400 underline">support@latticevpn.ai</a>.
+        </p>
+      </div>
+    </div>
+
+    <!-- Next steps -->
+    <div class="mt-10">
+      <h2 class="font-display font-semibold text-lg text-white mb-4">Next steps</h2>
+      <ol class="space-y-3">
+        <li class="flex items-start gap-3 text-sm text-slate-300">
+          <span class="flex-shrink-0 w-6 h-6 rounded-full bg-mint-500/15 text-mint-400 font-mono text-xs flex items-center justify-center">1</span>
+          Install the Lattice VPN app on your device.
+        </li>
+        <li class="flex items-start gap-3 text-sm text-slate-300">
+          <span class="flex-shrink-0 w-6 h-6 rounded-full bg-mint-500/15 text-mint-400 font-mono text-xs flex items-center justify-center">2</span>
+          Open the app and enter your account number.
+        </li>
+        <li class="flex items-start gap-3 text-sm text-slate-300">
+          <span class="flex-shrink-0 w-6 h-6 rounded-full bg-mint-500/15 text-mint-400 font-mono text-xs flex items-center justify-center">3</span>
+          Pick a region and connect. That's it.
+        </li>
+      </ol>
+      <p class="mt-8 text-xs text-slate-500 font-mono text-center">
+        Lost your number later? Recover it at
+        <a href="/recover" class="text-mint-400 underline">latticevpn.ai/recover</a>.
+      </p>
+    </div>
   </div>
+
+  <script define:vars={{ API_BASE }}>
+    const loading = document.getElementById('an-loading');
+    const ready = document.getElementById('an-ready');
+    const errorBox = document.getElementById('an-error');
+    const valueEl = document.getElementById('an-value');
+    const copyBtn = document.getElementById('an-copy');
+
+    const show = (el) => {
+      [loading, ready, errorBox].forEach((n) => n && n.classList.add('hidden'));
+      el && el.classList.remove('hidden');
+    };
+
+    const sessionId = new URLSearchParams(location.search).get('session_id');
+
+    const showNumber = (number) => {
+      if (valueEl) valueEl.textContent = number;
+      show(ready);
+    };
+
+    // Poll the API: the Stripe webhook that creates the account may not
+    // have landed at the instant Stripe redirects here, so the endpoint
+    // returns 404 until it has. Retry for ~20s, then fall back.
+    const MAX_ATTEMPTS = 10;
+    const poll = async (attempt) => {
+      if (!sessionId) { show(errorBox); return; }
+      try {
+        const res = await fetch(
+          `${API_BASE}/v1/account-number?session_id=${encodeURIComponent(sessionId)}`,
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.account_number) { showNumber(data.account_number); return; }
+        }
+      } catch (_) {
+        // network hiccup — fall through to retry
+      }
+      if (attempt >= MAX_ATTEMPTS) { show(errorBox); return; }
+      setTimeout(() => poll(attempt + 1), 2000);
+    };
+    poll(0);
+
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(valueEl ? valueEl.textContent || '' : '');
+          copyBtn.textContent = 'Copied ✓';
+          setTimeout(() => { copyBtn.textContent = 'Copy account number'; }, 2000);
+        } catch (_) {
+          copyBtn.textContent = 'Press ⌘/Ctrl+C to copy';
+        }
+      });
+    }
+  </script>
 </Layout>

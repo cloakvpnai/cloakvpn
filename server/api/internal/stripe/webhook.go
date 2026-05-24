@@ -147,7 +147,14 @@ func (h *Handler) handleCheckoutCompleted(evt stripego.Event) error {
 	// ourselves. Doing it before the DB insert keeps a retried webhook
 	// idempotent: a failure here means no account row exists yet, so the
 	// retry simply regenerates and overwrites cleanly.
-	mdParams := &stripego.CustomerParams{}
+	mdParams := &stripego.CustomerParams{
+		// Surface the account number on every Stripe receipt/invoice, so a
+		// customer who loses it can recover it straight from their own
+		// email — no email is stored on our side (see /recover).
+		InvoiceSettings: &stripego.CustomerInvoiceSettingsParams{
+			Footer: stripego.String("Lattice VPN account number: " + number),
+		},
+	}
 	mdParams.AddMetadata(account.MetadataKey, number)
 	if _, err := customer.Update(customerID, mdParams); err != nil {
 		return fmt.Errorf("write account number to stripe customer %s: %w", customerID, err)

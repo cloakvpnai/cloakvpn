@@ -1,0 +1,83 @@
+---
+/**
+ * Recover page — for a customer who has lost their account number.
+ *
+ * No email or personal data is stored on the Lattice side, so recovery
+ * goes through Stripe, which holds the customer's email for billing. The
+ * account number is written into every Stripe payment receipt (see the
+ * invoice footer set in server/api/internal/stripe/webhook.go) and into
+ * the Stripe customer metadata. See docs/BILLING_INTEGRATION.md §6.
+ */
+import Layout from '@/layouts/Layout.astro';
+
+// Stripe-hosted customer billing portal login URL. Get this from the
+// Stripe Dashboard → Settings → Billing → Customer portal, after enabling
+// the portal (Phase 1, step 4). REPLACE before launch.
+const BILLING_PORTAL_URL = 'https://billing.stripe.com/p/login/REPLACE_ME';
+---
+<Layout
+  title="Recover your account number"
+  description="Lost your Lattice VPN account number? Here's how to get it back."
+>
+  <div class="pt-32 pb-20 mx-auto max-w-2xl px-6">
+    <div class="text-center mb-10">
+      <span class="inline-flex items-center gap-2 rounded-full holo-glass px-4 py-1.5 text-xs font-mono text-mint-400 mb-6">
+        RECOVER ACCESS
+      </span>
+      <h1 class="font-display font-bold text-4xl md:text-5xl text-white mb-4">
+        Lost your account number?
+      </h1>
+      <p class="text-slate-300">
+        Lattice keeps no email, password, or personal account — so we
+        can't email it to you directly. But it's recorded in two places
+        you control through Stripe.
+      </p>
+    </div>
+
+    <!-- Option 1: receipts -->
+    <div class="holo-glass rounded-2xl p-7 mb-5">
+      <h2 class="font-display font-semibold text-lg text-white mb-2">
+        1. Check your payment receipt
+      </h2>
+      <p class="text-sm text-slate-300">
+        Every receipt Stripe emails you for Lattice VPN prints your account
+        number in its footer. Search your inbox for
+        <span class="font-mono text-mint-400">Lattice VPN account number</span>
+        — it will be on the most recent receipt.
+      </p>
+    </div>
+
+    <!-- Option 2: billing portal -->
+    <div class="holo-glass rounded-2xl p-7 mb-5">
+      <h2 class="font-display font-semibold text-lg text-white mb-2">
+        2. Open your billing portal
+      </h2>
+      <p class="text-sm text-slate-300 mb-4">
+        The Stripe billing portal lets you confirm or manage your
+        subscription. You sign in with the email you paid with — Stripe
+        emails you a secure login link, so only you can get in.
+      </p>
+      <a
+        href={BILLING_PORTAL_URL}
+        class="inline-flex items-center justify-center gap-2 rounded-full holo-glass-strong text-white font-medium text-sm px-6 py-3 hover:border-mint-500/40 transition-all"
+      >
+        Open billing portal
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 17L17 7M7 7h10v10"/></svg>
+      </a>
+    </div>
+
+    <!-- Reassurance + support -->
+    <div class="rounded-xl border border-mint-500/20 bg-mint-500/5 px-5 py-4 mb-6">
+      <p class="text-sm text-slate-300">
+        Good to know: while your subscription is active, devices you've
+        already connected keep working. You only need the account number
+        to set up a <em>new</em> device.
+      </p>
+    </div>
+
+    <p class="text-center text-xs text-slate-500 font-mono">
+      Still can't find it? Email
+      <a href="mailto:support@latticevpn.ai" class="text-mint-400 underline">support@latticevpn.ai</a>.
+    </p>
+  </div>
+</Layout>
