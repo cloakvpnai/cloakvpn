@@ -70,26 +70,26 @@ const plans = [
   <div class="pt-32 pb-16">
     <div class="mx-auto max-w-5xl px-6">
       <div class="text-center mb-12">
-        <span class="inline-flex items-center gap-2 rounded-full holo-glass px-4 py-1.5 text-xs font-mono text-mint-400 mb-6">
+        <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 border border-slate-200 px-3 py-1 text-xs font-semibold tracking-wide text-slate-600 mb-6">
           PRICING
         </span>
-        <h1 class="font-display font-bold text-5xl md:text-6xl tracking-tight leading-tight text-white">
+        <h1 class="font-display font-extrabold text-5xl md:text-6xl tracking-tight leading-tight text-slate-900">
           One VPN. Two plans.
           <br />
-          <span class="text-gradient-mint-amber">Zero logs.</span>
+          <span class="text-mint-600">Zero logs.</span>
         </h1>
-        <p class="mt-6 text-lg text-slate-300 max-w-xl mx-auto">
+        <p class="mt-6 text-lg text-slate-600 max-w-xl mx-auto">
           No account, no email — pay and you get an account number to use in the app. Yearly plans give you two months free.
         </p>
       </div>
 
       <!-- Billing interval toggle -->
       <div class="flex justify-center mb-12">
-        <div class="inline-flex items-center holo-glass rounded-full p-1.5 text-sm">
-          <button type="button" data-interval="monthly" class="rounded-full px-5 py-2 font-medium transition-colors text-slate-300 hover:text-white" data-billing-toggle>
+        <div class="inline-flex items-center bg-slate-100 border border-slate-200 rounded-full p-1.5 text-sm">
+          <button type="button" data-interval="monthly" class="rounded-full px-5 py-2 font-medium transition-colors text-slate-600 hover:text-slate-900" data-billing-toggle>
             Monthly
           </button>
-          <button type="button" data-interval="yearly" class="rounded-full px-5 py-2 font-medium transition-colors bg-mint-500 text-navy-900" data-billing-toggle data-active>
+          <button type="button" data-interval="yearly" class="rounded-full px-5 py-2 font-medium transition-colors bg-mint-500 text-slate-900 hover:text-slate-900" data-billing-toggle data-active>
             Yearly
             <span class="ml-1.5 text-xs font-mono opacity-80">2 months free</span>
           </button>
@@ -101,21 +101,21 @@ const plans = [
         {plans.map((plan) => (
           <div
             class:list={[
-              'relative rounded-2xl p-8 flex flex-col',
-              plan.highlight ? 'holo-glass-strong border-mint-500/40' : 'holo-glass',
+              'relative rounded-2xl p-8 flex flex-col soft-card',
+              plan.highlight && 'ring-2 ring-mint-500/40',
             ]}
           >
             {plan.highlight && (
-              <span class="absolute -top-3 left-8 inline-flex items-center gap-2 rounded-full bg-mint-500 text-navy-900 px-3 py-1 text-xs font-semibold uppercase tracking-wider">
+              <span class="absolute -top-3 left-8 inline-flex items-center gap-2 rounded-full bg-mint-500 text-slate-900 px-3 py-1 text-xs font-semibold uppercase tracking-wider">
                 Most popular
               </span>
             )}
 
-            <h3 class="font-display font-bold text-2xl text-white mb-1">{plan.name}</h3>
-            <p class="text-sm text-slate-400 mb-6">{plan.tagline}</p>
+            <h3 class="font-display font-bold text-2xl text-slate-900 mb-1">{plan.name}</h3>
+            <p class="text-sm text-slate-600 mb-6">{plan.tagline}</p>
 
             <div class="mb-6">
-              <span class="font-display font-bold text-5xl text-white">
+              <span class="font-display font-bold text-5xl text-slate-900">
                 <span data-price-display>${plan.yearly}</span>
                 <span class="text-xl text-slate-500 font-medium" data-suffix-yearly>/year</span>
                 <span class="text-xl text-slate-500 font-medium hidden" data-suffix-monthly>/month</span>
@@ -127,8 +127,8 @@ const plans = [
 
             <ul class="space-y-3 mb-8 flex-grow">
               {plan.features.map((f) => (
-                <li class="flex items-start gap-3 text-sm text-slate-300">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5FE3B5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="mt-0.5 flex-shrink-0">
+                <li class="flex items-start gap-3 text-sm text-slate-700">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3FCFA0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="mt-0.5 flex-shrink-0">
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
                   {f}
@@ -139,10 +139,10 @@ const plans = [
             <a
               href={plan.yearlyLink}
               class:list={[
-                'inline-flex items-center justify-center gap-2 rounded-full font-semibold text-sm px-5 py-3 transition-all',
+                'inline-flex items-center justify-center gap-2 rounded-full font-semibold text-sm px-5 py-3 transition-colors',
                 plan.highlight
-                  ? 'bg-mint-500 hover:bg-mint-400 text-navy-900 shadow-[0_0_24px_rgba(95,227,181,0.4)]'
-                  : 'holo-glass-strong text-white hover:border-mint-500/40',
+                  ? 'bg-mint-500 hover:bg-mint-600 text-slate-900'
+                  : 'bg-slate-900 hover:bg-slate-800 text-white',
               ]}
               data-monthly-price={plan.monthly}
               data-yearly-price={plan.yearly}
@@ -157,7 +157,7 @@ const plans = [
 
       <!-- Footnote -->
       <p class="mt-10 text-center text-xs text-slate-500 font-mono">
-        Subscriptions auto-renew. Manage or cancel anytime from your billing portal. Lost your account number? Recover it at <a href="/recover" class="text-mint-400 underline">latticevpn.ai/recover</a>.
+        Subscriptions auto-renew. Manage or cancel anytime from your billing portal. Lost your account number? Recover it at <a href="/recover" class="text-mint-700 underline">latticevpn.ai/recover</a>.
       </p>
     </div>
   </div>
@@ -170,14 +170,14 @@ const plans = [
       buttons.forEach((b) => {
         const active = b.dataset.interval === interval;
         b.classList.toggle('bg-mint-500', active);
-        b.classList.toggle('text-navy-900', active);
-        b.classList.toggle('text-slate-300', !active);
+        b.classList.toggle('text-slate-900', active);
+        b.classList.toggle('text-slate-600', !active);
         if (active) b.setAttribute('data-active', '');
         else b.removeAttribute('data-active');
       });
 
       document.querySelectorAll<HTMLElement>('[data-monthly-price]').forEach((cta) => {
-        const card = cta.closest('.holo-glass, .holo-glass-strong') as HTMLElement;
+        const card = cta.closest('.soft-card') as HTMLElement;
         const priceDisplay = card?.querySelector('[data-price-display]');
         const suffixY = card?.querySelector('[data-suffix-yearly]');
         const suffixM = card?.querySelector('[data-suffix-monthly]');
