@@ -30,31 +30,23 @@ returns its URL. The webhook handler doesn't change.
 
 ---
 
-## 1. Pin the API version to 2025-03-30
+## 1. API version — nothing to do on a new account
 
-**This is the single most important dashboard-side setting.** Skip it
-and your yearly subscribers will silently deactivate 35 days into their
-year.
+Older Stripe accounts could be pinned to a specific API version. A newly
+created account is already on a current version, and Stripe does **not**
+let you downgrade it — so there is nothing to change here. **Skip to
+step 2.**
 
-Stripe's `2025-03-31` API version (codename "Basil") moved
-`current_period_end` off the `Subscription` object and onto
-`SubscriptionItem`. Our Go SDK (`stripe-go/v79`) predates that change and
-doesn't expose the new field as a typed struct. The webhook handler has
-a defensive fallback (`itemPeriodEnd` in `webhook.go`) that reaches into
-the raw JSON, but pinning the account-wide API version to pre-Basil is
-simpler and more reliable.
+Background: Stripe's "Basil" version (`2025-03-31`+) moved
+`current_period_end` off the `Subscription` object. The webhook handler
+already copes — `itemPeriodEnd` in
+`server/api/internal/stripe/webhook.go` reads the field from its new
+location, with a 35-day grace fallback — so renewals are handled
+correctly whatever version your account is on.
 
-**To pin:**
-
-1. Stripe Dashboard → **Developers** → **API version**
-2. You'll see your current default version at the top
-3. If it shows `2025-03-31` or later, click the dropdown and select
-   **`2025-03-30`** (the last version that populates
-   `subscription.current_period_end`)
-4. Save
-
-This affects both API calls *and* webhook event payloads. Stripe
-backports this version for years, so there's no urgency to migrate.
+For reference, the API version now lives in **Developers → Workbench →
+Overview tab → "API versions"** (it is no longer a row on the Developers
+settings page). You don't need to open it.
 
 ---
 
@@ -236,10 +228,12 @@ the account number is the only credential.
 - **Webhook retries:** Stripe retries 4xx/5xx responses for up to 3
   days. Debugging locally, check Dashboard → Developers → Webhooks →
   your endpoint → Event deliveries for the raw payload of failed events.
-- **Yearly subscribers expire at 35 days:** you forgot step 1 (pin API
-  version). Fix it, then manually run `UPDATE accounts SET active_until
-  = datetime('now', '+400 days') WHERE stripe_customer_id = 'cus_...';`
-  to restore affected customers. Future updates then refresh correctly.
+- **Yearly subscribers expire at 35 days:** the webhook's period-end
+  fallback (`itemPeriodEnd` in `webhook.go`) isn't resolving the renewal
+  date — check the `cloakvpn-api` logs for the "no period_end in event"
+  warning. Restore affected customers meanwhile with `UPDATE accounts
+  SET active_until = datetime('now', '+400 days') WHERE
+  stripe_customer_id = 'cus_...';`.
 - **New checkout emits `checkout.session.completed` but no account is
   created:** the `price_...` in the event doesn't match any of the 4
   env vars. Check the log for `"checkout completed for unknown price
