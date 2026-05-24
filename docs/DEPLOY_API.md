@@ -276,14 +276,62 @@ built on it with confidence.
 
 For real traffic (not just the Stripe CLI bridge):
 
-1. Point `api.latticevpn.ai` (DNS, via Cloudflare) at the concentrator.
-2. Put a TLS reverse proxy in front — Caddy is simplest (automatic
-   certificates): proxy `https://api.latticevpn.ai` → `127.0.0.1:8080`.
-3. In the Stripe Dashboard create the real webhook endpoint
+### 6a. DNS
+
+Point `api.latticevpn.ai` at the concentrator. In Cloudflare, on the
+**`latticevpn.ai`** zone (note: the account also has a legacy
+`cloakvpn.ai` zone — make sure you are in the right one), add an `A`
+record:
+
+- Name: `api`
+- IPv4 address: the concentrator IP (e.g. `5.78.203.171`, us-west-1)
+- Proxy status: **DNS only** (grey cloud) — so Caddy can obtain its own
+  Let's Encrypt certificate directly.
+
+Verify: `dig +short api.latticevpn.ai @1.1.1.1` returns that IP.
+
+### 6b. TLS reverse proxy (Caddy)
+
+Caddy is simplest — it fetches and renews the certificate automatically.
+On the concentrator:
+
+```bash
+apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+  | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+  | tee /etc/apt/sources.list.d/caddy-stable.list
+apt update && apt install -y caddy
+
+cat > /etc/caddy/Caddyfile <<'EOF'
+api.latticevpn.ai {
+	reverse_proxy 127.0.0.1:8080
+}
+EOF
+systemctl restart caddy
+```
+
+If Caddy fails with `listening on :443: bind: address already in use`,
+something else holds port 443 — find it with `ss -tlnp 'sport = :443'`.
+On a box carried over from the pre-account-number stack this is an old
+`nginx` fronting `cloak-….cloakvpn.ai`; retire it with `systemctl
+disable --now nginx`, then `systemctl restart caddy`.
+
+Verify (give Caddy ~30s to fetch the certificate first):
+
+```bash
+curl -i https://api.latticevpn.ai/healthz      # → HTTP/2 200, {"ok":true}
+```
+
+### 6c. Stripe webhook + live mode
+
+1. In the Stripe Dashboard create the real webhook endpoint
    (`https://api.latticevpn.ai/v1/webhook/stripe`, the three events from
-   `STRIPE_SETUP.md` step 5) and put its `whsec_…` in `api.env`.
-4. When you flip Stripe to **Live mode**, redo with the live `sk_…`,
+   `STRIPE_SETUP.md` step 5), put its `whsec_…` in `api.env`, and
+   `systemctl restart cloakvpn-api`. This replaces the `stripe listen`
+   CLI bridge.
+2. When you flip Stripe to **Live mode**, redo with the live `sk_…`,
    `whsec_…`, and `price_…` values.
-5. Multi-region: deciding how one central API provisions across all four
+3. Multi-region: deciding how one central API provisions across all four
    concentrators is `BILLING_INTEGRATION.md` §7 — settle that before the
    full production rollout.
