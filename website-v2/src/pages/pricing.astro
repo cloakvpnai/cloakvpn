@@ -3,27 +3,39 @@
  * Pricing page.
  *
  * Two plans (Basic / Pro), two billing intervals (Monthly / Yearly).
- * Yearly tab is selected by default — most VPN sites do this since the
- * yearly discount is the headline.
+ * Yearly is selected by default — the annual discount is the headline.
  *
- * Prices per user spec:
- *   Basic — $4.99/mo or $50/yr  (~17% yearly discount)
- *   Pro   — $9.99/mo or $90/yr  (~25% yearly discount)
+ * Sold via Stripe Payment Links — the no-account model (see
+ * docs/BILLING_INTEGRATION.md). Paying generates an account number the
+ * customer enters in the app; there is no email/password signup. After
+ * checkout Stripe redirects to /welcome, which shows the number.
  *
- * In-App-Purchase via Apple is the path for end users. Direct Stripe
- * links are kept as a fallback for non-iOS visitors but are Phase B
- * (post-Apple-approval) work.
+ * Prices (docs/PRICING.md):
+ *   Basic — $4.99/mo or $49.99/yr   (2 months free)
+ *   Pro   — $9.99/mo or $99.99/yr   (2 months free)
+ *
+ * ▶ FILL IN: paste the four buy.stripe.com Payment Link URLs from the
+ *   Stripe Dashboard (docs/STRIPE_SETUP.md step 3) into PAYMENT_LINKS.
  */
 import Layout from '@/layouts/Layout.astro';
+
+const PAYMENT_LINKS = {
+  basicMonthly: 'https://buy.stripe.com/REPLACE_basic_monthly',
+  basicYearly: 'https://buy.stripe.com/REPLACE_basic_yearly',
+  proMonthly: 'https://buy.stripe.com/REPLACE_pro_monthly',
+  proYearly: 'https://buy.stripe.com/REPLACE_pro_yearly',
+};
 
 const plans = [
   {
     name: 'Basic',
-    tagline: 'Personal privacy on one device.',
+    tagline: 'Post-quantum privacy for everyday use.',
     monthly: 4.99,
-    yearly: 50,
+    yearly: 49.99,
+    monthlyLink: PAYMENT_LINKS.basicMonthly,
+    yearlyLink: PAYMENT_LINKS.basicYearly,
     features: [
-      '1 device',
+      '3 devices',
       'All 4 region servers',
       'Post-quantum encryption',
       'No-logs guarantee',
@@ -36,9 +48,11 @@ const plans = [
     name: 'Pro',
     tagline: 'For users who need more.',
     monthly: 9.99,
-    yearly: 90,
+    yearly: 99.99,
+    monthlyLink: PAYMENT_LINKS.proMonthly,
+    yearlyLink: PAYMENT_LINKS.proYearly,
     features: [
-      'Up to 5 devices',
+      'Up to 10 devices',
       'All 4 region servers',
       'Post-quantum encryption',
       'No-logs guarantee',
@@ -52,7 +66,7 @@ const plans = [
 ];
 ---
 
-<Layout title="Pricing" description="Two plans for Lattice VPN. Basic from $4.99/month, Pro from $9.99/month. Yearly billing saves up to 25%.">
+<Layout title="Pricing" description="Two plans for Lattice VPN. Basic from $4.99/month, Pro from $9.99/month. Yearly billing gives you two months free.">
   <div class="pt-32 pb-16">
     <div class="mx-auto max-w-5xl px-6">
       <div class="text-center mb-12">
@@ -65,7 +79,7 @@ const plans = [
           <span class="text-gradient-mint-amber">Zero logs.</span>
         </h1>
         <p class="mt-6 text-lg text-slate-300 max-w-xl mx-auto">
-          Cancel anytime from your Apple ID subscriptions. Yearly plans save up to 25%.
+          No account, no email — pay and you get an account number to use in the app. Yearly plans give you two months free.
         </p>
       </div>
 
@@ -77,7 +91,7 @@ const plans = [
           </button>
           <button type="button" data-interval="yearly" class="rounded-full px-5 py-2 font-medium transition-colors bg-mint-500 text-navy-900" data-billing-toggle data-active>
             Yearly
-            <span class="ml-1.5 text-xs font-mono opacity-80">Save 25%</span>
+            <span class="ml-1.5 text-xs font-mono opacity-80">2 months free</span>
           </button>
         </div>
       </div>
@@ -123,17 +137,17 @@ const plans = [
             </ul>
 
             <a
-              href="https://apps.apple.com/app/lattice-vpn/id6764261045"
+              href={plan.yearlyLink}
               class:list={[
                 'inline-flex items-center justify-center gap-2 rounded-full font-semibold text-sm px-5 py-3 transition-all',
                 plan.highlight
                   ? 'bg-mint-500 hover:bg-mint-400 text-navy-900 shadow-[0_0_24px_rgba(95,227,181,0.4)]'
                   : 'holo-glass-strong text-white hover:border-mint-500/40',
               ]}
-              target="_blank"
-              rel="noopener"
               data-monthly-price={plan.monthly}
               data-yearly-price={plan.yearly}
+              data-monthly-link={plan.monthlyLink}
+              data-yearly-link={plan.yearlyLink}
             >
               Get {plan.name}
             </a>
@@ -141,18 +155,18 @@ const plans = [
         ))}
       </div>
 
-      <!-- Comparison footnote -->
+      <!-- Footnote -->
       <p class="mt-10 text-center text-xs text-slate-500 font-mono">
-        Subscriptions auto-renew. Manage or cancel anytime in your iPhone Settings &rarr; Apple ID &rarr; Subscriptions.
+        Subscriptions auto-renew. Manage or cancel anytime from your billing portal. Lost your account number? Recover it at <a href="/recover" class="text-mint-400 underline">latticevpn.ai/recover</a>.
       </p>
     </div>
   </div>
 
   <script>
-    // Toggle between Monthly and Yearly billing
+    // Toggle between Monthly and Yearly billing — updates the displayed
+    // price AND the Stripe Payment Link each "Get …" button points at.
     const buttons = document.querySelectorAll<HTMLElement>('[data-billing-toggle]');
     const updatePrices = (interval: 'monthly' | 'yearly') => {
-      // Toggle button active state
       buttons.forEach((b) => {
         const active = b.dataset.interval === interval;
         b.classList.toggle('bg-mint-500', active);
@@ -162,7 +176,6 @@ const plans = [
         else b.removeAttribute('data-active');
       });
 
-      // Update each plan card
       document.querySelectorAll<HTMLElement>('[data-monthly-price]').forEach((cta) => {
         const card = cta.closest('.holo-glass, .holo-glass-strong') as HTMLElement;
         const priceDisplay = card?.querySelector('[data-price-display]');
@@ -177,11 +190,13 @@ const plans = [
           suffixY?.classList.remove('hidden');
           suffixM?.classList.add('hidden');
           if (effective) effective.textContent = `$${(yearly / 12).toFixed(2)}/mo billed annually`;
+          cta.setAttribute('href', cta.dataset.yearlyLink || '#');
         } else {
           if (priceDisplay) priceDisplay.textContent = `$${monthly}`;
           suffixY?.classList.add('hidden');
           suffixM?.classList.remove('hidden');
           if (effective) effective.textContent = `Save $${((monthly * 12) - yearly).toFixed(2)} with annual`;
+          cta.setAttribute('href', cta.dataset.monthlyLink || '#');
         }
       });
     };
