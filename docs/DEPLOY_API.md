@@ -25,8 +25,8 @@ multi-region rollout is `BILLING_INTEGRATION.md` §7, later.
   `ssh -i ~/.ssh/cloakvpn_ed25519 root@<ip>`
 - That box already runs WireGuard + `cloak-rosenpass` (it's a live
   concentrator).
-- The **Stripe CLI** (`brew install stripe/stripe-cli/stripe`) — it
-  bridges Stripe's test webhooks to the box without needing DNS/TLS yet.
+- The **Stripe CLI** — it bridges Stripe's test webhooks without needing
+  DNS/TLS yet. Installed in step 4.
 - Stripe Phase 1 done: the four products/prices exist, and you have the
   four `price_…` IDs and your test **secret key** (`sk_test_…`, from
   Dashboard → Developers → API keys).
@@ -131,16 +131,44 @@ the webhook just won't verify until step 4.)
 
 ## 4. Bridge the Stripe test webhook (Stripe CLI)
 
-You don't need DNS or TLS to test — the Stripe CLI relays test events to
-the box. On the box (or your Mac via an SSH tunnel to port 8080):
+You don't need DNS or TLS to test — the Stripe CLI relays test events.
+**Recommended: run it on your Mac**, not the concentrator (no reason to
+add dev tooling to a live VPN box).
+
+On your Mac:
 
 ```bash
-stripe login
+brew install stripe/stripe-cli/stripe
+```
+
+Open an SSH tunnel so the Mac's `localhost:8080` reaches the box's API,
+and leave it open:
+
+```bash
+ssh -i ~/.ssh/cloakvpn_ed25519 -L 8080:localhost:8080 root@<ip>
+```
+
+In a second Mac terminal:
+
+```bash
+stripe login    # prints a pairing code + URL — open it in a browser
 stripe listen --forward-to localhost:8080/v1/webhook/stripe
 ```
 
-`stripe listen` prints its own signing secret (`whsec_…`). Put **that**
-value into `STRIPE_WEBHOOK_SECRET` in `/etc/cloakvpn/api.env`, then:
+*Alternative — install on the box (Ubuntu) instead:*
+
+```bash
+apt update && apt install -y curl gnupg
+curl -fsSL https://packages.stripe.dev/api/security/keypair/stripe-cli-gpg/public \
+  | gpg --dearmor -o /usr/share/keyrings/stripe.gpg
+echo "deb [signed-by=/usr/share/keyrings/stripe.gpg] https://packages.stripe.dev/stripe-cli-debian-local stable main" \
+  > /etc/apt/sources.list.d/stripe.list
+apt update && apt install -y stripe
+```
+
+Either way, `stripe listen` prints its own signing secret (`whsec_…`).
+Put **that** value into `STRIPE_WEBHOOK_SECRET` in
+`/etc/cloakvpn/api.env`, then:
 
 ```bash
 systemctl restart cloakvpn-api.service
