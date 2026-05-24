@@ -1,16 +1,18 @@
 // Package store is a tiny SQLite wrapper that tracks accounts, their Stripe
 // tier, and their provisioned devices. The DB lives on disk because we need it
 // to survive reboots, BUT we store only what is strictly necessary for
-// fulfilling a paid subscription:
+// fulfilling a paid subscription — and, by design, NO personal data:
 //
-//   - accounts(id, email, stripe_customer_id, tier, device_limit, active_until)
+//   - accounts(id, account_number_hash, stripe_customer_id,
+//     stripe_session_id, tier, device_limit, active_until)
 //   - devices(id, account_id, wg_pubkey, wg_ip, created_at)
 //
-// We do NOT store: IP addresses of paying customers, traffic logs, login
-// timestamps, country/geo, or anything else that could unmask usage. Billing
-// data on this box is kept off the network path — the wg concentrator reads
-// only the wg_pubkey/wg_ip pair when a peer is added, and has no back-reference
-// to the email or Stripe customer.
+// There is no email, no name, no password. A subscription is identified only
+// by a random account number, and this table holds only a keyed HMAC of that
+// number (see package account) — a database leak yields no usable credentials.
+// We also do NOT store: IP addresses of paying customers, traffic logs, login
+// timestamps, country/geo. Billing identity lives in Stripe; the wg
+// concentrator reads only the wg_pubkey/wg_ip pair when a peer is added.
 package store
 
 import (
@@ -26,6 +28,10 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// ErrNotFound is returned by the AccountBy* / DeviceByID lookups when no
+// matching row exists, so callers can map it to a 404 / 401.
+var ErrNotFound = errors.New("not found")
+
 type Tier string
 
 const (
@@ -35,12 +41,13 @@ const (
 )
 
 type Account struct {
-	ID               int64
-	Email            string
-	StripeCustomerID string
-	Tier             Tier
-	DeviceLimit      int
-	ActiveUntil      time.Time
+	ID                int64
+	AccountNumberHash string
+	StripeCustomerID  string
+	StripeSessionID   string
+	Tier              Tier
+	DeviceLimit       int
+	ActiveUntil       time.Time
 }
 
 type Device struct {
@@ -81,14 +88,16 @@ func Open(path string) (*DB, error) {
 
 const schema = `
 CREATE TABLE IF NOT EXISTS accounts (
-  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-  email              TEXT NOT NULL UNIQUE,
-  stripe_customer_id TEXT,
-  tier               TEXT NOT NULL DEFAULT '',
-  device_limit       INTEGER NOT NULL DEFAULT 0,
-  active_until       TIMESTAMP
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_number_hash TEXT NOT NULL UNIQUE,
+  stripe_customer_id  TEXT,
+  stripe_session_id   TEXT,
+  tier                TEXT NOT NULL DEFAULT '',
+  device_limit        INTEGER NOT NULL DEFAULT 0,
+  active_until        TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS idx_accounts_stripe ON accounts(stripe_customer_id);
+CREATE INDEX IF NOT EXISTS idx_accounts_stripe  ON accounts(stripe_customer_id);
+CREATE INDEX IF NOT EXISTS idx_accounts_session ON accounts(stripe_session_id);
 
 CREATE TABLE IF NOT EXISTS devices (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,54 +109,98 @@ CREATE TABLE IF NOT EXISTS devices (
 CREATE INDEX IF NOT EXISTS idx_devices_account ON devices(account_id);
 `
 
-// UpsertAccountByStripeCustomer creates or updates an account based on a
-// Stripe customer ID + email, and sets the tier + limits + expiry.
-func (d *DB) UpsertAccountByStripeCustomer(customerID, email string, tier Tier, limit int, activeUntil time.Time) (*Account, error) {
-	if customerID == "" || email == "" {
-		return nil, errors.New("customerID and email required")
-	}
-	_, err := d.Exec(`
-		INSERT INTO accounts (email, stripe_customer_id, tier, device_limit, active_until)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(email) DO UPDATE SET
-		  stripe_customer_id = excluded.stripe_customer_id,
-		  tier               = excluded.tier,
-		  device_limit       = excluded.device_limit,
-		  active_until       = excluded.active_until
-	`, email, customerID, tier, limit, activeUntil)
-	if err != nil {
-		return nil, err
-	}
-	return d.AccountByEmail(email)
-}
+// accountCols is the column list shared by every account lookup. COALESCE
+// keeps the nullable columns scannable into non-pointer Go fields.
+const accountCols = `id, account_number_hash, COALESCE(stripe_customer_id, ''), ` +
+	`COALESCE(stripe_session_id, ''), tier, device_limit, ` +
+	`COALESCE(active_until, '1970-01-01T00:00:00Z')`
 
-// DeactivateByStripeCustomer clears the tier / device_limit when a subscription
-// is canceled or goes unpaid. Existing device rows remain (so a customer who
-// resubscribes can recover the same configs) but can no longer be used — the
-// wg controller is expected to remove them.
-func (d *DB) DeactivateByStripeCustomer(customerID string) error {
-	_, err := d.Exec(`
-		UPDATE accounts
-		   SET tier = '', device_limit = 0, active_until = NULL
-		 WHERE stripe_customer_id = ?
-	`, customerID)
-	return err
-}
-
-func (d *DB) AccountByEmail(email string) (*Account, error) {
-	row := d.QueryRow(`
-		SELECT id, email, COALESCE(stripe_customer_id, ''), tier, device_limit,
-		       COALESCE(active_until, '1970-01-01T00:00:00Z')
-		  FROM accounts WHERE email = ?`, email)
+func scanAccount(row *sql.Row) (*Account, error) {
 	var a Account
 	var tier string
 	var until time.Time
-	if err := row.Scan(&a.ID, &a.Email, &a.StripeCustomerID, &tier, &a.DeviceLimit, &until); err != nil {
+	err := row.Scan(&a.ID, &a.AccountNumberHash, &a.StripeCustomerID,
+		&a.StripeSessionID, &tier, &a.DeviceLimit, &until)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
 		return nil, err
 	}
 	a.Tier = Tier(tier)
 	a.ActiveUntil = until
 	return &a, nil
+}
+
+// CreateAccount inserts a new account keyed by the HMAC of its account
+// number. Called by the Stripe webhook when a checkout completes.
+func (d *DB) CreateAccount(numberHash, stripeCustomerID, stripeSessionID string,
+	tier Tier, limit int, activeUntil time.Time) (*Account, error) {
+	if numberHash == "" {
+		return nil, errors.New("numberHash required")
+	}
+	res, err := d.Exec(`
+		INSERT INTO accounts
+		  (account_number_hash, stripe_customer_id, stripe_session_id,
+		   tier, device_limit, active_until)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		numberHash, stripeCustomerID, stripeSessionID, tier, limit, activeUntil)
+	if err != nil {
+		return nil, err
+	}
+	id, _ := res.LastInsertId()
+	return &Account{
+		ID:                id,
+		AccountNumberHash: numberHash,
+		StripeCustomerID:  stripeCustomerID,
+		StripeSessionID:   stripeSessionID,
+		Tier:              tier,
+		DeviceLimit:       limit,
+		ActiveUntil:       activeUntil,
+	}, nil
+}
+
+// AccountByNumberHash looks up an account by the HMAC of the account
+// number presented by the app. Returns ErrNotFound if there is no match.
+func (d *DB) AccountByNumberHash(hash string) (*Account, error) {
+	return scanAccount(d.QueryRow(
+		`SELECT `+accountCols+` FROM accounts WHERE account_number_hash = ?`, hash))
+}
+
+// AccountByStripeCustomer looks up an account by Stripe customer ID —
+// used by the webhook to apply renewals and cancellations.
+func (d *DB) AccountByStripeCustomer(customerID string) (*Account, error) {
+	return scanAccount(d.QueryRow(
+		`SELECT `+accountCols+` FROM accounts WHERE stripe_customer_id = ?`, customerID))
+}
+
+// AccountBySession looks up an account by the Stripe checkout session ID
+// — used by GET /v1/account-number for the website welcome page.
+func (d *DB) AccountBySession(sessionID string) (*Account, error) {
+	return scanAccount(d.QueryRow(
+		`SELECT `+accountCols+` FROM accounts WHERE stripe_session_id = ?`, sessionID))
+}
+
+// UpdateSubscriptionByStripeCustomer refreshes tier / limit / expiry on a
+// renewal or plan change.
+func (d *DB) UpdateSubscriptionByStripeCustomer(customerID string, tier Tier,
+	limit int, activeUntil time.Time) error {
+	_, err := d.Exec(`UPDATE accounts
+	                     SET tier = ?, device_limit = ?, active_until = ?
+	                   WHERE stripe_customer_id = ?`,
+		tier, limit, activeUntil, customerID)
+	return err
+}
+
+// DeactivateByStripeCustomer clears the tier / device_limit when a
+// subscription is canceled or goes unpaid. Existing device rows remain
+// (so a customer who resubscribes can recover the same configs) but can
+// no longer be used — the wg controller is expected to remove them.
+func (d *DB) DeactivateByStripeCustomer(customerID string) error {
+	_, err := d.Exec(`UPDATE accounts
+	                     SET tier = '', device_limit = 0, active_until = NULL
+	                   WHERE stripe_customer_id = ?`, customerID)
+	return err
 }
 
 func (d *DB) DevicesForAccount(accountID int64) ([]Device, error) {
@@ -166,6 +219,23 @@ func (d *DB) DevicesForAccount(accountID int64) ([]Device, error) {
 		out = append(out, dv)
 	}
 	return out, rows.Err()
+}
+
+// DeviceByID fetches a single device, scoped to its owning account so one
+// account can never revoke another's device. Returns ErrNotFound if there
+// is no such device for that account.
+func (d *DB) DeviceByID(id, accountID int64) (*Device, error) {
+	var dv Device
+	err := d.QueryRow(`SELECT id, account_id, wg_pubkey, wg_ip, created_at
+	                     FROM devices WHERE id = ? AND account_id = ?`, id, accountID).
+		Scan(&dv.ID, &dv.AccountID, &dv.WGPubkey, &dv.WGIP, &dv.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &dv, nil
 }
 
 func (d *DB) AddDevice(accountID int64, pub, ip string) (*Device, error) {

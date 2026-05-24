@@ -7,18 +7,27 @@
 // The webhook signature is verified against STRIPE_WEBHOOK_SECRET. Anything
 // else is rejected with 400. Events we don't care about return 200 so Stripe
 // stops retrying.
+//
+// No-account model: checkout.session.completed generates a random account
+// number (package account), stores only its HMAC, and writes the plaintext
+// into the Stripe customer's metadata for recovery. See
+// docs/BILLING_INTEGRATION.md.
 package stripe
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"time"
 
 	stripego "github.com/stripe/stripe-go/v79"
+	"github.com/stripe/stripe-go/v79/customer"
 	"github.com/stripe/stripe-go/v79/webhook"
 
+	"github.com/cloakvpn/api/internal/account"
 	"github.com/cloakvpn/api/internal/store"
 )
 
@@ -33,6 +42,9 @@ type Config struct {
 
 	BasicDeviceLimit int
 	ProDeviceLimit   int
+
+	// AccountNumberSecret keys the HMAC used to hash account numbers.
+	AccountNumberSecret string
 }
 
 type Handler struct {
@@ -93,16 +105,22 @@ func (h *Handler) handleCheckoutCompleted(evt stripego.Event) error {
 	if err := json.Unmarshal(evt.Data.Raw, &sess); err != nil {
 		return err
 	}
-	email := sess.CustomerEmail
-	if email == "" && sess.CustomerDetails != nil {
-		email = sess.CustomerDetails.Email
-	}
-	if email == "" || sess.Customer == nil {
-		// Nothing we can do without a customer handle + email.
+	if sess.Customer == nil {
+		log.Printf("checkout.session.completed %s: no customer handle; ignoring", sess.ID)
 		return nil
 	}
+	customerID := sess.Customer.ID
 
-	// Derive tier + limit + expiry from the first line item's price.
+	// Idempotency: Stripe retries webhooks. If this customer already has an
+	// account, the checkout was already processed — do nothing (and never
+	// mint a second account number for the same customer).
+	if _, err := h.db.AccountByStripeCustomer(customerID); err == nil {
+		return nil
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+
+	// Derive tier + limit from the purchased price.
 	var priceID string
 	if sess.LineItems != nil && len(sess.LineItems.Data) > 0 && sess.LineItems.Data[0].Price != nil {
 		priceID = sess.LineItems.Data[0].Price.ID
@@ -116,9 +134,30 @@ func (h *Handler) handleCheckoutCompleted(evt stripego.Event) error {
 		return nil
 	}
 
-	until := time.Now().Add(35 * 24 * time.Hour) // refreshed on next subscription.updated
-	_, err := h.db.UpsertAccountByStripeCustomer(sess.Customer.ID, email, tier, limit, until)
-	return err
+	// Generate the account number — the customer's only credential.
+	number, err := account.Generate()
+	if err != nil {
+		return err
+	}
+	hash := account.Hash(number, h.cfg.AccountNumberSecret)
+	until := time.Now().Add(35 * 24 * time.Hour) // refreshed by subscription.updated
+
+	// Write the plaintext number into the Stripe customer's metadata FIRST.
+	// That is the long-term recovery copy; we never store the plaintext
+	// ourselves. Doing it before the DB insert keeps a retried webhook
+	// idempotent: a failure here means no account row exists yet, so the
+	// retry simply regenerates and overwrites cleanly.
+	mdParams := &stripego.CustomerParams{}
+	mdParams.AddMetadata(account.MetadataKey, number)
+	if _, err := customer.Update(customerID, mdParams); err != nil {
+		return fmt.Errorf("write account number to stripe customer %s: %w", customerID, err)
+	}
+
+	if _, err := h.db.CreateAccount(hash, customerID, sess.ID, tier, limit, until); err != nil {
+		return fmt.Errorf("create account: %w", err)
+	}
+	log.Printf("checkout.session.completed: account created (tier=%s) for customer %s", tier, customerID)
+	return nil
 }
 
 func (h *Handler) handleSubscriptionUpdated(evt stripego.Event) error {
@@ -140,28 +179,22 @@ func (h *Handler) handleSubscriptionUpdated(evt stripego.Event) error {
 	}
 
 	// Stripe API version 2025-03-31 (Basil) moved `current_period_end` from the
-	// Subscription to the SubscriptionItem. If the account's pinned API version
-	// is >= Basil, `sub.CurrentPeriodEnd` arrives as 0 and we'd expire the
+	// Subscription to the SubscriptionItem. If the account's API version is
+	// >= Basil, `sub.CurrentPeriodEnd` arrives as 0 and we'd expire the
 	// account immediately. Defensive fallback: fish the new field out of the
 	// raw JSON (v79 Go SDK doesn't expose it as a struct field yet); if even
 	// that fails, grant 35 days so a monthly subscriber isn't silently cut off.
-	// See docs/STRIPE_SETUP.md for the recommended dashboard API-version pin.
 	var until time.Time
 	if sub.CurrentPeriodEnd > 0 {
 		until = time.Unix(sub.CurrentPeriodEnd, 0).Add(3 * 24 * time.Hour)
 	} else if itemEnd := itemPeriodEnd(evt.Data.Raw); itemEnd > 0 {
 		until = time.Unix(itemEnd, 0).Add(3 * 24 * time.Hour)
 	} else {
-		log.Printf("subscription %s: no period_end in event; defaulting to 35d grace",
-			sub.ID)
+		log.Printf("subscription %s: no period_end in event; defaulting to 35d grace", sub.ID)
 		until = time.Now().Add(35 * 24 * time.Hour)
 	}
 
-	_, err := h.db.Exec(`UPDATE accounts
-	                        SET tier = ?, device_limit = ?, active_until = ?
-	                      WHERE stripe_customer_id = ?`,
-		tier, limit, until, sub.Customer.ID)
-	return err
+	return h.db.UpdateSubscriptionByStripeCustomer(sub.Customer.ID, tier, limit, until)
 }
 
 // itemPeriodEnd reaches into the raw event JSON to pull

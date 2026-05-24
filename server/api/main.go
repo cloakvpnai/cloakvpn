@@ -3,9 +3,13 @@
 // Responsibilities:
 //   - Serve Stripe webhooks (checkout.session.completed, customer.subscription.*)
 //     and maintain an account → tier → device-limit record.
-//   - Issue short-lived device configs (WireGuard + Rosenpass keys) for paying
-//     customers, enforcing the Basic/Pro device cap.
+//   - Issue device configs (WireGuard + Rosenpass keys) for paying customers,
+//     enforcing the Basic/Pro device cap.
 //   - Stay simple enough to run on the same Hetzner CX22 as wg + rosenpass.
+//
+// No-account model: a subscription is identified by a random account number
+// (see internal/account); the apps authenticate /v1/device and /v1/account
+// with it. See docs/BILLING_INTEGRATION.md.
 //
 // Explicit non-goals for Phase 0:
 //   - Rate limiting, IP banning, captcha (Cloudflare in front handles this).
@@ -27,10 +31,15 @@ import (
 	"github.com/cloakvpn/api/internal/store"
 	"github.com/cloakvpn/api/internal/stripe"
 	"github.com/cloakvpn/api/internal/wg"
+	stripego "github.com/stripe/stripe-go/v79"
 )
 
 func main() {
 	cfg := loadConfig()
+
+	// The Stripe SDK reads this package-global key for all API calls
+	// (writing the account number to customer metadata, reading it back).
+	stripego.Key = cfg.StripeSecretKey
 
 	db, err := store.Open(cfg.DBPath)
 	if err != nil {
@@ -48,20 +57,22 @@ func main() {
 	})
 
 	stripeH := stripe.NewHandler(stripe.Config{
-		WebhookSecret:    cfg.StripeWebhookSecret,
-		PriceBasicMonth:  cfg.PriceBasicMonth,
-		PriceBasicYear:   cfg.PriceBasicYear,
-		PriceProMonth:    cfg.PriceProMonth,
-		PriceProYear:     cfg.PriceProYear,
-		BasicDeviceLimit: 3,
-		ProDeviceLimit:   10,
+		WebhookSecret:       cfg.StripeWebhookSecret,
+		PriceBasicMonth:     cfg.PriceBasicMonth,
+		PriceBasicYear:      cfg.PriceBasicYear,
+		PriceProMonth:       cfg.PriceProMonth,
+		PriceProYear:        cfg.PriceProYear,
+		BasicDeviceLimit:    3,
+		ProDeviceLimit:      10,
+		AccountNumberSecret: cfg.AccountNumberSecret,
 	}, db)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", httpx.Health)
 	mux.HandleFunc("/v1/webhook/stripe", stripeH.Webhook)
-	mux.HandleFunc("/v1/device", httpx.NewDeviceHandler(db, wgc).ServeHTTP)
-	mux.HandleFunc("/v1/account", httpx.NewAccountHandler(db).ServeHTTP)
+	mux.HandleFunc("/v1/device", httpx.NewDeviceHandler(db, wgc, cfg.AccountNumberSecret).ServeHTTP)
+	mux.HandleFunc("/v1/account", httpx.NewAccountHandler(db, cfg.AccountNumberSecret).ServeHTTP)
+	mux.HandleFunc("/v1/account-number", httpx.NewAccountNumberHandler(db).ServeHTTP)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
@@ -93,6 +104,8 @@ type config struct {
 	Listen              string
 	DBPath              string
 	StripeWebhookSecret string
+	StripeSecretKey     string
+	AccountNumberSecret string
 	PriceBasicMonth     string
 	PriceBasicYear      string
 	PriceProMonth       string
@@ -111,6 +124,8 @@ func loadConfig() config {
 		Listen:              envOr("LISTEN_ADDR", "127.0.0.1:8080"),
 		DBPath:              envOr("DB_PATH", "/var/lib/cloakvpn/cloakvpn.db"),
 		StripeWebhookSecret: mustEnv("STRIPE_WEBHOOK_SECRET"),
+		StripeSecretKey:     mustEnv("STRIPE_SECRET_KEY"),
+		AccountNumberSecret: mustEnv("ACCOUNT_NUMBER_SECRET"),
 		PriceBasicMonth:     mustEnv("STRIPE_PRICE_BASIC_MONTH"),
 		PriceBasicYear:      mustEnv("STRIPE_PRICE_BASIC_YEAR"),
 		PriceProMonth:       mustEnv("STRIPE_PRICE_PRO_MONTH"),
