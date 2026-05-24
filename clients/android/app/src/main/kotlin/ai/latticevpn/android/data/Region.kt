@@ -24,12 +24,14 @@ data class LatticeRegion(
     val endpointIP: String,    // WireGuard tunnel endpoint, for display
 ) {
     companion object {
-        val all: List<LatticeRegion> = listOf(
+        // Every concentrator that physically exists. Only the ids listed
+        // in [liveRegionIds] are offered to users — see [all].
+        private val catalog: List<LatticeRegion> = listOf(
             LatticeRegion(
                 id = "us-west-1",
                 displayName = "US West (Oregon)",
                 shortLabel = "US-W",
-                countryFlag = "🇺🇸", // 🇺🇸
+                countryFlag = "🇺🇸",
                 serverURL = "https://cloak-us-west-1.cloakvpn.ai",
                 endpointIP = "5.78.203.171",
             ),
@@ -37,7 +39,7 @@ data class LatticeRegion(
                 id = "us-east-1",
                 displayName = "US East (Virginia)",
                 shortLabel = "US-E",
-                countryFlag = "🇺🇸", // 🇺🇸
+                countryFlag = "🇺🇸",
                 serverURL = "https://cloak-us-east-1.cloakvpn.ai",
                 endpointIP = "5.161.198.227",
             ),
@@ -45,7 +47,7 @@ data class LatticeRegion(
                 id = "de1",
                 displayName = "Germany (Falkenstein)",
                 shortLabel = "DE",
-                countryFlag = "🇩🇪", // 🇩🇪
+                countryFlag = "🇩🇪",
                 serverURL = "https://cloak-de1.cloakvpn.ai",
                 endpointIP = "91.98.65.98",
             ),
@@ -53,11 +55,20 @@ data class LatticeRegion(
                 id = "fi1",
                 displayName = "Finland (Helsinki)",
                 shortLabel = "FI",
-                countryFlag = "🇫🇮", // 🇫🇮
+                countryFlag = "🇫🇮",
                 serverURL = "https://cloak-fi1.cloakvpn.ai",
                 endpointIP = "204.168.252.70",
             ),
         )
+
+        // Regions actually wired into the account API and offered in the
+        // app. The other concentrators in [catalog] exist but multi-region
+        // provisioning is not built yet (BILLING_INTEGRATION.md §7) — add
+        // their ids here once it ships, and the picker re-expands on its own.
+        private val liveRegionIds = setOf("us-west-1")
+
+        /** Regions shown to the user — only the ones that actually work. */
+        val all: List<LatticeRegion> = catalog.filter { it.id in liveRegionIds }
 
         fun byId(id: String): LatticeRegion? = all.firstOrNull { it.id == id }
     }

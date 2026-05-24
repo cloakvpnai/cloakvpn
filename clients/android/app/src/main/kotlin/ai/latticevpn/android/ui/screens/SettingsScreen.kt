@@ -142,7 +142,10 @@ fun SettingsScreen(vm: LatticeViewModel) {
             SettingsCard {
                 InfoItem(label = "Version", value = BuildConfig.VERSION_NAME)
                 RowDivider()
-                InfoItem(label = "Locations", value = "${LatticeRegion.all.size} regions")
+                InfoItem(
+                    label = "Locations",
+                    value = LatticeRegion.all.size.let { n -> if (n == 1) "1 region" else "$n regions" },
+                )
             }
 
             Spacer(Modifier.height(24.dp))
