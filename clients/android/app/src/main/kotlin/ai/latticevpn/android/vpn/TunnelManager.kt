@@ -224,9 +224,13 @@ class TunnelManager private constructor(appCtx: Context) {
 
             // Full provision against the Lattice account API.
             Log.i(TAG, "selectRegion(${region.id}): provisioning device")
-            val cfg = provisionConfig()
+            val cfg = provisionConfig(region.id)
             importConfig(cfg)
             setSelectedRegion(region)
+            // One device has one active region server-side: this provision
+            // revoked the peer in any previous region, so every other
+            // region's cached config is now stale — drop them all.
+            clearOtherCachedConfigs(region.id)
             saveCachedConfig(region.id, cfg)
             reconnectIfWasActive(wasActive, switching)
         } catch (e: Exception) {
@@ -253,7 +257,8 @@ class TunnelManager private constructor(appCtx: Context) {
             ?: return
         if (loadCachedConfig(target.id) != null) return
         try {
-            val cfg = provisionConfig()
+            val cfg = provisionConfig(target.id)
+            clearOtherCachedConfigs(target.id)
             saveCachedConfig(target.id, cfg)
             Log.i(TAG, "warmUp(${target.id}): cached")
         } catch (e: Exception) {
@@ -263,12 +268,12 @@ class TunnelManager private constructor(appCtx: Context) {
 
     /**
      * Provision (or idempotently re-register) this device against the
-     * Lattice account API and return the resulting [LatticeConfig].
-     * Ensures both keypairs exist first; only public keys are sent —
-     * the WireGuard and Rosenpass secrets never leave the device. The
-     * account number is the bearer credential.
+     * Lattice account API in [regionId] and return the resulting
+     * [LatticeConfig]. Ensures both keypairs exist first; only public
+     * keys are sent — the WireGuard and Rosenpass secrets never leave
+     * the device. The account number is the bearer credential.
      */
-    private suspend fun provisionConfig(): LatticeConfig {
+    private suspend fun provisionConfig(regionId: String): LatticeConfig {
         val accountNumber = accountStore.accountNumber()
             ?: throw IllegalStateException("Sign in with your account number first.")
         ensureLocalKeypair()
@@ -280,6 +285,7 @@ class TunnelManager private constructor(appCtx: Context) {
             accountNumber = accountNumber,
             wgPubkeyB64 = keys.second.publicB64,
             rosenpassPubkeyB64 = keys.first.publicB64,
+            region = regionId,
         )
         return latticeConfigFrom(provision.config)
     }
@@ -598,6 +604,25 @@ class TunnelManager private constructor(appCtx: Context) {
 
     private fun clearCachedConfig(regionId: String) {
         prefs.edit().remove(KEY_PROVISIONED_PREFIX + regionId).apply()
+    }
+
+    /**
+     * Drop every cached provisioned config except [keepRegionId]'s.
+     * A device has exactly one active region server-side; provisioning a
+     * region revokes the peer in any other, so other regions' cached
+     * configs become stale and must not be served by the [selectRegion]
+     * fast path. Iterates the stored keys directly so an entry for a
+     * region dropped from the catalog is cleaned up too.
+     */
+    private fun clearOtherCachedConfigs(keepRegionId: String) {
+        val keep = KEY_PROVISIONED_PREFIX + keepRegionId
+        val editor = prefs.edit()
+        for (key in prefs.all.keys) {
+            if (key.startsWith(KEY_PROVISIONED_PREFIX) && key != keep) {
+                editor.remove(key)
+            }
+        }
+        editor.apply()
     }
 
     /**

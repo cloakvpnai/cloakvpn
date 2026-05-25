@@ -119,17 +119,23 @@ class AccountClient {
 
     /**
      * POST /v1/device — register this device as a WireGuard + Rosenpass
-     * peer. Only the device's *public* keys are sent; the private keys
-     * are generated on-device and never leave it.
+     * peer in [region]. Only the device's *public* keys are sent; the
+     * private keys are generated on-device and never leave it.
+     *
+     * The central API routes the peer onto the chosen region's
+     * concentrator; switching [region] for a device already provisioned
+     * elsewhere tears down the old peer and re-provisions on the new box.
      */
     suspend fun provisionDevice(
         accountNumber: String,
         wgPubkeyB64: String,
         rosenpassPubkeyB64: String,
+        region: String,
     ): DeviceProvision = withContext(Dispatchers.IO) {
         val payload = JSONObject()
             .put("wg_pubkey", wgPubkeyB64)
             .put("rosenpass_pubkey", rosenpassPubkeyB64)
+            .put("region", region)
             .toString()
         val request = Request.Builder()
             .url("${LatticeApi.BASE_URL}/v1/device")
