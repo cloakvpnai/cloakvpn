@@ -98,8 +98,8 @@ struct LatticeAccountClient {
         }
         return AccountStatus(
             tier: obj["tier"] as? String ?? "",
-            deviceLimit: obj["device_limit"] as? Int ?? 0,
-            deviceCount: obj["device_count"] as? Int ?? 0,
+            deviceLimit: (obj["device_limit"] as? NSNumber)?.intValue ?? 0,
+            deviceCount: (obj["device_count"] as? NSNumber)?.intValue ?? 0,
             activeUntil: obj["active_until"] as? String ?? ""
         )
     }
