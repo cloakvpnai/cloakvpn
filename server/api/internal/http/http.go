@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/stripe/stripe-go/v79/customer"
@@ -76,6 +77,13 @@ type DeviceHandler struct {
 	db            *store.DB
 	wgc           *wg.Controller
 	accountSecret string
+
+	// mu serializes the provision/revoke critical section so IP
+	// allocation and the device-row write are atomic across concurrent
+	// requests. wg.Controller already serializes the rosenpass restart,
+	// so this adds no new bottleneck — it just makes the handler's DB +
+	// wg steps atomic too.
+	mu sync.Mutex
 }
 
 func NewDeviceHandler(db *store.DB, wgc *wg.Controller, accountSecret string) *DeviceHandler {
@@ -150,6 +158,12 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "wg_pubkey and rosenpass_pubkey required", http.StatusBadRequest)
 		return
 	}
+
+	// Serialize the provisioning critical section: IP allocation through
+	// the device-row INSERT must be atomic, or two devices provisioning
+	// at the same instant could be handed the same wg_ip.
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
 	// Is this device already known? The app keeps a stable WireGuard
 	// keypair, so a reconnect — or a reinstall that kept app data, or the
@@ -240,6 +254,11 @@ func (h *DeviceHandler) revoke(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "device id required", http.StatusBadRequest)
 		return
 	}
+
+	// Same critical section as create() — serialize all device mutations.
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	dev, err := h.db.DeviceByID(id, acct.ID)
 	if errors.Is(err, store.ErrNotFound) {
 		http.Error(w, "device not found", http.StatusNotFound)
