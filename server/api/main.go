@@ -28,9 +28,9 @@ import (
 	"time"
 
 	httpx "github.com/cloakvpn/api/internal/http"
+	"github.com/cloakvpn/api/internal/regions"
 	"github.com/cloakvpn/api/internal/store"
 	"github.com/cloakvpn/api/internal/stripe"
-	"github.com/cloakvpn/api/internal/wg"
 	stripego "github.com/stripe/stripe-go/v79"
 )
 
@@ -47,14 +47,11 @@ func main() {
 	}
 	defer db.Close()
 
-	wgc := wg.NewController(wg.Config{
-		Iface:      cfg.WGIface,
-		ServerPub:  cfg.WGServerPub,
-		Endpoint:   cfg.WGEndpoint,
-		DNS:        cfg.WGDNS,
-		AllowedIPs: cfg.WGAllowedIPs,
-		SubnetCIDR: cfg.WGSubnet,
-	})
+	regs, err := regions.Load(cfg.RegionsConfig)
+	if err != nil {
+		log.Fatalf("regions config: %v", err)
+	}
+	rc := regions.NewClient(cfg.RegionInternalSecret)
 
 	stripeH := stripe.NewHandler(stripe.Config{
 		WebhookSecret:       cfg.StripeWebhookSecret,
@@ -70,7 +67,8 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", httpx.Health)
 	mux.HandleFunc("/v1/webhook/stripe", stripeH.Webhook)
-	mux.HandleFunc("/v1/device", httpx.NewDeviceHandler(db, wgc, cfg.AccountNumberSecret).ServeHTTP)
+	mux.HandleFunc("/v1/device", httpx.NewDeviceHandler(db, regs, rc,
+		cfg.AccountNumberSecret, cfg.DefaultRegion, cfg.WGSubnet).ServeHTTP)
 	mux.HandleFunc("/v1/account", httpx.NewAccountHandler(db, cfg.AccountNumberSecret).ServeHTTP)
 	mux.HandleFunc("/v1/account-number", httpx.NewAccountNumberHandler(db).ServeHTTP)
 
@@ -111,12 +109,10 @@ type config struct {
 	PriceProMonth       string
 	PriceProYear        string
 
-	WGIface      string
-	WGServerPub  string
-	WGEndpoint   string
-	WGDNS        string
-	WGAllowedIPs string
-	WGSubnet     string
+	WGSubnet             string
+	RegionsConfig        string
+	RegionInternalSecret string
+	DefaultRegion        string
 }
 
 func loadConfig() config {
@@ -131,12 +127,10 @@ func loadConfig() config {
 		PriceProMonth:       mustEnv("STRIPE_PRICE_PRO_MONTH"),
 		PriceProYear:        mustEnv("STRIPE_PRICE_PRO_YEAR"),
 
-		WGIface:      envOr("WG_IFACE", "wg0"),
-		WGServerPub:  mustEnv("WG_SERVER_PUB"),
-		WGEndpoint:   mustEnv("WG_ENDPOINT"), // e.g. fi1.cloakvpn.ai:51820
-		WGDNS:        envOr("WG_DNS", "10.99.0.1"),
-		WGAllowedIPs: envOr("WG_ALLOWED_IPS", "0.0.0.0/0, ::/0"),
-		WGSubnet:     envOr("WG_SUBNET", "10.99.0.0/24"),
+		WGSubnet:             envOr("WG_SUBNET", "10.99.0.0/24"),
+		RegionsConfig:        envOr("REGIONS_CONFIG", "/etc/cloakvpn/regions.json"),
+		RegionInternalSecret: mustEnv("REGION_INTERNAL_SECRET"),
+		DefaultRegion:        envOr("DEFAULT_REGION", "us-west-1"),
 	}
 }
 

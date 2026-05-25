@@ -1,0 +1,12 @@
+[
+  { "id": "us-west-1",    "url": "http://127.0.0.1:8090" },
+  { "id": "us-east-1",    "url": "https://rgn-us-east-1.latticevpn.ai" },
+  { "id": "us-central-1", "url": "https://rgn-us-central-1.latticevpn.ai" },
+  { "id": "de1",          "url": "https://rgn-de1.latticevpn.ai" },
+  { "id": "fi1",          "url": "https://rgn-fi1.latticevpn.ai" },
+  { "id": "es1",          "url": "https://rgn-es1.latticevpn.ai" },
+  { "id": "mx1",          "url": "https://rgn-mx1.latticevpn.ai" },
+  { "id": "za1",          "url": "https://rgn-za1.latticevpn.ai" },
+  { "id": "in1",          "url": "https://rgn-in1.latticevpn.ai" },
+  { "id": "jp1",          "url": "https://rgn-jp1.latticevpn.ai" }
+]

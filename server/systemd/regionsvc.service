@@ -1,0 +1,35 @@
+[Unit]
+Description=Lattice VPN — per-region provisioning service (regionsvc)
+# regionsvc shells out to `wg` / `wg-quick`, writes /etc/rosenpass, and
+# restarts cloak-rosenpass.service when adding a peer. If those aren't up,
+# every /internal/provision call 500s until they are.
+After=network-online.target wg-quick@wg0.service cloak-rosenpass.service
+Requires=network-online.target
+Wants=wg-quick@wg0.service cloak-rosenpass.service
+
+# Only start if the env file exists, so the unit can be `enable`d before
+# the operator has finished filling in secrets — it just stays inactive.
+ConditionPathExists=/etc/cloakvpn/regionsvc.env
+
+[Service]
+Type=simple
+
+# Runs as root for the same reasons as cloakvpn-api:
+#   - `wg set wg0 peer ...` needs CAP_NET_ADMIN
+#   - writes /etc/rosenpass/ (root-owned, 0700)
+#   - `systemctl restart cloak-rosenpass.service`
+User=root
+
+EnvironmentFile=/etc/cloakvpn/regionsvc.env
+ExecStart=/usr/local/bin/regionsvc
+
+Restart=on-failure
+RestartSec=3
+
+NoNewPrivileges=false
+ProtectSystem=false
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

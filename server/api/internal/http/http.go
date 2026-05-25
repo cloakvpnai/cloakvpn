@@ -23,6 +23,7 @@ import (
 	"github.com/stripe/stripe-go/v79/customer"
 
 	"github.com/cloakvpn/api/internal/account"
+	"github.com/cloakvpn/api/internal/regions"
 	"github.com/cloakvpn/api/internal/store"
 	"github.com/cloakvpn/api/internal/wg"
 )
@@ -75,26 +76,36 @@ func bearerNumber(r *http.Request) string {
 
 type DeviceHandler struct {
 	db            *store.DB
-	wgc           *wg.Controller
+	regs          *regions.Registry
+	rc            *regions.Client
 	accountSecret string
+	defaultRegion string // region used when a request omits one (legacy app)
+	subnet        string // per-region WireGuard subnet, e.g. 10.99.0.0/24
 
-	// mu serializes the provision/revoke critical section so IP
-	// allocation and the device-row write are atomic across concurrent
-	// requests. wg.Controller already serializes the rosenpass restart,
-	// so this adds no new bottleneck — it just makes the handler's DB +
-	// wg steps atomic too.
+	// mu serializes the provision/revoke critical section so IP allocation
+	// and the device-row write are atomic across concurrent requests.
 	mu sync.Mutex
 }
 
-func NewDeviceHandler(db *store.DB, wgc *wg.Controller, accountSecret string) *DeviceHandler {
-	return &DeviceHandler{db: db, wgc: wgc, accountSecret: accountSecret}
+func NewDeviceHandler(db *store.DB, regs *regions.Registry, rc *regions.Client,
+	accountSecret, defaultRegion, subnet string) *DeviceHandler {
+	return &DeviceHandler{
+		db:            db,
+		regs:          regs,
+		rc:            rc,
+		accountSecret: accountSecret,
+		defaultRegion: defaultRegion,
+		subnet:        subnet,
+	}
 }
 
-// provisionReq is the POST /v1/device body: the device's own public keys.
-// Private keys are generated on the device and never sent.
+// provisionReq is the POST /v1/device body: the device's own public keys
+// and the chosen region. region may be empty — a pre-multi-region app
+// build omits it — in which case the handler's defaultRegion is used.
 type provisionReq struct {
 	WGPubkey        string `json:"wg_pubkey"`
 	RosenpassPubkey string `json:"rosenpass_pubkey"`
+	Region          string `json:"region"`
 }
 
 type provisionResp struct {
@@ -136,6 +147,22 @@ func (h *DeviceHandler) authAccount(w http.ResponseWriter, r *http.Request) *sto
 	return acct
 }
 
+// allocIP picks a free tunnel IP within a region. The caller must hold
+// h.mu so the choice cannot race another provision in the same region.
+func (h *DeviceHandler) allocIP(regionID string) (string, error) {
+	used, err := h.db.DeviceIPsInRegion(regionID)
+	if err != nil {
+		return "", err
+	}
+	return regions.NextFreeIP(used, h.subnet)
+}
+
+func (h *DeviceHandler) writeProvision(w http.ResponseWriter, cfg *wg.ClientConfig,
+	tier store.Tier, dev store.Device) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(provisionResp{Config: cfg, Tier: tier, Device: dev})
+}
+
 func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 	acct := h.authAccount(w, r)
 	if acct == nil {
@@ -146,9 +173,9 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The device generates its own WireGuard + Rosenpass keypairs and
-	// sends only the public keys — private keys never leave the device.
-	// The Rosenpass public key is ~700 KB base64, hence the 2 MiB cap.
+	// The device generates its own WireGuard + Rosenpass keypairs and sends
+	// only the public keys. The Rosenpass public key is ~700 KB base64,
+	// hence the 2 MiB cap.
 	var req provisionReq
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20)).Decode(&req); err != nil {
 		http.Error(w, "bad json", http.StatusBadRequest)
@@ -158,18 +185,24 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "wg_pubkey and rosenpass_pubkey required", http.StatusBadRequest)
 		return
 	}
+	regionID := req.Region
+	if regionID == "" {
+		regionID = h.defaultRegion // pre-multi-region app build omits region
+	}
+	reg, ok := h.regs.Get(regionID)
+	if !ok {
+		http.Error(w, "unknown region", http.StatusBadRequest)
+		return
+	}
 
-	// Serialize the provisioning critical section: IP allocation through
-	// the device-row INSERT must be atomic, or two devices provisioning
-	// at the same instant could be handed the same wg_ip.
+	// Serialize the provision critical section: IP allocation through the
+	// device-row write must be atomic within a region.
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// Is this device already known? The app keeps a stable WireGuard
-	// keypair, so a reconnect — or a reinstall that kept app data, or the
-	// same phone signing in under a new account number — re-sends the same
-	// wg_pubkey. Provisioning must be idempotent: reuse the existing device
-	// row and its tunnel IP rather than INSERTing a colliding one.
+	// The app keeps a stable WireGuard keypair, so a reconnect, a reinstall
+	// that kept app data, an account-number change, or a region switch all
+	// re-send the same wg_pubkey. There is one row per device — find it.
 	known, err := h.db.DeviceByPubkey(req.WGPubkey)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		log.Printf("device lookup: %v", err)
@@ -178,16 +211,8 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if known != nil {
-		// Re-provision in place: same device, same tunnel IP. The wg +
-		// rosenpass peer operations on this path are all idempotent.
-		cfg, err := h.wgc.ProvisionWithKeys(nil, known.WGIP, req.WGPubkey, req.RosenpassPubkey)
-		if err != nil {
-			log.Printf("wg reprovision: %v", err)
-			http.Error(w, "provision failed", http.StatusInternalServerError)
-			return
-		}
-		// The same phone may have switched to a new account number — hand
-		// the device row to whichever account just authenticated.
+		// Hand the device row to whichever account just authenticated — the
+		// same phone may have switched account numbers.
 		if known.AccountID != acct.ID {
 			if err := h.db.ReassignDevice(known.ID, acct.ID); err != nil {
 				log.Printf("device reassign: %v", err)
@@ -196,13 +221,53 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 			}
 			known.AccountID = acct.ID
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(provisionResp{Config: cfg, Tier: acct.Tier, Device: *known})
+
+		if known.Region == regionID {
+			// Same region — re-provision in place at the existing IP. Every
+			// regionsvc peer operation is idempotent.
+			cfg, err := h.rc.Provision(reg, req.WGPubkey, req.RosenpassPubkey, known.WGIP)
+			if err != nil {
+				log.Printf("reprovision %s: %v", regionID, err)
+				http.Error(w, "provision failed", http.StatusBadGateway)
+				return
+			}
+			h.writeProvision(w, cfg, acct.Tier, *known)
+			return
+		}
+
+		// Region switch — one active region per device: tear down the peer
+		// on the old box, provision on the new one, move the row.
+		if oldReg, ok := h.regs.Get(known.Region); ok {
+			if err := h.rc.Revoke(oldReg, req.WGPubkey); err != nil {
+				// Best effort — a stale peer on the old box is harmless and
+				// must not block the switch.
+				log.Printf("revoke old region %s: %v", known.Region, err)
+			}
+		}
+		ip, err := h.allocIP(regionID)
+		if err != nil {
+			log.Printf("alloc ip %s: %v", regionID, err)
+			http.Error(w, "server", http.StatusInternalServerError)
+			return
+		}
+		cfg, err := h.rc.Provision(reg, req.WGPubkey, req.RosenpassPubkey, ip)
+		if err != nil {
+			log.Printf("provision %s: %v", regionID, err)
+			http.Error(w, "provision failed", http.StatusBadGateway)
+			return
+		}
+		if err := h.db.UpdateDeviceRegion(known.ID, regionID, ip); err != nil {
+			log.Printf("update device region: %v", err)
+			http.Error(w, "server", http.StatusInternalServerError)
+			return
+		}
+		known.Region, known.WGIP = regionID, ip
+		h.writeProvision(w, cfg, acct.Tier, *known)
 		return
 	}
 
 	// New device. The per-account device limit applies only here — a
-	// re-provision of an existing device never consumes a fresh slot.
+	// re-provision or region switch never consumes a fresh slot.
 	existing, err := h.db.DevicesForAccount(acct.ID)
 	if err != nil {
 		log.Printf("devices for account: %v", err)
@@ -213,37 +278,31 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "device limit reached", http.StatusForbidden)
 		return
 	}
-
-	// Allocate an IP free across EVERY account's devices: wg_ip is globally
-	// unique because each peer on wg0 needs a distinct tunnel address.
-	usedIPs, err := h.db.AllDeviceIPs()
+	ip, err := h.allocIP(regionID)
 	if err != nil {
-		log.Printf("all device ips: %v", err)
+		log.Printf("alloc ip %s: %v", regionID, err)
 		http.Error(w, "server", http.StatusInternalServerError)
 		return
 	}
-	cfg, err := h.wgc.ProvisionWithKeys(usedIPs, "", req.WGPubkey, req.RosenpassPubkey)
+	cfg, err := h.rc.Provision(reg, req.WGPubkey, req.RosenpassPubkey, ip)
 	if err != nil {
-		log.Printf("wg provision: %v", err)
-		http.Error(w, "provision failed", http.StatusInternalServerError)
+		log.Printf("provision %s: %v", regionID, err)
+		http.Error(w, "provision failed", http.StatusBadGateway)
 		return
 	}
-	dev, err := h.db.AddDevice(acct.ID, cfg.InterfacePublicKey, cfg.AssignedIP)
+	dev, err := h.db.AddDevice(acct.ID, regionID, req.WGPubkey, ip)
 	if err != nil {
-		// Roll back the wg + rosenpass peer so we don't leak capacity. NB:
-		// revoke the CLIENT's pubkey, not cfg.PeerPublicKey (the server's).
+		// Roll back the peer so we don't leak capacity on the box.
 		log.Printf("add device: %v", err)
-		_ = h.wgc.Revoke(cfg.InterfacePublicKey)
+		_ = h.rc.Revoke(reg, req.WGPubkey)
 		http.Error(w, "server", http.StatusInternalServerError)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(provisionResp{Config: cfg, Tier: acct.Tier, Device: *dev})
+	h.writeProvision(w, cfg, acct.Tier, *dev)
 }
 
 // revoke frees a device slot: DELETE /v1/device?id=<device-id>, authed by
-// the account number. Removes the wg + rosenpass peer, then the DB row.
+// the account number. Removes the peer from its region, then the DB row.
 func (h *DeviceHandler) revoke(w http.ResponseWriter, r *http.Request) {
 	acct := h.authAccount(w, r)
 	if acct == nil {
@@ -268,12 +327,17 @@ func (h *DeviceHandler) revoke(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "server", http.StatusInternalServerError)
 		return
 	}
-	if err := h.wgc.Revoke(dev.WGPubkey); err != nil {
-		log.Printf("wg revoke: %v", err)
-		http.Error(w, "revoke failed", http.StatusInternalServerError)
-		return
+	// Remove the peer from its region's concentrator. A legacy row whose
+	// region is unknown (region='') just has its DB row dropped.
+	if reg, ok := h.regs.Get(dev.Region); ok {
+		if err := h.rc.Revoke(reg, dev.WGPubkey); err != nil {
+			log.Printf("revoke %s: %v", dev.Region, err)
+			http.Error(w, "revoke failed", http.StatusBadGateway)
+			return
+		}
 	}
 	if err := h.db.DeleteDevice(dev.ID, acct.ID); err != nil {
+		log.Printf("delete device: %v", err)
 		http.Error(w, "server", http.StatusInternalServerError)
 		return
 	}

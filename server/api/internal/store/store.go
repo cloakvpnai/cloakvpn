@@ -5,7 +5,7 @@
 //
 //   - accounts(id, account_number_hash, stripe_customer_id,
 //     stripe_session_id, tier, device_limit, active_until)
-//   - devices(id, account_id, wg_pubkey, wg_ip, created_at)
+//   - devices(id, account_id, region, wg_pubkey, wg_ip, created_at)
 //
 // There is no email, no name, no password. A subscription is identified only
 // by a random account number, and this table holds only a keyed HMAC of that
@@ -13,6 +13,13 @@
 // We also do NOT store: IP addresses of paying customers, traffic logs, login
 // timestamps, country/geo. Billing identity lives in Stripe; the wg
 // concentrator reads only the wg_pubkey/wg_ip pair when a peer is added.
+//
+// Multi-region: each device row carries the region it is currently
+// provisioned in. A device has exactly one active region at a time — when a
+// customer switches region in the app, the row's region + wg_ip are updated
+// in place (see UpdateDeviceRegion). wg_ip is unique per region, since each
+// concentrator runs its own 10.99.0.0/24; wg_pubkey is globally unique,
+// because one physical device keeps one keypair regardless of region.
 package store
 
 import (
@@ -28,7 +35,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// ErrNotFound is returned by the AccountBy* / DeviceByID lookups when no
+// ErrNotFound is returned by the AccountBy* / DeviceBy* lookups when no
 // matching row exists, so callers can map it to a 404 / 401.
 var ErrNotFound = errors.New("not found")
 
@@ -53,6 +60,7 @@ type Account struct {
 type Device struct {
 	ID        int64
 	AccountID int64
+	Region    string // region id the device is currently provisioned in
 	WGPubkey  string
 	WGIP      string
 	CreatedAt time.Time
@@ -80,7 +88,11 @@ func Open(path string) (*DB, error) {
 			return nil, fmt.Errorf("%s: %w", p, err)
 		}
 	}
+	// Base schema first (no-op on an existing DB), then version migrations.
 	if _, err := db.Exec(schema); err != nil {
+		return nil, fmt.Errorf("schema: %w", err)
+	}
+	if err := migrate(db); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return &DB{db}, nil
@@ -102,12 +114,82 @@ CREATE INDEX IF NOT EXISTS idx_accounts_session ON accounts(stripe_session_id);
 CREATE TABLE IF NOT EXISTS devices (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  region     TEXT NOT NULL DEFAULT '',
   wg_pubkey  TEXT NOT NULL UNIQUE,
-  wg_ip      TEXT NOT NULL UNIQUE,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  wg_ip      TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(region, wg_ip)
 );
 CREATE INDEX IF NOT EXISTS idx_devices_account ON devices(account_id);
 `
+
+// migrate brings an already-existing database forward to the current
+// schema. It is idempotent: safe to run on every startup, a no-op once the
+// DB is current. The base `schema` above only ever CREATEs missing tables —
+// it can never alter a table that pre-dates a change — so structural changes
+// to existing tables live here.
+//
+// Migration 1: the pre-multi-region `devices` table had no `region` column
+// and a global UNIQUE on `wg_ip`. The new layout adds `region` and makes IP
+// uniqueness per-region. SQLite cannot drop a column constraint in place, so
+// the table is rebuilt: copy rows into a new table, swap names. Existing
+// rows are pre-multi-region test data and get region=''.
+func migrate(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(devices)`)
+	if err != nil {
+		return err
+	}
+	hasRegion := false
+	for rows.Next() {
+		var (
+			cid             int
+			name, ctype     string
+			notnull, pk     int
+			dflt            sql.NullString
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "region" {
+			hasRegion = true
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if hasRegion {
+		return nil // already on the multi-region schema
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE devices_new (
+		   id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		   account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+		   region     TEXT NOT NULL DEFAULT '',
+		   wg_pubkey  TEXT NOT NULL UNIQUE,
+		   wg_ip      TEXT NOT NULL,
+		   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		   UNIQUE(region, wg_ip)
+		 )`,
+		`INSERT INTO devices_new (id, account_id, region, wg_pubkey, wg_ip, created_at)
+		   SELECT id, account_id, '', wg_pubkey, wg_ip, created_at FROM devices`,
+		`DROP TABLE devices`,
+		`ALTER TABLE devices_new RENAME TO devices`,
+		`CREATE INDEX IF NOT EXISTS idx_devices_account ON devices(account_id)`,
+	} {
+		if _, err := tx.Exec(stmt); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("devices region migration: %w", err)
+		}
+	}
+	return tx.Commit()
+}
 
 // accountCols is the column list shared by every account lookup. COALESCE
 // keeps the nullable columns scannable into non-pointer Go fields.
@@ -178,21 +260,21 @@ func (d *DB) CreateAccount(numberHash, stripeCustomerID, stripeSessionID string,
 // number presented by the app. Returns ErrNotFound if there is no match.
 func (d *DB) AccountByNumberHash(hash string) (*Account, error) {
 	return scanAccount(d.QueryRow(
-		`SELECT `+accountCols+` FROM accounts WHERE account_number_hash = ?`, hash))
+		`SELECT ` + accountCols + ` FROM accounts WHERE account_number_hash = ?`, hash))
 }
 
 // AccountByStripeCustomer looks up an account by Stripe customer ID —
 // used by the webhook to apply renewals and cancellations.
 func (d *DB) AccountByStripeCustomer(customerID string) (*Account, error) {
 	return scanAccount(d.QueryRow(
-		`SELECT `+accountCols+` FROM accounts WHERE stripe_customer_id = ?`, customerID))
+		`SELECT ` + accountCols + ` FROM accounts WHERE stripe_customer_id = ?`, customerID))
 }
 
 // AccountBySession looks up an account by the Stripe checkout session ID
 // — used by GET /v1/account-number for the website welcome page.
 func (d *DB) AccountBySession(sessionID string) (*Account, error) {
 	return scanAccount(d.QueryRow(
-		`SELECT `+accountCols+` FROM accounts WHERE stripe_session_id = ?`, sessionID))
+		`SELECT ` + accountCols + ` FROM accounts WHERE stripe_session_id = ?`, sessionID))
 }
 
 // UpdateSubscriptionByStripeCustomer refreshes tier / limit / expiry on a
@@ -217,8 +299,28 @@ func (d *DB) DeactivateByStripeCustomer(customerID string) error {
 	return err
 }
 
+// ---- devices -------------------------------------------------------------
+
+// deviceCols is the column list shared by every device lookup, in the order
+// scanDevice expects.
+const deviceCols = `id, account_id, region, wg_pubkey, wg_ip, created_at`
+
+// rowScanner is satisfied by both *sql.Row and *sql.Rows.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanDevice(s rowScanner) (Device, error) {
+	var dv Device
+	err := s.Scan(&dv.ID, &dv.AccountID, &dv.Region, &dv.WGPubkey, &dv.WGIP, &dv.CreatedAt)
+	return dv, err
+}
+
+// DevicesForAccount returns every device row for an account, across all
+// regions. A device has one row regardless of region, so len() of this is
+// the count that the per-account device limit is enforced against.
 func (d *DB) DevicesForAccount(accountID int64) ([]Device, error) {
-	rows, err := d.Query(`SELECT id, account_id, wg_pubkey, wg_ip, created_at
+	rows, err := d.Query(`SELECT `+deviceCols+`
 	                        FROM devices WHERE account_id = ? ORDER BY created_at`, accountID)
 	if err != nil {
 		return nil, err
@@ -226,8 +328,8 @@ func (d *DB) DevicesForAccount(accountID int64) ([]Device, error) {
 	defer rows.Close()
 	var out []Device
 	for rows.Next() {
-		var dv Device
-		if err := rows.Scan(&dv.ID, &dv.AccountID, &dv.WGPubkey, &dv.WGIP, &dv.CreatedAt); err != nil {
+		dv, err := scanDevice(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, dv)
@@ -239,10 +341,8 @@ func (d *DB) DevicesForAccount(accountID int64) ([]Device, error) {
 // account can never revoke another's device. Returns ErrNotFound if there
 // is no such device for that account.
 func (d *DB) DeviceByID(id, accountID int64) (*Device, error) {
-	var dv Device
-	err := d.QueryRow(`SELECT id, account_id, wg_pubkey, wg_ip, created_at
-	                     FROM devices WHERE id = ? AND account_id = ?`, id, accountID).
-		Scan(&dv.ID, &dv.AccountID, &dv.WGPubkey, &dv.WGIP, &dv.CreatedAt)
+	dv, err := scanDevice(d.QueryRow(
+		`SELECT `+deviceCols+` FROM devices WHERE id = ? AND account_id = ?`, id, accountID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -253,15 +353,12 @@ func (d *DB) DeviceByID(id, accountID int64) (*Device, error) {
 }
 
 // DeviceByPubkey looks up a device by its WireGuard public key, which is
-// globally unique. POST /v1/device uses it to detect a re-provision: the
-// app keeps a stable keypair, so a reconnect (or a reinstall that kept
-// app data, or the same phone moving to a new account number) presents
-// the same wg_pubkey. Returns ErrNotFound when the device is new.
+// globally unique (one physical device, one keypair, one row — even across
+// region switches). POST /v1/device uses it to detect a re-provision or a
+// region switch. Returns ErrNotFound when the device is new.
 func (d *DB) DeviceByPubkey(pubkey string) (*Device, error) {
-	var dv Device
-	err := d.QueryRow(`SELECT id, account_id, wg_pubkey, wg_ip, created_at
-	                     FROM devices WHERE wg_pubkey = ?`, pubkey).
-		Scan(&dv.ID, &dv.AccountID, &dv.WGPubkey, &dv.WGIP, &dv.CreatedAt)
+	dv, err := scanDevice(d.QueryRow(
+		`SELECT `+deviceCols+` FROM devices WHERE wg_pubkey = ?`, pubkey))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -271,12 +368,11 @@ func (d *DB) DeviceByPubkey(pubkey string) (*Device, error) {
 	return &dv, nil
 }
 
-// AllDeviceIPs returns every allocated tunnel IP across ALL accounts.
-// wg_ip is globally unique — every peer on wg0 needs a distinct address —
-// so IP allocation for a new device must avoid the whole set, not just
-// the requesting account's own devices.
-func (d *DB) AllDeviceIPs() ([]string, error) {
-	rows, err := d.Query(`SELECT wg_ip FROM devices`)
+// DeviceIPsInRegion returns every allocated tunnel IP in one region. Each
+// concentrator runs its own 10.99.0.0/24, so IP allocation only has to
+// avoid collisions within the target region, not globally.
+func (d *DB) DeviceIPsInRegion(region string) ([]string, error) {
+	rows, err := d.Query(`SELECT wg_ip FROM devices WHERE region = ?`, region)
 	if err != nil {
 		return nil, err
 	}
@@ -301,14 +397,33 @@ func (d *DB) ReassignDevice(deviceID, newAccountID int64) error {
 	return err
 }
 
-func (d *DB) AddDevice(accountID int64, pub, ip string) (*Device, error) {
-	res, err := d.Exec(`INSERT INTO devices(account_id, wg_pubkey, wg_ip) VALUES (?, ?, ?)`,
-		accountID, pub, ip)
+// AddDevice inserts a new device row in the given region.
+func (d *DB) AddDevice(accountID int64, region, pub, ip string) (*Device, error) {
+	res, err := d.Exec(
+		`INSERT INTO devices(account_id, region, wg_pubkey, wg_ip) VALUES (?, ?, ?, ?)`,
+		accountID, region, pub, ip)
 	if err != nil {
 		return nil, err
 	}
 	id, _ := res.LastInsertId()
-	return &Device{ID: id, AccountID: accountID, WGPubkey: pub, WGIP: ip, CreatedAt: time.Now().UTC()}, nil
+	return &Device{
+		ID:        id,
+		AccountID: accountID,
+		Region:    region,
+		WGPubkey:  pub,
+		WGIP:      ip,
+		CreatedAt: time.Now().UTC(),
+	}, nil
+}
+
+// UpdateDeviceRegion moves an existing device to a new region, recording
+// the freshly allocated tunnel IP there. Used when a customer switches
+// region in the app — the caller has already revoked the old region's peer
+// and provisioned the new one.
+func (d *DB) UpdateDeviceRegion(deviceID int64, region, ip string) error {
+	_, err := d.Exec(`UPDATE devices SET region = ?, wg_ip = ? WHERE id = ?`,
+		region, ip, deviceID)
+	return err
 }
 
 func (d *DB) DeleteDevice(id, accountID int64) error {

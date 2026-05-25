@@ -52,9 +52,11 @@ target/
 # Wrangler (Cloudflare Pages deploy CLI — local cache only)
 .wrangler/
 
-# Go — compiled cloakvpn-api binary (cross-built for deploy; see
-# docs/DEPLOY_API.md). The source is committed, the artifact is not.
+# Go — compiled binaries (cross-built for deploy; see docs/DEPLOY_API.md
+# and docs/DEPLOY_MULTIREGION.md). The source is committed, the artifacts
+# are not.
 /server/api/cloakvpn-api
+/server/api/regionsvc
 
 # Node (for future build steps)
 node_modules/

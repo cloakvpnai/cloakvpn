@@ -180,9 +180,15 @@ channel so the VPN backend stays email-free:
 - *Optional future addition:* let customers opt in to storing an email
   purely for recovery. Still "no account required"; not needed for v1.
 
-## 7. Architecture decision — multi-region topology  (NEEDS CONFIRMATION)
+## 7. Architecture decision — multi-region topology  (CONFIRMED — built)
 
-There are 4 concentrators (us-west-1, us-east-1, de1, fi1).
+> **Status:** confirmed and implemented. The central API is region-aware
+> (`internal/regions`, `regionsvc`); ten regions are registered. See
+> `docs/DEPLOY_MULTIREGION.md` for the rollout runbook. The text below is
+> the original decision, kept for context.
+
+There are 10 concentrators (us-west-1, us-east-1, us-central-1, de1, fi1,
+es1, mx1, za1, in1, jp1).
 `cloakvpn-api`'s `wg.Controller` provisions on the box it runs on, but
 accounts must work across all regions.
 
@@ -257,7 +263,8 @@ what the app may show:
 
 ## 12. Open items
 
-- Confirm the multi-region topology in §7.
+- ~~Confirm the multi-region topology in §7.~~ Done — see
+  `docs/DEPLOY_MULTIREGION.md`.
 - Confirm the recommended account-number format in §3.
 - Exact payment-silent wording for the app's account-number screen.
 - Whether to also offer crypto/cash payment later (`docs/PRICING.md`
