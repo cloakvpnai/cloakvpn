@@ -60,8 +60,8 @@ const API_BASE = 'https://api.latticevpn.ai';
         <div class="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
           <p class="text-sm text-amber-800">
             <strong>Save this somewhere safe now.</strong> It is the only key
-            to your subscription. You can also find it on every Stripe payment
-            receipt we email you.
+            to your subscription. If you lose it later, you can recover it at
+            <a href="/recover" class="underline">latticevpn.ai/recover</a>.
           </p>
         </div>
       </div>
@@ -69,11 +69,11 @@ const API_BASE = 'https://api.latticevpn.ai';
       <!-- State: error / timeout -->
       <div id="an-error" class="hidden py-4">
         <p class="text-sm text-slate-600">
-          Your payment went through, but we couldn't display your account
-          number here. It is on the Stripe payment receipt emailed to you —
-          search your inbox for <span class="font-mono text-mint-700">Lattice VPN account number</span>.
-          Still stuck? Email
-          <a href="mailto:support@latticevpn.ai" class="text-mint-700 underline">support@latticevpn.ai</a>.
+          Your payment went through, but your account number hasn't appeared
+          yet — setup can take a moment. Wait about a minute and refresh this
+          page. If it still doesn't show, email
+          <a href="mailto:support@latticevpn.ai" class="text-mint-700 underline">support@latticevpn.ai</a>
+          from the address you paid with and we'll send it to you right away.
         </p>
       </div>
     </div>

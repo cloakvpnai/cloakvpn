@@ -4,9 +4,10 @@
  *
  * No email or personal data is stored on the Lattice side, so recovery
  * goes through Stripe, which holds the customer's email for billing. The
- * account number is written into every Stripe payment receipt (see the
- * invoice footer set in server/api/internal/stripe/webhook.go) and into
- * the Stripe customer metadata. See docs/BILLING_INTEGRATION.md §6.
+ * account number is written into the Stripe customer metadata, and into
+ * the invoice footer (server/api/internal/stripe/webhook.go) — which Stripe
+ * applies to renewal invoices, not the very first one. See
+ * docs/BILLING_INTEGRATION.md §6.
  */
 import Layout from '@/layouts/Layout.astro';
 
@@ -33,16 +34,17 @@ const BILLING_PORTAL_URL = 'https://billing.stripe.com/p/login/9B600j83jfwo3Xv2S
       </p>
     </div>
 
-    <!-- Option 1: receipts -->
+    <!-- Option 1: renewal receipts -->
     <div class="soft-card rounded-2xl p-7 mb-5">
       <h2 class="font-display font-semibold text-lg text-slate-900 mb-2">
-        1. Check your payment receipt
+        1. Check a renewal receipt
       </h2>
       <p class="text-sm text-slate-600">
-        Every receipt Stripe emails you for Lattice VPN prints your account
-        number in its footer. Search your inbox for
-        <span class="font-mono text-mint-700">Lattice VPN account number</span>
-        — it will be on the most recent receipt.
+        Every renewal receipt Stripe emails you for Lattice VPN prints your
+        account number in its footer. Search your inbox for
+        <span class="font-mono text-mint-700">Lattice VPN account number</span>.
+        Note: your very first receipt won't have it — if you just subscribed,
+        use option 2 or contact support below.
       </p>
     </div>
 
