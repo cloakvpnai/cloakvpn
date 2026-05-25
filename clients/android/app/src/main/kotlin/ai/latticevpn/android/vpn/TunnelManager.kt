@@ -57,7 +57,7 @@ class TunnelManager private constructor(appCtx: Context) {
     private val repository = TunnelRepository.get(context)
     private val keyStore = KeyStore(context)
     private val accountStore = AccountStore(context)
-    private val accountClient = AccountClient()
+    private val accountClient = AccountClient(context)
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -109,6 +109,18 @@ class TunnelManager private constructor(appCtx: Context) {
      */
     @Volatile
     private var recoveryAttempts = 0
+
+    /**
+     * Last-resort re-provision recoveries performed after the in-tunnel
+     * [recoveryAttempts] budget is spent. A run of failures that survives
+     * every recover→reconnect cycle is not a transient PSK desync but
+     * stale identity — the cached config carries keys the concentrator no
+     * longer accepts — so the escape is a fresh provision, not another
+     * bounce. Bounded by [MAX_REPROVISIONS]; reset on the first
+     * [RosenpassStatus.Established].
+     */
+    @Volatile
+    private var reprovisionAttempts = 0
 
     init {
         // Restore the last-selected region so the picker highlights it
@@ -412,8 +424,11 @@ class TunnelManager private constructor(appCtx: Context) {
             r.status.collect { st ->
                 _rosenpassStatus.value = st
                 // A healthy rotation means whatever was wrong is resolved
-                // — refill the recovery budget.
-                if (st is RosenpassStatus.Established) recoveryAttempts = 0
+                // — refill both recovery budgets.
+                if (st is RosenpassStatus.Established) {
+                    recoveryAttempts = 0
+                    reprovisionAttempts = 0
+                }
             }
         }
         // The desync watchdog only makes sense while rotation is live —
@@ -500,8 +515,29 @@ class TunnelManager private constructor(appCtx: Context) {
     private fun triggerRecovery() {
         if (recoveryInProgress) return
         if (recoveryAttempts >= MAX_AUTO_RECOVERIES) {
-            Log.e(TAG, "post-quantum auto-recovery budget spent ($recoveryAttempts) — " +
-                "leaving the tunnel for a manual reconnect")
+            // In-tunnel recovery is exhausted. Every attempt re-used the
+            // same cached config, so its key material is almost certainly
+            // stale — the device's server-side peer was revoked, or a key
+            // rotation was missed. Escalate to a full re-provision, which
+            // re-registers this device on the concentrator and returns its
+            // current Rosenpass key. Without this an end user whose keys
+            // desync is bricked until they reinstall the app.
+            if (reprovisionAttempts < MAX_REPROVISIONS) {
+                recoveryInProgress = true
+                scope.launch {
+                    try {
+                        reprovisionAndRecover()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "re-provision recovery failed: ${e.message}")
+                    } finally {
+                        recoveryInProgress = false
+                    }
+                }
+            } else {
+                Log.e(TAG, "post-quantum recovery exhausted — in-tunnel retries " +
+                    "and re-provisioning both failed; leaving the tunnel for a " +
+                    "manual reconnect")
+            }
             return
         }
         recoveryInProgress = true
@@ -556,6 +592,57 @@ class TunnelManager private constructor(appCtx: Context) {
 
         // Reconnect. The CONNECTED transition restarts the steady-state
         // rotator (and its watchdog) via the tunnel-state collector.
+        connect()
+    }
+
+    /**
+     * Last-resort recovery, reached when the in-tunnel retries in
+     * [recoverDeadTunnel] have all failed. A run of handshake failures
+     * that survives every recover→reconnect cycle is not a transient PSK
+     * desync — it means the cached config carries key material the
+     * concentrator no longer accepts (the device's peer was revoked, or a
+     * server-side Rosenpass key the device never re-fetched).
+     *
+     * The cure is a fresh provision: drop the cached config, re-run
+     * POST /v1/device — which re-registers this device's current public
+     * keys on the region and returns a config with the concentrator's
+     * current Rosenpass key, putting both ends back in sync — then
+     * reconnect. This is the automatic equivalent of a reinstall, so an
+     * end user never has to do one by hand.
+     */
+    private suspend fun reprovisionAndRecover() {
+        reprovisionAttempts += 1
+        val region = _selectedRegion.value
+        if (region == null) {
+            Log.e(TAG, "re-provision recovery skipped — no region selected")
+            return
+        }
+        Log.w(TAG, "re-provisioning ${region.id} (attempt $reprovisionAttempts) — " +
+            "cached config keys look stale")
+
+        stopRotator()
+        disconnect()
+        awaitTunnelState(TunnelState.DISCONNECTED, SETTLE_TIMEOUT_MS)
+        delay(500) // brief beat for the VpnService to fully release
+        _rosenpassStatus.value = RosenpassStatus.Error("re-provisioning…")
+
+        // Drop the cached config so the provision cannot be short-circuited
+        // by the stale entry, then provision the region from scratch.
+        clearCachedConfig(region.id)
+        try {
+            val cfg = provisionConfig(region.id)
+            importConfig(cfg)
+            clearOtherCachedConfigs(region.id)
+            saveCachedConfig(region.id, cfg)
+            Log.i(TAG, "re-provision of ${region.id} succeeded — reconnecting")
+        } catch (e: Exception) {
+            Log.e(TAG, "re-provision of ${region.id} failed: ${e.message}")
+            _rosenpassStatus.value = RosenpassStatus.Error("re-provision failed")
+        }
+
+        // Reconnect regardless: with the fresh config on success, or with
+        // whatever config remains on failure, so the user is never left
+        // with the tunnel forced down.
         connect()
     }
 
@@ -699,6 +786,13 @@ class TunnelManager private constructor(appCtx: Context) {
          * the fault is durable (e.g. the concentrator is down).
          */
         private const val MAX_AUTO_RECOVERIES = 3
+
+        /**
+         * Cap on last-resort re-provision attempts once [MAX_AUTO_RECOVERIES]
+         * in-tunnel recoveries have failed. Each re-registers the device on
+         * the region; two attempts cover a transient failure of the first.
+         */
+        private const val MAX_REPROVISIONS = 2
 
         /** How long the recovery handshake gets to complete before reconnecting anyway. */
         private const val RECOVERY_HANDSHAKE_TIMEOUT_MS = 60_000L

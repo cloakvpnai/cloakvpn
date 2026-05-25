@@ -52,7 +52,7 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val ipClient = IpAddressClient()
     private val accountStore = AccountStore(app)
-    private val accountClient = AccountClient()
+    private val accountClient = AccountClient(app)
 
     // ---- Tunnel / region state — delegated straight from TunnelManager ----
 

@@ -1,14 +1,22 @@
 package ai.latticevpn.android.data
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Dns
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.IOException
+import java.net.InetAddress
+import java.net.Socket
 import java.util.concurrent.TimeUnit
+import javax.net.SocketFactory
 
 /**
  * A failure talking to the Lattice account API, classified so the UI can
@@ -91,15 +99,75 @@ data class DeviceProvision(
  * bootstrap keys. This replaces the old AuthClient + ProvisioningClient
  * pair.
  */
-class AccountClient {
+class AccountClient(private val context: Context) {
+
+    /**
+     * The device's underlying physical (non-VPN) network with internet,
+     * or null if none is found (then calls fall back to the default
+     * route — fine when no tunnel is up).
+     */
+    @Suppress("DEPRECATION") // getAllNetworks: simplest cross-version query
+    private fun underlyingNonVpnNetwork(): Network? {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return null
+        return cm.allNetworks.firstOrNull { n ->
+            val caps = cm.getNetworkCapabilities(n) ?: return@firstOrNull false
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+        }
+    }
+
+    /**
+     * DNS that resolves on the underlying network, so even the name
+     * lookup for the API bypasses the tunnel. Falls back to the system
+     * resolver when no non-VPN network is available.
+     */
+    private val underlyingDns = object : Dns {
+        override fun lookup(hostname: String): List<InetAddress> =
+            underlyingNonVpnNetwork()?.let { net ->
+                runCatching { net.getAllByName(hostname).toList() }.getOrNull()
+            } ?: Dns.SYSTEM.lookup(hostname)
+    }
+
+    /**
+     * SocketFactory whose sockets are bound to the underlying non-VPN
+     * network, so OkHttp connections never enter the WireGuard tunnel.
+     * Delegates to the default factory when no such network is found.
+     */
+    private inner class UnderlyingSocketFactory : SocketFactory() {
+        private fun delegate(): SocketFactory =
+            underlyingNonVpnNetwork()?.socketFactory ?: SocketFactory.getDefault()
+        override fun createSocket(): Socket = delegate().createSocket()
+        override fun createSocket(host: String, port: Int): Socket =
+            delegate().createSocket(host, port)
+        override fun createSocket(
+            host: String, port: Int, localHost: InetAddress, localPort: Int,
+        ): Socket = delegate().createSocket(host, port, localHost, localPort)
+        override fun createSocket(host: InetAddress, port: Int): Socket =
+            delegate().createSocket(host, port)
+        override fun createSocket(
+            address: InetAddress, port: Int, localAddress: InetAddress, localPort: Int,
+        ): Socket = delegate().createSocket(address, port, localAddress, localPort)
+    }
 
     // Provisioning runs add-peer + a rosenpass restart server-side, so it
     // needs generous read headroom; capped so a hung server cannot block
     // the UI indefinitely.
+    //
+    // CRITICAL: every call here is pinned to the device's underlying
+    // physical network (WiFi / cellular), NOT the WireGuard tunnel. A
+    // region switch is POST /v1/device, and the server tears down the
+    // *current* tunnel as part of that switch — so a request riding the
+    // tunnel would be killed mid-flight (the response can't get back) and
+    // the switch could never finish. Pinning the socket out-of-tunnel —
+    // the same approach RosenpassTransport uses for the PQ handshake —
+    // lets the request survive the very tunnel it is replacing.
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
+        .socketFactory(UnderlyingSocketFactory())
+        .dns(underlyingDns)
         .build()
 
     /**
