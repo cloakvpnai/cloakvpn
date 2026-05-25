@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -59,8 +60,8 @@ func main() {
 		PriceBasicYear:      cfg.PriceBasicYear,
 		PriceProMonth:       cfg.PriceProMonth,
 		PriceProYear:        cfg.PriceProYear,
-		BasicDeviceLimit:    3,
-		ProDeviceLimit:      10,
+		BasicDeviceLimit:    cfg.BasicDeviceLimit,
+		ProDeviceLimit:      cfg.ProDeviceLimit,
 		AccountNumberSecret: cfg.AccountNumberSecret,
 	}, db)
 
@@ -109,6 +110,9 @@ type config struct {
 	PriceProMonth       string
 	PriceProYear        string
 
+	BasicDeviceLimit int
+	ProDeviceLimit   int
+
 	WGSubnet             string
 	RegionsConfig        string
 	RegionInternalSecret string
@@ -127,6 +131,9 @@ func loadConfig() config {
 		PriceProMonth:       mustEnv("STRIPE_PRICE_PRO_MONTH"),
 		PriceProYear:        mustEnv("STRIPE_PRICE_PRO_YEAR"),
 
+		BasicDeviceLimit: envInt("BASIC_DEVICE_LIMIT", 3),
+		ProDeviceLimit:   envInt("PRO_DEVICE_LIMIT", 10),
+
 		WGSubnet:             envOr("WG_SUBNET", "10.99.0.0/24"),
 		RegionsConfig:        envOr("REGIONS_CONFIG", "/etc/cloakvpn/regions.json"),
 		RegionInternalSecret: mustEnv("REGION_INTERNAL_SECRET"),
@@ -139,6 +146,21 @@ func envOr(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// envInt reads a positive integer env var, falling back to def when the
+// variable is unset or not a positive integer.
+func envInt(k string, def int) int {
+	v := os.Getenv(k)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		log.Printf("env %s=%q is not a positive integer; using default %d", k, v, def)
+		return def
+	}
+	return n
 }
 
 func mustEnv(k string) string {

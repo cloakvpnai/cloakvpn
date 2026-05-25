@@ -64,6 +64,7 @@ type Device struct {
 	WGPubkey  string
 	WGIP      string
 	CreatedAt time.Time
+	LastSeen  time.Time // most recent provision/reconnect — drives limit eviction
 }
 
 type DB struct{ *sql.DB }
@@ -95,6 +96,9 @@ func Open(path string) (*DB, error) {
 	if err := migrate(db); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
+	if err := migrateDeviceLastSeen(db); err != nil {
+		return nil, fmt.Errorf("migrate last_seen: %w", err)
+	}
 	return &DB{db}, nil
 }
 
@@ -118,6 +122,7 @@ CREATE TABLE IF NOT EXISTS devices (
   wg_pubkey  TEXT NOT NULL UNIQUE,
   wg_ip      TEXT NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_seen  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(region, wg_ip)
 );
 CREATE INDEX IF NOT EXISTS idx_devices_account ON devices(account_id);
@@ -186,6 +191,59 @@ func migrate(db *sql.DB) error {
 		if _, err := tx.Exec(stmt); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("devices region migration: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// migrateDeviceLastSeen adds devices.last_seen (Migration 2): the time of a
+// device's most recent provision or reconnect. The self-cleaning device
+// limit evicts the least-recently-seen device when a new one would exceed
+// the tier cap, so a customer's reinstall reclaims a stale slot instead of
+// being refused. Idempotent — a no-op once the column exists; existing rows
+// are backfilled to created_at.
+func migrateDeviceLastSeen(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(devices)`)
+	if err != nil {
+		return err
+	}
+	has := false
+	for rows.Next() {
+		var (
+			cid         int
+			name, ctype string
+			notnull, pk int
+			dflt        sql.NullString
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "last_seen" {
+			has = true
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if has {
+		return nil
+	}
+	// SQLite forbids CURRENT_TIMESTAMP as an ADD COLUMN default, so the
+	// column is added nullable and backfilled from created_at; AddDevice and
+	// TouchDevice set it explicitly thereafter.
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	for _, stmt := range []string{
+		`ALTER TABLE devices ADD COLUMN last_seen TIMESTAMP`,
+		`UPDATE devices SET last_seen = created_at WHERE last_seen IS NULL`,
+	} {
+		if _, err := tx.Exec(stmt); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("devices last_seen migration: %w", err)
 		}
 	}
 	return tx.Commit()
@@ -303,7 +361,8 @@ func (d *DB) DeactivateByStripeCustomer(customerID string) error {
 
 // deviceCols is the column list shared by every device lookup, in the order
 // scanDevice expects.
-const deviceCols = `id, account_id, region, wg_pubkey, wg_ip, created_at`
+const deviceCols = `id, account_id, region, wg_pubkey, wg_ip, created_at, ` +
+	`COALESCE(last_seen, created_at)`
 
 // rowScanner is satisfied by both *sql.Row and *sql.Rows.
 type rowScanner interface {
@@ -312,7 +371,8 @@ type rowScanner interface {
 
 func scanDevice(s rowScanner) (Device, error) {
 	var dv Device
-	err := s.Scan(&dv.ID, &dv.AccountID, &dv.Region, &dv.WGPubkey, &dv.WGIP, &dv.CreatedAt)
+	err := s.Scan(&dv.ID, &dv.AccountID, &dv.Region, &dv.WGPubkey, &dv.WGIP,
+		&dv.CreatedAt, &dv.LastSeen)
 	return dv, err
 }
 
@@ -397,22 +457,26 @@ func (d *DB) ReassignDevice(deviceID, newAccountID int64) error {
 	return err
 }
 
-// AddDevice inserts a new device row in the given region.
+// AddDevice inserts a new device row in the given region. last_seen is set
+// to now, so a freshly provisioned device is never the eviction victim.
 func (d *DB) AddDevice(accountID int64, region, pub, ip string) (*Device, error) {
 	res, err := d.Exec(
-		`INSERT INTO devices(account_id, region, wg_pubkey, wg_ip) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO devices(account_id, region, wg_pubkey, wg_ip, last_seen)
+		 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
 		accountID, region, pub, ip)
 	if err != nil {
 		return nil, err
 	}
 	id, _ := res.LastInsertId()
+	now := time.Now().UTC()
 	return &Device{
 		ID:        id,
 		AccountID: accountID,
 		Region:    region,
 		WGPubkey:  pub,
 		WGIP:      ip,
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: now,
+		LastSeen:  now,
 	}, nil
 }
 
@@ -423,6 +487,14 @@ func (d *DB) AddDevice(accountID int64, region, pub, ip string) (*Device, error)
 func (d *DB) UpdateDeviceRegion(deviceID int64, region, ip string) error {
 	_, err := d.Exec(`UPDATE devices SET region = ?, wg_ip = ? WHERE id = ?`,
 		region, ip, deviceID)
+	return err
+}
+
+// TouchDevice records that a device just provisioned or reconnected. The
+// self-cleaning device limit evicts the least-recently-seen device, so
+// keeping this current ensures an actively-used device is never the victim.
+func (d *DB) TouchDevice(id int64) error {
+	_, err := d.Exec(`UPDATE devices SET last_seen = CURRENT_TIMESTAMP WHERE id = ?`, id)
 	return err
 }
 

@@ -163,6 +163,41 @@ func (h *DeviceHandler) writeProvision(w http.ResponseWriter, cfg *wg.ClientConf
 	_ = json.NewEncoder(w).Encode(provisionResp{Config: cfg, Tier: tier, Device: dev})
 }
 
+// leastRecentlySeen returns the device with the oldest last_seen — the best
+// eviction candidate when a new device needs a slot. devs must be non-empty.
+func leastRecentlySeen(devs []store.Device) store.Device {
+	lru := devs[0]
+	for _, d := range devs[1:] {
+		if d.LastSeen.Before(lru.LastSeen) {
+			lru = d
+		}
+	}
+	return lru
+}
+
+// removeDevice returns devs without the row identified by id.
+func removeDevice(devs []store.Device, id int64) []store.Device {
+	out := make([]store.Device, 0, len(devs))
+	for _, d := range devs {
+		if d.ID != id {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// evict frees a device slot: revoke the peer on its concentrator (best
+// effort — a stale peer is harmless and must not block reclaiming the
+// slot), then delete the row. Caller holds h.mu.
+func (h *DeviceHandler) evict(dev store.Device) error {
+	if reg, ok := h.regs.Get(dev.Region); ok {
+		if err := h.rc.Revoke(reg, dev.WGPubkey); err != nil {
+			log.Printf("evict: revoke %s peer: %v", dev.Region, err)
+		}
+	}
+	return h.db.DeleteDevice(dev.ID, dev.AccountID)
+}
+
 func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 	acct := h.authAccount(w, r)
 	if acct == nil {
@@ -222,6 +257,12 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 			known.AccountID = acct.ID
 		}
 
+		// Mark the device active so the self-cleaning limit never picks an
+		// in-use device as the eviction victim. Non-fatal on error.
+		if err := h.db.TouchDevice(known.ID); err != nil {
+			log.Printf("touch device %d: %v", known.ID, err)
+		}
+
 		if known.Region == regionID {
 			// Same region — re-provision in place at the existing IP. Every
 			// regionsvc peer operation is idempotent.
@@ -274,9 +315,24 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "server", http.StatusInternalServerError)
 		return
 	}
-	if len(existing) >= acct.DeviceLimit {
-		http.Error(w, "device limit reached", http.StatusForbidden)
-		return
+	// Self-cleaning limit. A device row is bound to the app's WireGuard
+	// keypair, which is regenerated on every reinstall or "clear data" — so
+	// one physical phone legitimately piles up rows over time. Rather than
+	// 403 the customer once that reaches the tier cap (locking them out of
+	// their own phone), evict the least-recently-seen device to make room.
+	// The cap still bounds how many *actively used* devices coexist — the
+	// real tier limit — and the loop also absorbs an over-limit account
+	// left behind by a Pro→Basic downgrade.
+	for acct.DeviceLimit > 0 && len(existing) >= acct.DeviceLimit {
+		victim := leastRecentlySeen(existing)
+		if err := h.evict(victim); err != nil {
+			log.Printf("evict device %d: %v", victim.ID, err)
+			http.Error(w, "server", http.StatusInternalServerError)
+			return
+		}
+		log.Printf("device limit: evicted least-recently-seen device %d (account %d)",
+			victim.ID, acct.ID)
+		existing = removeDevice(existing, victim.ID)
 	}
 	ip, err := h.allocIP(regionID)
 	if err != nil {
