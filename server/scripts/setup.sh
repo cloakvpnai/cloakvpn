@@ -348,6 +348,12 @@ cat >/etc/systemd/system/cloak-rosenpass.service <<EOF
 Description=Cloak VPN — Rosenpass post-quantum key-exchange daemon
 After=network-online.target wg-quick@$WG_IFACE.service
 Requires=network-online.target
+# Provisioning restarts this unit on every peer add/revoke (regionsvc),
+# which legitimately exceeds systemd's default 5-starts-per-10s limit
+# during bursts. Disable the start-rate limit so a busy region cannot
+# wedge the unit in a failed state. regionsvc also runs reset-failed
+# before each restart as a second layer of protection.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -448,6 +454,12 @@ Description=Cloak VPN — PSK installer (rosenpass → wg$WG_IFACE bridge)
 After=network-online.target wg-quick@$WG_IFACE.service cloak-rosenpass.service
 Requires=wg-quick@$WG_IFACE.service
 PartOf=cloak-rosenpass.service
+# PartOf= restarts this unit in lockstep with cloak-rosenpass, so it churns
+# just as fast during a burst of provisions and trips systemd's default
+# 5-starts-per-10s limit too. A wedged PSK installer is worse than a wedged
+# rosenpass: rosenpass keeps minting PSKs but nothing applies them to wg0,
+# so every tunnel silently goes black. Disable the start-rate limit.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple

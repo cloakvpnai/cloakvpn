@@ -72,7 +72,11 @@ func loadConfig() config {
 			Iface:      envOr("WG_IFACE", "wg0"),
 			ServerPub:  mustEnv("WG_SERVER_PUB"),
 			Endpoint:   mustEnv("WG_ENDPOINT"), // e.g. madrid.cloakvpn.ai:51820
-			DNS:        envOr("WG_DNS", "10.99.0.1"),
+			// Public resolver, reached through the tunnel. The concentrator
+			// runs NO DNS server, so the old 10.99.0.1 default (its own
+			// in-tunnel address) black-holed every client lookup. Quad9 —
+			// matches the pre-regionsvc add-peer.sh / cloak-api-server.py.
+			DNS:        envOr("WG_DNS", "9.9.9.9, 2620:fe::fe"),
 			AllowedIPs: envOr("WG_ALLOWED_IPS", "0.0.0.0/0, ::/0"),
 			SubnetCIDR: envOr("WG_SUBNET", "10.99.0.0/24"),
 		},

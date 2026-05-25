@@ -49,7 +49,7 @@ type Config struct {
 	Iface      string // wg0
 	ServerPub  string // server's WireGuard public key (base64)
 	Endpoint   string // fi1.cloakvpn.ai:51820
-	DNS        string // 10.99.0.1
+	DNS        string // client resolver, reached through the tunnel — e.g. 9.9.9.9, 2620:fe::fe
 	AllowedIPs string // "0.0.0.0/0, ::/0"
 	SubnetCIDR string // 10.99.0.0/24
 
@@ -520,6 +520,17 @@ func (c *Controller) removeRosenpassPeer(publicPath string) error {
 }
 
 func (c *Controller) restartRosenpass() error {
+	// Provisioning restarts cloak-rosenpass on every Provision/Revoke, so a
+	// burst of calls into one region can trip systemd's start-rate limit
+	// (StartLimitBurst within StartLimitIntervalSec). Once tripped, the unit
+	// drops into a failed state that a plain `systemctl restart` will NOT
+	// clear — every later provision then 500s until an operator runs
+	// `reset-failed` by hand. Clearing the failed/limit state first makes
+	// provisioning self-healing. `reset-failed` is a no-op on a healthy
+	// unit, so running it unconditionally is safe; its only failure mode is
+	// an unknown unit name, which the restart below reports more clearly.
+	_ = exec.Command("systemctl", "reset-failed", c.cfg.ServiceName).Run()
+
 	if out, err := exec.Command("systemctl", "restart", c.cfg.ServiceName).CombinedOutput(); err != nil {
 		return fmt.Errorf("systemctl restart %s: %w: %s", c.cfg.ServiceName, err, out)
 	}
