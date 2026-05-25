@@ -93,6 +93,31 @@ final class TunnelManager: ObservableObject {
     /// on first install. Stable across launches once persisted.
     @Published private(set) var localPublicKeyB64: String?
 
+    // MARK: - Account (no-account billing model)
+    //
+    // The customer's only credential is the account number from
+    // latticevpn.ai. It authorizes every call to the central account
+    // API; there is no email/password. See docs/BILLING_INTEGRATION.md.
+
+    /// The stored account number in canonical hyphenated form, or nil
+    /// when the customer has not signed in. Restored from the App Group
+    /// container on launch.
+    @Published private(set) var accountNumber: String?
+
+    /// Subscription state last fetched from the account API — tier,
+    /// device limit/count, paid-through date. nil until the first
+    /// fetchAccount lands.
+    @Published private(set) var accountStatus: AccountStatus?
+
+    /// True while a sign-in (account-number validation) is in flight.
+    @Published private(set) var signInBusy: Bool = false
+
+    /// True once a validated account number is stored.
+    var isSignedIn: Bool { !(accountNumber ?? "").isEmpty }
+
+    /// Stateless client for the central account + provisioning API.
+    private let accountClient = LatticeAccountClient()
+
     private var manager: NETunnelProviderManager?
     private var statusObserver: NSObjectProtocol?
 
@@ -153,6 +178,13 @@ final class TunnelManager: ObservableObject {
         // launch. New code path never reads them, but no point letting
         // stale files linger in the App Group container.
         AppGroupKeyStore.deleteLegacyClientKeys()
+        // The pre-account-number auth model is retired: drop any stale
+        // JWT + install-UUID files left by earlier builds.
+        AppGroupKeyStore.deleteLegacyAuthFiles()
+
+        // Restore the customer's account number so the app knows on
+        // launch whether to show the sign-in cover or the main UI.
+        accountNumber = AppGroupKeyStore.loadAccountNumber()
 
         // Re-publish rosenpass.objectWillChange events as our own. Without
         // this, SwiftUI views observing TunnelManager via @EnvironmentObject
@@ -191,6 +223,55 @@ final class TunnelManager: ObservableObject {
     private func persistProvisionedConfigsCache() {
         UserDefaults.standard.set(provisionedConfigsByRegionID,
                                   forKey: Self.provisionedConfigsCacheKey)
+    }
+
+    // MARK: - Account sign-in / sign-out
+
+    /// Validate `number` against the account API and, on success, store
+    /// it as the device's credential. Returns nil on success, or a
+    /// customer-facing error message to show in the entry screen.
+    func signIn(_ number: String) async -> String? {
+        let formatted = LatticeAPI.format(number)
+        signInBusy = true
+        defer { signInBusy = false }
+        do {
+            let status = try await accountClient.fetchAccount(accountNumber: formatted)
+            try? AppGroupKeyStore.saveAccountNumber(formatted)
+            accountNumber = formatted
+            accountStatus = status
+            SubscriptionInfo.recordTier(status.tier)
+            return nil
+        } catch let e as AccountError {
+            return e.userMessage
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// Re-fetch subscription state for the stored account number. Silent
+    /// — failures just leave the previous `accountStatus` in place.
+    func refreshAccountStatus() async {
+        guard let number = accountNumber, !number.isEmpty else { return }
+        if let status = try? await accountClient.fetchAccount(accountNumber: number) {
+            accountStatus = status
+            SubscriptionInfo.recordTier(status.tier)
+        }
+    }
+
+    /// Forget the account number and all per-region tunnel state. Drops
+    /// the tunnel first if it is up — the credential is gone, so it must
+    /// not keep running.
+    func signOut() async {
+        if status == .connected || status == .connecting || status == .reasserting {
+            try? await disconnect()
+        }
+        AppGroupKeyStore.clearAccountNumber()
+        accountNumber = nil
+        accountStatus = nil
+        // Per-region provisioned configs were tied to the old account —
+        // clear them so a future sign-in re-provisions cleanly.
+        provisionedConfigsByRegionID = [:]
+        persistProvisionedConfigsCache()
     }
 
     /// Fetch the user's actual public IP from a third-party service.
@@ -297,18 +378,17 @@ final class TunnelManager: ObservableObject {
             }
         }
 
-        debugLog("selectRegion: \(region.id) — provisioning via \(region.serverURL)")
+        debugLog("selectRegion: \(region.id) — provisioning via account API")
         do {
-            let configText = try await provisionFromAPIRaw(
-                serverBase: region.serverURL,
-                peerName: nil  // server auto-derives from rp pubkey hash
-            )
+            let configText = try await provisionFromAPIRaw(region: region)
             try await importConfig(configText)
             selectedRegion = region
             UserDefaults.standard.set(region.id, forKey: Self.selectedRegionUserDefaultsKey)
-            // Cache the raw config text for instant subsequent switches
-            // back to this region.
-            provisionedConfigsByRegionID[region.id] = configText
+            // A device has exactly one active region server-side:
+            // provisioning this one revoked the peer in any previous
+            // region, so every other region's cached config is now
+            // stale. Keep only this region's entry.
+            provisionedConfigsByRegionID = [region.id: configText]
             persistProvisionedConfigsCache()
             debugLog("selectRegion: \(region.id) configured + cached successfully")
             await reconnectIfWasConnected(wasConnected: wasActivelyConnected,
@@ -482,6 +562,10 @@ final class TunnelManager: ObservableObject {
     /// Failures are silent (logged only) — the user will hit the normal
     /// provision path when they tap if the warmup didn't land.
     func warmUpPreferredRegion() async {
+        // Provisioning needs the customer's account number — nothing to
+        // warm up until they have signed in.
+        guard isSignedIn else { return }
+
         let target: CloakRegion
         if let preferred = selectedRegion {
             target = preferred
@@ -501,15 +585,13 @@ final class TunnelManager: ObservableObject {
 
         debugLog("warmUp: pre-provisioning \(target.id) in background")
         do {
-            let configText = try await provisionFromAPIRaw(
-                serverBase: target.serverURL,
-                peerName: nil
-            )
+            let configText = try await provisionFromAPIRaw(region: target)
             // Stash in the cache. Do NOT auto-import or set selectedRegion —
             // the user hasn't actually picked anything yet, so we don't want
             // to mutate any UI-visible state. The cache hit at selectRegion
-            // time will trigger the normal import path.
-            provisionedConfigsByRegionID[target.id] = configText
+            // time will trigger the normal import path. One active region
+            // per device, so keep only this region's entry.
+            provisionedConfigsByRegionID = [target.id: configText]
             persistProvisionedConfigsCache()
             debugLog("warmUp: \(target.id) cached successfully (\(configText.count) chars)")
         } catch {
@@ -711,105 +793,37 @@ final class TunnelManager: ObservableObject {
         self.observeStatus(manager.connection)
     }
 
-    /// "Add Region" — provision this iPhone as a peer against a Cloak
-    /// region by POSTing both locally-generated public keys to the
-    /// region's cloak-api-server. The server returns a complete client
-    /// config block (without private_key — we already have the WG
-    /// secret locally). Auto-imports on success.
+    /// Provision (or idempotently re-register) this device against the
+    /// central account API in `region`, returning the tunnel config as
+    /// the INI block `importConfig` consumes.
     ///
-    /// Privacy: only public keys cross the wire. The iPhone's WG and
-    /// rosenpass private keys never leave the device.
-    ///
-    /// - Parameters:
-    ///   - serverBase: full base URL of the API, e.g.
-    ///     "https://cloak-de1.cloakvpn.ai" — must serve our regions'
-    ///     nginx + Let's Encrypt HTTPS endpoint.
-    ///   - peerName: optional human-readable peer name. If absent, the
-    ///     server auto-generates one from a hash of the rosenpass pubkey.
-    func provisionFromAPI(
-        serverBase: String,
-        peerName: String? = nil
-    ) async throws {
-        let configText = try await provisionFromAPIRaw(
-            serverBase: serverBase,
-            peerName: peerName
-        )
-        debugLog("provisionFromAPI: got config (\(configText.count) chars), importing…")
-        try await importConfig(configText)
-    }
-
-    /// Same as `provisionFromAPI` but returns the raw config text instead
-    /// of also importing it. Lets `selectRegion` cache the API response
-    /// per region.id so subsequent taps can short-circuit the network
-    /// round-trip and just call `importConfig` directly.
-    func provisionFromAPIRaw(
-        serverBase: String,
-        peerName: String? = nil
-    ) async throws -> String {
-        // 1. Make sure we have both keypairs locally before talking to
-        // the server. ensureLocalKeypair handles rosenpass; the new
-        // ensureLocalWGKeypair handles WG. Both are idempotent.
+    /// Only the device's *public* keys cross the wire — the WireGuard +
+    /// Rosenpass secrets never leave the device. The account number is
+    /// the bearer credential. The central API routes the peer onto the
+    /// chosen region's concentrator; if the device was provisioned in a
+    /// different region, that peer is torn down server-side first
+    /// (BILLING_INTEGRATION.md §7).
+    func provisionFromAPIRaw(region: CloakRegion) async throws -> String {
+        guard let number = accountNumber, !number.isEmpty else {
+            throw TunnelError.parse("Enter your account number to connect.")
+        }
+        // Make sure both keypairs exist locally before talking to the
+        // server. ensureLocalKeypair handles rosenpass; ensureLocalWGKeypair
+        // handles WG. Both are idempotent.
         await ensureLocalKeypair()
         await ensureLocalWGKeypair()
 
         let rpKeys = try AppGroupKeyStore.loadLocalKeypair()
         let wgKeys = try AppGroupKeyStore.loadLocalWGKeypair()
 
-        // 2. Build the request.
-        var url = serverBase.trimmingCharacters(in: .whitespacesAndNewlines)
-        if url.hasSuffix("/") { url.removeLast() }
-        guard let endpoint = URL(string: "\(url)/api/v1/peers") else {
-            throw TunnelError.parse("invalid serverBase URL: \(serverBase)")
-        }
+        debugLog("provisionFromAPIRaw: region=\(region.id) (wg_pub=\(wgKeys.publicB64.prefix(8))…, rp_pub=\(rpKeys.publicB64.prefix(12))…)")
 
-        var body: [String: Any] = [
-            "wg_pubkey_b64": wgKeys.publicB64,
-            "rosenpass_pubkey_b64": rpKeys.publicB64,
-        ]
-        if let n = peerName, !n.isEmpty {
-            body["peer_name"] = n
-        }
-        let bodyData = try JSONSerialization.data(withJSONObject: body)
-
-        // 2a. Bootstrap a JWT against this same region. Cached if still
-        // valid; refreshed if expiring soon. Cross-region valid because
-        // every region shares /etc/cloak/jwt-secret.
-        let jwt = try await CloakAuthClient.fetchAuthToken(regionServerBase: url)
-
-        var req = URLRequest(url: endpoint)
-        req.httpMethod = "POST"
-        req.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = bodyData
-        // Provisioning involves running add-peer.sh + restarting
-        // cloak-rosenpass.service on the server — give it some
-        // headroom but cap to keep the UI responsive.
-        req.timeoutInterval = 30
-
-        debugLog("provisionFromAPIRaw: POST \(endpoint.absoluteString) (wg_pub=\(wgKeys.publicB64.prefix(8))…, rp_pub=\(rpKeys.publicB64.prefix(12))…, jwt=\(jwt.prefix(20))…)")
-
-        // 3. Hit the API.
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse else {
-            throw TunnelError.parse("non-HTTP response from server")
-        }
-        if http.statusCode == 401 {
-            // JWT was rejected — likely a token in the cache that the
-            // server lost trust in (e.g. JWT secret rotated server-side).
-            // Drop the cache and let the next call re-bootstrap.
-            CloakAuthClient.invalidateCache()
-            throw TunnelError.parse("API returned 401 (auth rejected); cleared JWT cache, please retry")
-        }
-        if http.statusCode != 200 {
-            let msg = String(data: data, encoding: .utf8) ?? "<binary>"
-            throw TunnelError.parse("API returned HTTP \(http.statusCode): \(msg.prefix(200))")
-        }
-
-        guard let configText = String(data: data, encoding: .utf8) else {
-            throw TunnelError.parse("API response not valid UTF-8")
-        }
-
-        return configText
+        return try await accountClient.provisionDevice(
+            accountNumber: number,
+            wgPubkeyB64: wgKeys.publicB64,
+            rosenpassPubkeyB64: rpKeys.publicB64,
+            region: region.id
+        )
     }
 
     func connect() async throws {

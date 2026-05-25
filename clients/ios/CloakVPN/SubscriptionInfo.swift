@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
 //
-// Lattice VPN — Subscription info (placeholder).
+// Lattice VPN — subscription tier + app-icon helper.
 //
-// This is the customer-account stand-in. Real implementation requires
-// Stripe / App Store In-App Purchase integration + a Cloak account
-// backend (TBD). For tonight's UI work we hardcode a placeholder so
-// the Settings sheet has something to render and the existing UI
-// surfaces are wired through to the real shape.
+// The customer's subscription state is owned by the central account API
+// (see LatticeAccountClient.AccountStatus, surfaced as
+// TunnelManager.accountStatus). This file is just the small bit that
+// stays local: the Basic/Pro app-icon switch.
 //
-// When IAP integration ships, replace the UserDefaults-backed loader
-// below with a real StoreKit transaction observer + receipt validation.
+// The last-known tier is mirrored into UserDefaults so the matching app
+// icon can be applied at cold-start launch, before the account API has
+// been queried.
 
 import Foundation
 #if canImport(UIKit)
@@ -28,72 +28,54 @@ enum SubscriptionTier: String, Codable {
     }
 
     /// Name of the alternate icon (registered in Info.plist's
-    /// CFBundleAlternateIcons) that should be active for this tier.
-    /// `nil` means "use the primary icon" — i.e. the AppIcon in the
-    /// asset catalog, which today is the lattice-shield "LATTICE VPN" mark.
+    /// CFBundleAlternateIcons) for this tier. `nil` means "use the
+    /// primary icon" — the LATTICE VPN mark in the asset catalog.
     var alternateIconName: String? {
         switch self {
-        case .basic: return nil                 // primary AppIcon (LATTICE VPN)
-        case .pro:   return "LatticeProIcon"    // LATTICE VPN PRO logo (amber ring)
+        case .basic: return nil               // primary AppIcon (LATTICE VPN)
+        case .pro:   return "LatticeProIcon"  // LATTICE VPN PRO logo (amber ring)
         }
+    }
+
+    /// Map a server tier string ("basic"/"pro", possibly empty/unknown)
+    /// to a tier. An inactive or unrecognized value falls back to Basic.
+    static func from(tierString raw: String) -> SubscriptionTier {
+        SubscriptionTier(rawValue: raw.lowercased()) ?? .basic
     }
 }
 
-struct SubscriptionInfo: Codable, Equatable {
-    let accountID: String          // user-facing account identifier
-    let tier: SubscriptionTier
-    let renewalDate: Date?         // nil for lifetime / no expiration
+enum SubscriptionInfo {
 
-    private static let userDefaultsKey = "subscriptionTier"
+    private static let lastKnownTierKey = "lastKnownSubscriptionTier"
 
-    /// Loaded from UserDefaults so the Pro/Basic toggle in the Settings
-    /// drawer persists across app launches. Until real IAP / receipt
-    /// validation ships, the user can flip the tier manually for
-    /// preview / demo purposes.
-    static var current: SubscriptionInfo {
-        let raw = UserDefaults.standard.string(forKey: userDefaultsKey)
-        let tier = SubscriptionTier(rawValue: raw ?? "") ?? .basic
-        return SubscriptionInfo(
-            accountID: "guest",
-            tier: tier,
-            renewalDate: nil
-        )
-    }
-
-    /// Persist a new tier and apply the matching app icon. Idempotent —
-    /// safe to call repeatedly with the same tier.
-    static func setTier(_ tier: SubscriptionTier) {
-        UserDefaults.standard.set(tier.rawValue, forKey: userDefaultsKey)
+    /// Persist the latest tier (from the account API) and apply the
+    /// matching app icon. Call whenever account status refreshes.
+    static func recordTier(_ tierString: String) {
+        let tier = SubscriptionTier.from(tierString: tierString)
+        UserDefaults.standard.set(tier.rawValue, forKey: lastKnownTierKey)
         applyIconForTier(tier)
     }
 
-    /// Apply the alternate-icon assignment matching the given tier.
-    /// Wraps UIApplication.setAlternateIconName with a few safety nets:
-    ///
-    /// - Skips the call if the requested icon is already active
-    ///   (otherwise iOS shows the "icon changed" alert every time even
-    ///   when nothing actually changed).
-    /// - Skips if `supportsAlternateIcons` is false (e.g. running in a
-    ///   stripped-down environment, or under some MDM policies).
-    /// - Caps the heavy lifting to MainActor — UIApplication APIs all
-    ///   require it.
+    /// The last tier observed from the account API, or `.basic` if none
+    /// has been recorded yet.
+    static var lastKnownTier: SubscriptionTier {
+        let raw = UserDefaults.standard.string(forKey: lastKnownTierKey) ?? ""
+        return SubscriptionTier(rawValue: raw) ?? .basic
+    }
+
+    /// Apply the alternate-icon assignment matching `tier`. Skips the call
+    /// when the requested icon is already active (otherwise iOS shows its
+    /// "icon changed" alert every time) or when alternate icons aren't
+    /// supported on the device.
     static func applyIconForTier(_ tier: SubscriptionTier) {
         #if canImport(UIKit)
         Task { @MainActor in
             let app = UIApplication.shared
-            guard app.supportsAlternateIcons else {
-                print("SubscriptionInfo: alternate icons not supported on this device")
-                return
-            }
+            guard app.supportsAlternateIcons else { return }
             let target = tier.alternateIconName
-            // alternateIconName returns nil when the primary is active;
-            // we use the same nil-or-string convention.
-            if app.alternateIconName == target {
-                return  // already set, skip the alert
-            }
+            if app.alternateIconName == target { return }
             do {
                 try await app.setAlternateIconName(target)
-                print("SubscriptionInfo: switched icon to \(target ?? "primary (Basic)")")
             } catch {
                 print("SubscriptionInfo: setAlternateIconName failed: \(error)")
             }
@@ -101,21 +83,10 @@ struct SubscriptionInfo: Codable, Equatable {
         #endif
     }
 
-    /// Convenience — apply whatever icon matches the currently-persisted
-    /// tier. Call this on app launch to keep the icon in sync with the
-    /// stored tier even if the user changed it on a different device or
-    /// uninstalled+reinstalled (which resets the icon to primary).
+    /// Apply whatever icon matches the last-known tier. Call on launch to
+    /// keep the icon in sync even across reinstalls (which reset it to
+    /// primary).
     static func applyIconForCurrentTier() {
-        applyIconForTier(current.tier)
-    }
-
-    var displayLine: String {
-        if let r = renewalDate {
-            let f = DateFormatter()
-            f.dateStyle = .medium
-            f.timeStyle = .none
-            return "\(tier.displayName) plan · renews \(f.string(from: r))"
-        }
-        return "\(tier.displayName) plan"
+        applyIconForTier(lastKnownTier)
     }
 }

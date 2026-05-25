@@ -58,15 +58,21 @@ enum AppGroupKeyStore {
         case clientRPSecretKey = "rp_client_seckey.b64"  // legacy
         case clientRPPublicKey = "rp_client_pubkey.b64"  // legacy
 
-        // -- Per-customer auth: cached JWT + install UUID --
-        // installUUID is generated once per app install, persisted, and
-        // used as the bootstrap subject when exchanging for a JWT. The
-        // JWT itself is short-lived (24h) and replaceable on demand.
-        // Both files have the same protection class as the keypairs
-        // (.completeUntilFirstUserAuthentication) so the NE can read
-        // them after first-unlock without needing the user to be active.
+        // -- Per-customer auth: cached JWT + install UUID (LEGACY) --
+        // The pre-account-number auth model. installUUID bootstrapped a
+        // short-lived JWT against the per-region cloak-api-server. Both
+        // are dead under the account-number model and cleaned up on
+        // launch by deleteLegacyAuthFiles(); the cases remain so that
+        // cleanup can name the files.
         case authJWT      = "auth_jwt.json"        // {jwt, exp_unix}
         case installUUID  = "auth_install.uuid"    // hex UUID, plain text
+
+        // -- Account number: the single credential in the no-account
+        // billing model. Stored in canonical hyphenated form. There is
+        // no email/password/user record — this number alone authorizes
+        // every call to the central account API. See
+        // docs/BILLING_INTEGRATION.md.
+        case accountNumber = "account_number.txt"
     }
 
     enum StoreError: LocalizedError {
@@ -230,6 +236,40 @@ enum AppGroupKeyStore {
         guard let dir = containerURL else { return }
         try? FileManager.default.removeItem(
             at: dir.appendingPathComponent(Filename.authJWT.rawValue)
+        )
+    }
+
+    /// Remove the legacy JWT + install-UUID files. Safe to call on every
+    /// launch — no-op when they don't exist. The account-number model
+    /// makes both obsolete; this keeps stale credentials off disk.
+    static func deleteLegacyAuthFiles() {
+        guard let dir = containerURL else { return }
+        let fm = FileManager.default
+        for f in [Filename.authJWT, .installUUID] {
+            try? fm.removeItem(at: dir.appendingPathComponent(f.rawValue))
+        }
+    }
+
+    // MARK: - Public API — Account number (the no-account credential)
+
+    /// Persist the customer's account number (canonical hyphenated form).
+    static func saveAccountNumber(_ number: String) throws {
+        try writeAtomic(number, to: .accountNumber)
+    }
+
+    /// Load the stored account number, or nil if the customer has not
+    /// signed in yet.
+    static func loadAccountNumber() -> String? {
+        guard let s = try? read(.accountNumber) else { return nil }
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Forget the account number — used on sign-out.
+    static func clearAccountNumber() {
+        guard let dir = containerURL else { return }
+        try? FileManager.default.removeItem(
+            at: dir.appendingPathComponent(Filename.accountNumber.rawValue)
         )
     }
 

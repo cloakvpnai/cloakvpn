@@ -82,26 +82,11 @@ struct ContentView: View {
     @State private var showingResetConfirm = false
     @State private var resetInProgress = false
 
-    // "Add Region" provisioning sheet (task #3 — Phase 1->2 in-app
-    // provisioning). User enters a region URL + API key; the app POSTs
-    // its locally-generated public keys to cloak-api-server and
-    // auto-imports the returned config. No more manual scp+base64
-    // dance per region.
-    @State private var showingAddRegion = false
-    @State private var addRegionURL: String = ""
-    @State private var addRegionAPIKey: String = ""
-    @State private var addRegionPeerName: String = ""
-    @State private var addRegionInProgress = false
-
     // "More…" sheet for developer / admin features (manual config import,
     // PQC FFI smoke test, custom region URL+token). The customer-facing
     // path is the flag strip in the main view; everything else lives
     // here so the main view stays clean.
     @State private var showingMoreSheet = false
-
-    /// Presents the subscription paywall (StoreKit 2). Driven from the
-    /// account header in the Settings drawer.
-    @State private var showingPaywall = false
 
     var body: some View {
         NavigationStack {
@@ -170,9 +155,6 @@ struct ContentView: View {
             .sheet(isPresented: $showingImport) {
                 importSheet
             }
-            .sheet(isPresented: $showingAddRegion) {
-                addRegionSheet
-            }
             .sheet(isPresented: $showingMoreSheet) {
                 moreSheet
             }
@@ -186,6 +168,17 @@ struct ContentView: View {
                 allowsMultipleSelection: false
             ) { result in
                 handleFileImport(result)
+            }
+            // Sign-in gate. Whenever no account number is stored the
+            // account-entry screen covers the whole app — the customer
+            // cannot reach the VPN UI until they enter a valid number.
+            // The cover dismisses itself when `isSignedIn` flips true.
+            .fullScreenCover(isPresented: Binding(
+                get: { !tunnel.isSignedIn },
+                set: { _ in }
+            )) {
+                AccountEntryView()
+                    .environmentObject(tunnel)
             }
         }
         // Global tint override — replaces SwiftUI's default blue with
@@ -598,8 +591,7 @@ struct ContentView: View {
     /// less-prominent "Advanced" section so the customer-facing layout
     /// still feels clean.
     private var moreSheet: some View {
-        let sub = SubscriptionInfo.current
-        return NavigationStack {
+        NavigationStack {
             List {
                 // ---- Account header ----
                 Section {
@@ -609,16 +601,11 @@ struct ContentView: View {
                             .frame(width: 44, height: 44)
                             .foregroundStyle(CloakDesign.brandGrey)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(sub.accountID)
+                            Text("Lattice subscription")
                                 .font(.headline)
-                            Text(sub.displayLine)
+                            Text(accountPlanLine)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
-                            Button("View plans") {
-                                showingPaywall = true
-                            }
-                            .font(.caption)
-                            .padding(.top, 2)
                         }
                         Spacer()
                     }
@@ -636,7 +623,7 @@ struct ContentView: View {
                         Label("Region selection", systemImage: "mappin.and.ellipse")
                     }
                     NavigationLink {
-                        accountDetailView(sub: sub)
+                        accountDetailView
                     } label: {
                         Label("Account", systemImage: "person.crop.circle")
                     }
@@ -664,13 +651,6 @@ struct ContentView: View {
 
                 // ---- Advanced (developer / power-user) ----
                 Section("Advanced") {
-                    Button {
-                        showingMoreSheet = false
-                        showingAddRegion = true
-                    } label: {
-                        Label("Add region (custom URL & key)",
-                              systemImage: "globe.badge.chevron.backward")
-                    }
                     Button {
                         showingMoreSheet = false
                         showingImport = true
@@ -717,59 +697,60 @@ struct ContentView: View {
         // chevrons, and toolbar buttons inside the sheet stay grey
         // instead of falling back to system blue.
         .tint(CloakDesign.brandGrey)
-        // StoreKit 2 paywall — presented over the Settings drawer when
-        // the user taps "View plans" in the account header.
-        .sheet(isPresented: $showingPaywall) {
-            PaywallView()
-        }
     }
 
-    /// "Account" detail view — placeholder for now. Will hold subscription
-    /// details, payment method, sign-in info once IAP / account
-    /// infrastructure exists.
-    private func accountDetailView(sub: SubscriptionInfo) -> some View {
+    /// One-line subscription summary for the Settings drawer header.
+    private var accountPlanLine: String {
+        guard let s = tunnel.accountStatus else { return "Checking subscription…" }
+        guard s.isActive else { return "No active subscription" }
+        let tier = SubscriptionTier.from(tierString: s.tier).displayName
+        return "\(tier) plan · \(s.deviceCount)/\(s.deviceLimit) devices"
+    }
+
+    /// "Account" detail view — subscription state from the central
+    /// account API, plus sign-out. Billing itself is handled on the
+    /// website; the app is payment-silent (BILLING_INTEGRATION.md §9).
+    private var accountDetailView: some View {
         Form {
             Section("Subscription") {
-                LabeledContent("Account ID", value: sub.accountID)
-                LabeledContent("Plan", value: sub.tier.displayName)
-                if let r = sub.renewalDate {
-                    LabeledContent("Renews",
-                                   value: r.formatted(date: .long, time: .omitted))
+                if let s = tunnel.accountStatus {
+                    LabeledContent("Plan",
+                                   value: SubscriptionTier.from(tierString: s.tier).displayName)
+                    LabeledContent("Devices",
+                                   value: "\(s.deviceCount) of \(s.deviceLimit)")
+                    if !s.activeUntil.isEmpty {
+                        LabeledContent("Active until",
+                                       value: String(s.activeUntil.prefix(10)))
+                    }
+                } else {
+                    Text("Checking subscription…")
+                        .foregroundStyle(.secondary)
                 }
             }
 
-            // Tier toggle — until real IAP / receipt validation ships,
-            // the user can flip Basic ↔ Pro themselves to preview both
-            // app icons. Each tap re-applies the matching alternate
-            // icon (Basic = primary LATTICE VPN logo, Pro = LATTICE VPN PRO
-            // logo). iOS shows its mandatory "icon changed" system
-            // alert once per real change.
             Section {
-                Picker("Tier", selection: Binding(
-                    get: { SubscriptionInfo.current.tier },
-                    set: { SubscriptionInfo.setTier($0) }
-                )) {
-                    ForEach([SubscriptionTier.basic, .pro], id: \.self) { t in
-                        Text(t.displayName).tag(t)
-                    }
-                }
-                .pickerStyle(.segmented)
-            } header: {
-                Text("Plan preview")
+                Link("Manage your subscription at latticevpn.ai",
+                     destination: URL(string: "https://latticevpn.ai/recover")!)
             } footer: {
-                Text("Switching tier updates the home-screen app icon (Basic = LATTICE VPN, Pro = LATTICE VPN PRO). iOS shows a one-time system alert when the icon actually changes.")
+                Text("Billing is handled on the website. Your account number is the only credential — keep it somewhere safe.")
                     .font(.caption)
             }
 
             Section {
-                Button("Log out", role: .destructive) {
-                    // Placeholder — clears local credentials when
-                    // account auth ships.
+                Button("Sign out", role: .destructive) {
+                    Task {
+                        await tunnel.signOut()
+                        showingMoreSheet = false
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
+            } footer: {
+                Text("Removes your account number from this device. You can sign back in with it anytime.")
+                    .font(.caption)
             }
         }
         .navigationTitle("Account")
+        .task { await tunnel.refreshAccountStatus() }
     }
 
     /// "Settings" detail view — tunnel preferences. For now mostly a
@@ -985,93 +966,6 @@ struct ContentView: View {
                     pqcRunning = false
                 }
             }
-        }
-    }
-
-    /// "Add Region" sheet — the new privacy-correct provisioning flow.
-    /// User enters the region's API URL + API key; the app POSTs its
-    /// locally-generated WG and rosenpass public keys (private keys
-    /// never leave the device) and gets back a config block to
-    /// auto-import.
-    private var addRegionSheet: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("Server URL", text: $addRegionURL,
-                              prompt: Text("http://5.78.203.171:8443"))
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-                        .autocorrectionDisabled()
-                    TextField("API Key", text: $addRegionAPIKey,
-                              prompt: Text("from /etc/cloak/api-token"))
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    TextField("Peer name (optional)", text: $addRegionPeerName,
-                              prompt: Text("auto-generated if blank"))
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                } header: {
-                    Text("Region details")
-                } footer: {
-                    Text("The server URL is where the Lattice provisioning API runs. The API key is a shared secret from /etc/cloak/api-token on the server. Both keys generated by your phone are stored locally — only the public halves are sent to the server.")
-                        .font(.caption)
-                }
-
-                Section {
-                    Button {
-                        Task { await performAddRegion() }
-                    } label: {
-                        if addRegionInProgress {
-                            HStack(spacing: 8) {
-                                ProgressView().scaleEffect(0.8)
-                                Text("Provisioning…")
-                            }
-                        } else {
-                            Text("Add Region")
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .fontWeight(.semibold)
-                        }
-                    }
-                    .disabled(addRegionInProgress
-                              || addRegionURL.isEmpty
-                              || addRegionAPIKey.isEmpty)
-                }
-            }
-            .navigationTitle("Add a Lattice region")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        showingAddRegion = false
-                    }
-                    .disabled(addRegionInProgress)
-                }
-            }
-        }
-        // Same as moreSheet — re-apply tint inside the new UIScene
-        // context so toolbar + form buttons stay grey.
-        .tint(CloakDesign.brandGrey)
-    }
-
-    private func performAddRegion() async {
-        addRegionInProgress = true
-        defer { addRegionInProgress = false }
-        do {
-            // The custom-URL flow uses the bundled bootstrap key just
-            // like the standard region taps. The "API Key" field in
-            // the form is no longer used — kept around in the UI for
-            // a release or two so anyone with muscle memory doesn't
-            // get confused, then removed.
-            try await tunnel.provisionFromAPI(
-                serverBase: addRegionURL.trimmingCharacters(in: .whitespacesAndNewlines),
-                peerName: addRegionPeerName.isEmpty
-                    ? nil
-                    : addRegionPeerName.trimmingCharacters(in: .whitespacesAndNewlines)
-            )
-            // Success — close the sheet, leave the URL+key fields populated
-            // so a re-attempt is easy if needed.
-            showingAddRegion = false
-        } catch {
-            errorMsg = "Provisioning failed: \(error.localizedDescription)"
         }
     }
 
