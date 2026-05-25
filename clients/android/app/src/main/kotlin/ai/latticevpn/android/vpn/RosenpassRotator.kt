@@ -22,6 +22,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.coroutines.coroutineContext
 import kotlin.math.min
+import kotlin.random.Random
 
 /** Failures internal to the Rosenpass rotation loop. */
 class RosenpassException(message: String) : Exception(message)
@@ -200,7 +201,7 @@ class RosenpassRotator(
                     Log.e(TAG, "PSK apply failed: ${e.message}")
                 }
 
-                delay(rotationSeconds * 1000L)
+                delay(nextRotationDelayMs())
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -215,6 +216,20 @@ class RosenpassRotator(
                 delay(backoff * 1000L)
             }
         }
+    }
+
+    /**
+     * Delay before the next rotation, jittered uniformly by ±[ROTATION_JITTER]
+     * around the configured interval. A FIXED interval phase-locks with
+     * WireGuard's own ~120 s rekey and the tunnel desyncs after a few
+     * cycles; randomising every interval keeps the two from ever staying
+     * aligned. The mean is unchanged, so the ~2-minute cadence holds.
+     */
+    private fun nextRotationDelayMs(): Long {
+        val base = rotationSeconds * 1000L
+        val spread = base * ROTATION_JITTER
+        val jittered = base + ((Random.nextDouble() * 2.0 - 1.0) * spread).toLong()
+        return jittered.coerceAtLeast(MIN_ROTATION_SEC * 1000L)
     }
 
     /**
@@ -339,6 +354,16 @@ class RosenpassRotator(
 
         /** Lower bound on the rotation interval. */
         private const val MIN_ROTATION_SEC = 30
+
+        /**
+         * Fractional jitter applied to every rotation interval (±25%).
+         * A fixed interval phase-locks with WireGuard's own ~120 s rekey
+         * (REKEY_AFTER_TIME): once the periods align they stay aligned and
+         * every PSK swap lands on a rekey handshake — the "~3 good cycles
+         * then the tunnel desyncs" failure. Jitter keeps the rotation's
+         * phase relative to the rekey continuously moving.
+         */
+        private const val ROTATION_JITTER = 0.25
 
         /** Max inbound messages tolerated per handshake. */
         private const val MAX_MESSAGES = 6

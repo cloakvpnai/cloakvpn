@@ -109,11 +109,23 @@ class RosenpassTransport(
     private fun underlyingNonVpnNetwork(): Network? {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             ?: return null
-        return cm.allNetworks.firstOrNull { n ->
+        fun query(): Network? = cm.allNetworks.firstOrNull { n ->
             val caps = cm.getNetworkCapabilities(n) ?: return@firstOrNull false
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
                 !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
         }
+        // The underlying network can momentarily not be enumerable — e.g.
+        // while the tunnel is bouncing for a PSK reconfigure. Retry briefly
+        // before giving up: an unbound (in-tunnel) fallback during a desync
+        // re-creates the circular dependency the out-of-tunnel handshake
+        // exists to break.
+        repeat(NETWORK_LOOKUP_ATTEMPTS) { attempt ->
+            query()?.let { return it }
+            if (attempt < NETWORK_LOOKUP_ATTEMPTS - 1) {
+                runCatching { Thread.sleep(NETWORK_LOOKUP_RETRY_MS) }
+            }
+        }
+        return null
     }
 
     /** Resolve [host] on [network] when available, else with the default resolver. */
@@ -174,5 +186,12 @@ class RosenpassTransport(
         // public keys are exchanged out-of-band at provisioning time;
         // handshake messages only carry small KEM ciphertexts).
         private const val MAX_DATAGRAM = 65535
+
+        /** Attempts to locate the underlying non-VPN network before
+         *  falling back to an unbound (in-tunnel) socket. */
+        private const val NETWORK_LOOKUP_ATTEMPTS = 4
+
+        /** Pause between underlying-network lookup attempts. */
+        private const val NETWORK_LOOKUP_RETRY_MS = 250L
     }
 }
