@@ -361,8 +361,12 @@ func (d *DB) DeactivateByStripeCustomer(customerID string) error {
 
 // deviceCols is the column list shared by every device lookup, in the order
 // scanDevice expects.
-const deviceCols = `id, account_id, region, wg_pubkey, wg_ip, created_at, ` +
-	`COALESCE(last_seen, created_at)`
+// last_seen is selected as a plain column, never COALESCE'd: the modernc
+// SQLite driver only converts a result column to time.Time when the column
+// carries a declared TIMESTAMP type, and a COALESCE() expression loses it
+// (the same reason scanAccount reads active_until as a string). The Migration 2
+// backfill leaves no NULL last_seen; scanDevice still falls back defensively.
+const deviceCols = `id, account_id, region, wg_pubkey, wg_ip, created_at, last_seen`
 
 // rowScanner is satisfied by both *sql.Row and *sql.Rows.
 type rowScanner interface {
@@ -371,8 +375,16 @@ type rowScanner interface {
 
 func scanDevice(s rowScanner) (Device, error) {
 	var dv Device
+	var lastSeen sql.NullTime
 	err := s.Scan(&dv.ID, &dv.AccountID, &dv.Region, &dv.WGPubkey, &dv.WGIP,
-		&dv.CreatedAt, &dv.LastSeen)
+		&dv.CreatedAt, &lastSeen)
+	// last_seen is backfilled by Migration 2 and set on every insert, so it
+	// is never NULL in practice — fall back to created_at defensively.
+	if lastSeen.Valid {
+		dv.LastSeen = lastSeen.Time
+	} else {
+		dv.LastSeen = dv.CreatedAt
+	}
 	return dv, err
 }
 
