@@ -21,10 +21,12 @@ package main
 
 import (
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/cloakvpn/api/internal/wg"
@@ -70,8 +72,8 @@ func loadConfig() config {
 		secret: mustEnv("REGION_INTERNAL_SECRET"),
 		wg: wg.Config{
 			Iface:      envOr("WG_IFACE", "wg0"),
-			ServerPub:  mustEnv("WG_SERVER_PUB"),
-			Endpoint:   mustEnv("WG_ENDPOINT"), // e.g. madrid.cloakvpn.ai:51820
+			ServerPub:  mustWGPubkey("WG_SERVER_PUB"),
+			Endpoint:   mustEndpoint("WG_ENDPOINT"), // e.g. madrid.cloakvpn.ai:51820
 			// Public resolver, reached through the tunnel. The concentrator
 			// runs NO DNS server, so the old 10.99.0.1 default (its own
 			// in-tunnel address) black-holed every client lookup. Quad9 —
@@ -96,6 +98,59 @@ func mustEnv(k string) string {
 		log.Fatalf("missing required env var %s", k)
 	}
 	return v
+}
+
+// mustWGPubkey reads a required env var and validates it is a base64
+// encoding of exactly 32 bytes — i.e. a real WireGuard public key.
+//
+// Catches the deployment-time mistake where the env file is left with a
+// template placeholder like `<<< this box's server.pub`: regionsvc would
+// otherwise embed the literal placeholder string into every ClientConfig
+// it hands back to phones, producing apparently-successful provisions
+// whose WireGuard tunnels can never come up. The on-box rosenpass service
+// stays healthy, so no service-level alarm fires; only end users see
+// "Connection failed". Fail loud at startup instead — see
+// docs/HOTFIX_regionsvc-pubkey-placeholder-2026-05-26.md.
+func mustWGPubkey(k string) string {
+	v := mustEnv(k)
+	raw, err := base64.StdEncoding.DecodeString(v)
+	if err != nil {
+		log.Fatalf("%s is not valid base64: %v — env file likely has a placeholder, not a real key (value=%q)", k, err, v)
+	}
+	if len(raw) != 32 {
+		log.Fatalf("%s decoded to %d bytes, want 32 (a WireGuard public key) — env file likely has a placeholder, not a real key (value=%q)", k, len(raw), v)
+	}
+	return v
+}
+
+// mustEndpoint reads a required env var and validates it looks like a
+// `host:port` pair. We don't resolve DNS here (the resolver may not be
+// up yet at boot, and an unreachable hostname is a separate kind of
+// failure worth diagnosing on its own); just check the shape.
+func mustEndpoint(k string) string {
+	v := mustEnv(k)
+	host, port, ok := lastColonSplit(v)
+	if !ok || host == "" || port == "" {
+		log.Fatalf("%s is not in host:port form (value=%q)", k, v)
+	}
+	// Reject the obvious template-placeholder shape (matched leading/trailing
+	// punctuation, angle brackets, ellipses).
+	if strings.ContainsAny(v, "<>…") {
+		log.Fatalf("%s looks like a template placeholder, not a real endpoint (value=%q)", k, v)
+	}
+	return v
+}
+
+// lastColonSplit splits on the LAST colon — IPv6 literals contain colons
+// in the host part (e.g. `[fd42::1]:51820` or, with some tooling, the
+// bare-bracket-less `fd42::1:51820`), so a simple `strings.Split(":")[0]`
+// would corrupt them. The port is always after the final colon.
+func lastColonSplit(s string) (host, port string, ok bool) {
+	i := strings.LastIndex(s, ":")
+	if i < 0 {
+		return "", "", false
+	}
+	return s[:i], s[i+1:], true
 }
 
 // ---- handlers ------------------------------------------------------------
