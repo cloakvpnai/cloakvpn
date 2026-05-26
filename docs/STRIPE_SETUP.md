@@ -100,6 +100,74 @@ cancellation and account-number recovery
 (`BILLING_INTEGRATION.md` §6) — without it, customers have no
 self-service path.
 
+The app's "Manage or cancel subscription" item opens
+`https://latticevpn.ai/account`, which in turn links to this portal.
+If you change the portal URL in the Stripe dashboard, update
+`BILLING_PORTAL_URL` in both `website-v2/src/pages/account.astro` and
+`website-v2/src/pages/recover.astro` to match.
+
+### 4a. Scrub your public business profile
+
+The customer-portal login email, receipts, and payment-failure
+notices all show a "Questions? Contact us at …" footer. The address
+that appears there comes from exactly one place — **and it is not the
+"obvious" email field**. Several other email settings look like
+they're the answer; they're not. See the decoy-fields table below.
+
+The address you want to set lives at:
+
+> **Settings → Business → Public details → "Customer support
+> information" card → Support email**
+
+If the menu layout has drifted, the dashboard search bar finds it
+instantly — search for `customer support` or `support email`.
+
+Click **Edit** on the **Customer support information** card and set:
+
+- **Support email** → `support@latticevpn.ai`. This appears in the
+  footer of every customer-facing Stripe email. The website's
+  `/recover` and `/account` pages also reference this address, so
+  keeping them aligned matters. **Verify the mailbox actually
+  receives mail before setting it**, or cancellation and refund
+  requests will bounce silently:
+  ```bash
+  echo "test from $(date)" | mail -s "support inbox test" support@latticevpn.ai
+  ```
+- **Support phone** and **Support address** — optional but worth
+  filling in.
+- **Business name** (DBA, not the legal entity) → `Lattice VPN`.
+
+Outside the Customer-support card, also confirm:
+
+- **Business website** → `https://latticevpn.ai`
+- **Statement descriptor** (lives under Account details if not on
+  this page) → `LATTICEVPN.AI` or `LATTICE VPN` — what appears on
+  customer card statements. Mystery descriptors trigger chargebacks.
+
+#### Decoy email fields — these look right but DON'T drive customer emails
+
+When you go looking for "where do I change my support email" the
+first time, Stripe has several email fields that scream "set me!" but
+have nothing to do with what customers see. Setting them is harmless
+but won't fix anything.
+
+| Where | What it actually controls | Customer-facing? |
+|---|---|---|
+| Settings → Personal details → Email | YOUR dashboard login + admin alerts to you | No |
+| Settings → Stripe profile → Business email | Verified Partner Network listing (other businesses) | No |
+| Business → Management and ownership → Account representative email | Stripe risk / compliance contact | No |
+| **Business → Public details → Customer support information → Support email** | **Customer-facing emails (portal login, receipts, payment failures)** | **YES — this is the one** |
+
+History note: this was the source of the 2026-05-26 "personal email
+leaking into customer-portal cancellation emails" confusion. The
+account representative email and the customer-facing support email
+are different fields on different pages, and the dashboard does not
+hint at this anywhere.
+
+Also worth a glance: **Settings → Emails** (sender name + reply-to per
+template) and **Settings → Invoices → Default footer** sometimes
+carry a stale contact line independently of the public profile.
+
 ---
 
 ## 5. Create the webhook endpoint
