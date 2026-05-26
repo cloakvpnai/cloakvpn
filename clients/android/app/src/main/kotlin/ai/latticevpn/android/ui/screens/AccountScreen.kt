@@ -212,8 +212,8 @@ fun AccountScreen(vm: LatticeViewModel) {
             SettingsCard {
                 SettingsItem(
                     title = "Manage or cancel subscription",
-                    subtitle = "Opens latticevpn.ai in your browser.",
-                    onClick = { openUrl(context, "https://latticevpn.ai") },
+                    subtitle = "Opens Stripe's secure billing portal in your browser. Sign in with the email you paid with.",
+                    onClick = { openUrl(context, "https://latticevpn.ai/account") },
                 )
             }
 

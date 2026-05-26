@@ -1,0 +1,102 @@
+---
+/**
+ * Account page — manage or cancel your Lattice VPN subscription.
+ *
+ * Linked from inside the Android (and eventually iOS) app as the
+ * "Manage or cancel subscription" destination. The actual subscription
+ * lifecycle lives in Stripe — this page primarily exists to hand the
+ * customer off to the Stripe-hosted billing portal, with enough
+ * surrounding context that the handoff isn't jarring.
+ *
+ * Why a separate page from /recover: a customer who taps "Cancel"
+ * inside the app and lands on a page titled "Lost your account
+ * number?" thinks they're in the wrong place. Same underlying portal,
+ * different framing for a different intent.
+ */
+import Layout from '@/layouts/Layout.astro';
+
+// Stripe-hosted customer billing portal login URL — from the Stripe
+// Dashboard, Settings → Billing → Customer portal → "Portal link".
+// Must match the URL used on /recover; both pages should point at the
+// same portal so a single Stripe dashboard config governs both flows.
+const BILLING_PORTAL_URL = 'https://billing.stripe.com/p/login/9B600j83jfwo3Xv2SwfrW00';
+---
+<Layout
+  title="Manage your subscription"
+  description="Manage, pause, or cancel your Lattice VPN subscription through Stripe's secure billing portal."
+>
+  <div class="pt-32 pb-20 mx-auto max-w-2xl px-6">
+    <div class="text-center mb-10">
+      <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 border border-slate-200 px-3 py-1 text-xs font-semibold tracking-wide text-slate-600 mb-6">
+        MANAGE SUBSCRIPTION
+      </span>
+      <h1 class="font-display font-extrabold text-4xl md:text-5xl tracking-tight text-slate-900 mb-4">
+        Manage your subscription
+      </h1>
+      <p class="text-slate-600">
+        Update your card, change plan, or cancel — all from Stripe's
+        secure billing portal. Sign in with the email you paid with;
+        Stripe sends a one-time login link so only you can get in.
+      </p>
+    </div>
+
+    <!-- Primary action: portal -->
+    <div class="soft-card rounded-2xl p-7 mb-5 text-center">
+      <a
+        href={BILLING_PORTAL_URL}
+        class="inline-flex items-center justify-center gap-2 rounded-full bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm px-6 py-3 transition-colors"
+      >
+        Open billing portal
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 17L17 7M7 7h10v10"/></svg>
+      </a>
+      <p class="text-xs text-slate-500 mt-4">
+        Opens billing.stripe.com — a secure page hosted by Stripe.
+      </p>
+    </div>
+
+    <!-- What you can do in the portal -->
+    <div class="soft-card rounded-2xl p-7 mb-5">
+      <h2 class="font-display font-semibold text-lg text-slate-900 mb-3">
+        What you can do in the portal
+      </h2>
+      <ul class="text-sm text-slate-600 space-y-2">
+        <li class="flex gap-3">
+          <span class="text-mint-700 mt-0.5">›</span>
+          <span><strong class="text-slate-800 font-semibold">Cancel your subscription.</strong> Stops renewals; service continues until the end of your current paid period.</span>
+        </li>
+        <li class="flex gap-3">
+          <span class="text-mint-700 mt-0.5">›</span>
+          <span><strong class="text-slate-800 font-semibold">Update your payment method.</strong> Change card, billing address, or contact email.</span>
+        </li>
+        <li class="flex gap-3">
+          <span class="text-mint-700 mt-0.5">›</span>
+          <span><strong class="text-slate-800 font-semibold">See renewal date and invoices.</strong> Confirm when you'll be charged next and download past receipts.</span>
+        </li>
+        <li class="flex gap-3">
+          <span class="text-mint-700 mt-0.5">›</span>
+          <span><strong class="text-slate-800 font-semibold">View your account number.</strong> The Stripe customer record stores it in metadata.</span>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Reassurance -->
+    <div class="rounded-xl border border-mint-500/30 bg-mint-500/5 px-5 py-4 mb-6">
+      <p class="text-sm text-slate-600">
+        <strong class="text-slate-800 font-semibold">No data lost on cancellation.</strong>
+        Lattice keeps no profile of you to delete — there's no email,
+        password, or browsing history stored on our side. Stripe keeps
+        your billing record per its retention policy; that's it.
+      </p>
+    </div>
+
+    <!-- Cross-link to recovery -->
+    <p class="text-center text-sm text-slate-500 mb-2">
+      Lost your account number? See <a href="/recover" class="text-mint-700 underline">recovering your account</a>.
+    </p>
+
+    <p class="text-center text-xs text-slate-500 font-mono">
+      Need help? Email
+      <a href="mailto:support@latticevpn.ai" class="text-mint-700 underline">support@latticevpn.ai</a>.
+    </p>
+  </div>
+</Layout>
