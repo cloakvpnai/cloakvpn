@@ -2,26 +2,26 @@
 /**
  * Platforms grid section.
  *
- * Active near-term roadmap only: iPhone/iPad is live today, macOS and
- * Android are in active development. We deliberately exclude Windows,
- * Linux, and the browser extensions (Chrome/Firefox/Opera) from this
- * page until they're far enough along that we can give a real date —
- * promising "coming soon" for things that won't ship for many months
+ * Active near-term roadmap only: Android is live today on Google Play,
+ * iPhone/iPad and macOS are in active development. We deliberately
+ * exclude Windows, Linux, and the browser extensions (Chrome/Firefox/Opera)
+ * from this page until they're far enough along that we can give a real
+ * date. Promising "coming soon" for things that won't ship for many months
  * erodes trust more than just not listing them.
  *
  * Excluded from scope per product owner: consoles, routers, smart TVs.
  */
 const platforms = [
   {
-    name: 'iPhone / iPad',
-    slug: 'ios',
+    name: 'Android',
+    slug: 'android',
     status: 'available',
-    cta: 'Download',
-    href: 'https://apps.apple.com/app/lattice-vpn/id6764261045',
-    icon: 'apple',
+    cta: 'Get on Google Play',
+    href: 'https://play.google.com/store/apps/details?id=ai.latticevpn.android',
+    icon: 'android',
   },
+  { name: 'iPhone / iPad', slug: 'ios', status: 'coming-soon', icon: 'apple' },
   { name: 'macOS', slug: 'macos', status: 'coming-soon', icon: 'apple' },
-  { name: 'Android', slug: 'android', status: 'coming-soon', icon: 'android' },
 ];
 
 // Inline SVG paths for each icon (24x24 viewBox, single-color stroke or fill)
@@ -42,7 +42,7 @@ const iconSvg: Record<string, string> = {
         Protect every device.
       </h2>
       <p class="mt-3 text-slate-600 max-w-xl mx-auto reveal" style="transition-delay: 160ms;">
-        iPhone is live today. macOS and Android are next on the roadmap.
+        Android is live today on Google Play. iPhone and macOS are next on the roadmap.
       </p>
     </div>
 

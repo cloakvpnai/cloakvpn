@@ -3,7 +3,7 @@
  * Top navigation bar — light theme.
  *
  * White background, subtle bottom border on scroll, brand mark + page
- * links + App Store CTA on the right. Mobile: links collapse into a
+ * links + Play Store CTA on the right. Mobile: links collapse into a
  * hamburger sheet.
  */
 import Logo from '@/components/Logo.astro';
@@ -39,7 +39,7 @@ const currentPath = Astro.url.pathname;
     </nav>
 
     <a
-      href="https://apps.apple.com/app/lattice-vpn/id6764261045"
+      href="https://play.google.com/store/apps/details?id=ai.latticevpn.android"
       class="hidden md:inline-flex items-center gap-2 rounded-full bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm px-4 py-2 transition-colors"
       target="_blank"
       rel="noopener"
@@ -71,7 +71,7 @@ const currentPath = Astro.url.pathname;
         <a href={l.href} class="text-base font-medium text-slate-700">{l.label}</a>
       ))}
       <a
-        href="https://apps.apple.com/app/lattice-vpn/id6764261045"
+        href="https://play.google.com/store/apps/details?id=ai.latticevpn.android"
         class="mt-1 inline-flex items-center justify-center rounded-full bg-slate-900 text-white font-semibold text-sm px-4 py-2.5"
         target="_blank" rel="noopener"
       >
