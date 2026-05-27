@@ -1,26 +1,261 @@
 ---
 /**
- * Privacy page — placeholder.
- * Phase 3 will port the full content from website/privacy.html into a
- * design-system-matching Astro template with the same legal text but
- * presented with the new Lattice visual identity. For now this stub
- * keeps the navigation working and provides a clear link to the live
- * legal content.
+ * Privacy policy — live, customer-facing.
+ *
+ * Source of truth for the policy text. The markdown draft at
+ * clients/android/privacy-policy.md predates this page and is now a
+ * historical reference; if you update the policy, update THIS file.
+ *
+ * Linked from:
+ *   - Google Play store listing ("Privacy policy URL")
+ *   - the Lattice VPN Android app (Settings → About)
+ *   - the website Footer component
+ *   - Stripe customer-facing emails (footer)
+ *
+ * Any time you change material policy text (what data we collect, how
+ * long we retain it, who we share it with, governing law) you MUST
+ * bump the EFFECTIVE_DATE constant — that's the customer's signal
+ * that the policy changed under them.
  */
 import Layout from '@/layouts/Layout.astro';
+
+const EFFECTIVE_DATE   = '2026-05-26';
+const LEGAL_ENTITY     = 'KRYPTOKNIGHTZ LLC';
+const REGISTERED_ADDR  = '87-154a Maipalaoa Road, Waianae, HI 96792, USA';
+const GOVERNING_LAW    = 'the State of Hawaii, United States of America';
+const LEGAL_EMAIL      = 'legal@latticevpn.ai';
+const SUPPORT_EMAIL    = 'support@latticevpn.ai';
 ---
-<Layout title="Privacy" description="Lattice VPN privacy information.">
-  <div class="pt-32 pb-16 mx-auto max-w-2xl px-6 text-center">
-    <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 border border-slate-200 px-3 py-1 text-xs font-semibold tracking-wide text-slate-600 mb-6">
-      PHASE 3
-    </span>
-    <h1 class="font-display font-extrabold text-4xl tracking-tight text-slate-900 mb-4">Privacy</h1>
-    <p class="text-slate-600 mb-8">
-      This page is being rebuilt with the new design system. Full content lives at the legacy URL while we finish the redesign.
-    </p>
-    <a href="https://cloakvpn.ai/privacy" class="inline-flex items-center gap-2 rounded-full bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm px-6 py-3 transition-colors">
-      Read current privacy page
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 17L17 7M7 7h10v10"/></svg>
-    </a>
-  </div>
+<Layout
+  title="Privacy policy"
+  description="Lattice VPN's privacy policy. No logs, no accounts, no tracking. Here's exactly what we do and don't collect."
+>
+  <article class="pt-32 pb-20 mx-auto max-w-3xl px-6">
+    <header class="text-center mb-12">
+      <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 border border-slate-200 px-3 py-1 text-xs font-semibold tracking-wide text-slate-600 mb-6">
+        PRIVACY POLICY
+      </span>
+      <h1 class="font-display font-extrabold text-4xl md:text-5xl tracking-tight text-slate-900 mb-3">
+        Privacy policy
+      </h1>
+      <p class="text-sm text-slate-500 font-mono">
+        Effective {EFFECTIVE_DATE} · Applies to the Lattice VPN Android application
+        (<code>ai.latticevpn.android</code>) and the Lattice VPN service.
+      </p>
+      <p class="text-sm text-slate-500 font-mono mt-1">
+        Provider: {LEGAL_ENTITY} ("Lattice", "we", "us") · Contact: <a href={`mailto:${LEGAL_EMAIL}`} class="text-mint-700 underline">{LEGAL_EMAIL}</a>
+      </p>
+    </header>
+
+    <!-- Summary -->
+    <section class="soft-card rounded-2xl p-7 mb-6">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">Summary</h2>
+      <p class="text-slate-700 leading-relaxed">
+        Lattice VPN is a no-logs VPN. We do not record what you do online.
+        We collect the minimum needed to connect your device to a VPN
+        server and nothing that would let us — or anyone else —
+        reconstruct your browsing. We do not sell or rent data to anyone,
+        and the app contains no advertising or analytics trackers.
+      </p>
+    </section>
+
+    <!-- What we don't collect -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">What we do NOT collect</h2>
+      <p class="text-slate-700 leading-relaxed mb-3">
+        We do not log, store, or monitor:
+      </p>
+      <ul class="text-slate-700 leading-relaxed space-y-2 list-disc pl-6">
+        <li>the websites, apps, or services you connect to;</li>
+        <li>your DNS queries;</li>
+        <li>your traffic content, or traffic metadata such as timestamps and bandwidth tied to your identity;</li>
+        <li>a history of when you connected or disconnected;</li>
+        <li>your originating IP address in association with your activity.</li>
+      </ul>
+      <p class="text-slate-700 leading-relaxed mt-3">
+        Our VPN servers run in volatile memory (RAM). They are not configured to write traffic or connection logs to disk.
+      </p>
+    </section>
+
+    <!-- What we process -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">What we process to provide the service</h2>
+      <p class="text-slate-700 leading-relaxed mb-3">
+        To create and route your encrypted tunnel, the app and servers
+        handle the following — kept to the minimum and not linked to your
+        real-world identity:
+      </p>
+      <ul class="text-slate-700 leading-relaxed space-y-3 list-disc pl-6">
+        <li>
+          <strong class="font-semibold">Provisioning data.</strong> When you
+          select a location, the app contacts our provisioning API and
+          registers your device as a VPN peer. This request includes the
+          public keys your device generates locally (its WireGuard public
+          key and its Rosenpass post-quantum public key) and the account
+          number you entered when you subscribed. It does <strong>not</strong>
+          include your name, email address, or phone number. The
+          corresponding private keys are generated on your device and
+          never leave it.
+        </li>
+        <li>
+          <strong class="font-semibold">Account number.</strong> When you
+          subscribe on latticevpn.ai, we generate a random account number
+          that you enter into the app. This is the only credential the
+          VPN service knows about you. It is not derived from any
+          personal information.
+        </li>
+        <li>
+          <strong class="font-semibold">Routing state.</strong> While you
+          are connected, the server holds your assigned internal VPN IP
+          address and your public key in memory so it can route packets.
+          This is operational state, not a log, and is not retained as a
+          record of your activity.
+        </li>
+        <li>
+          <strong class="font-semibold">Network-level IP address.</strong> As
+          with any internet connection, our server necessarily receives
+          the IP address your device connects from in order to establish
+          the tunnel. We do not store it as part of an activity log.
+        </li>
+        <li>
+          <strong class="font-semibold">Local app data.</strong> Your
+          selected region and your VPN configuration are stored on your
+          device so the app works between launches. This data stays on
+          your device.
+        </li>
+      </ul>
+    </section>
+
+    <!-- Third parties -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">Third-party services</h2>
+      <ul class="text-slate-700 leading-relaxed space-y-3 list-disc pl-6">
+        <li>
+          <strong class="font-semibold">IP address display.</strong> To
+          show you your current IP address inside the app, the app makes
+          a request to a third-party IP-lookup service
+          (<code>ipify.org</code>). That service receives the IP address
+          of the request. No other personal information is sent to it.
+        </li>
+        <li>
+          <strong class="font-semibold">No analytics or advertising.</strong>
+          The app integrates no analytics, advertising, attribution, or
+          third-party crash-reporting SDKs.
+        </li>
+        <li>
+          <strong class="font-semibold">Payments.</strong> Subscriptions
+          are purchased on our website (<code>latticevpn.ai</code>),
+          where payments are processed by Stripe, Inc. Stripe handles
+          your payment details under its own privacy policy; we do not
+          receive or store full payment card numbers. No payment is
+          taken inside the Android app.
+        </li>
+      </ul>
+    </section>
+
+    <!-- Data sharing -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">Data sharing and legal requests</h2>
+      <p class="text-slate-700 leading-relaxed">
+        We do not sell, rent, or trade personal data. Because we do not
+        keep activity logs, we have nothing to disclose that would
+        reveal what a user did online. If we receive a legally binding
+        request, we can only provide the limited information we
+        actually hold, which does not include browsing or connection
+        history.
+      </p>
+    </section>
+
+    <!-- Retention -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">Data retention</h2>
+      <p class="text-slate-700 leading-relaxed mb-3">
+        Operational state (such as routing state) exists only for the
+        life of your connection and is held in server memory; it is
+        cleared when you disconnect.
+      </p>
+      <p class="text-slate-700 leading-relaxed mb-3">
+        <strong class="font-semibold">Device records.</strong>
+        Provisioning records — the per-device public keys and assigned
+        tunnel IP that let our servers route your traffic — are kept
+        while your subscription is active. When the device-per-account
+        limit is reached, the least-recently-seen device record is
+        automatically evicted to make room for the new one. When a
+        subscription ends, the associated device records are no longer
+        usable for new connections.
+      </p>
+      <p class="text-slate-700 leading-relaxed">
+        <strong class="font-semibold">Billing records.</strong> Records
+        associated with your Stripe subscription (account number,
+        subscription dates, payment confirmations — never your card
+        details, which Stripe holds) are retained for the lifetime of
+        the subscription and for a period required by United States tax
+        and accounting law (typically seven years) thereafter, after
+        which they are deleted.
+      </p>
+    </section>
+
+    <!-- Security -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">Security</h2>
+      <p class="text-slate-700 leading-relaxed">
+        Traffic between your device and our servers is encrypted with
+        WireGuard and additionally protected by Rosenpass post-quantum
+        key exchange, which refreshes the tunnel's pre-shared key every
+        few minutes. No method of transmission or storage is perfectly
+        secure, but we design the service to minimize the data that
+        exists to be exposed in the first place.
+      </p>
+    </section>
+
+    <!-- Children -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">Children</h2>
+      <p class="text-slate-700 leading-relaxed">
+        Lattice VPN is not directed at children and is intended for
+        users aged 18 and over. We do not knowingly collect personal
+        information from children.
+      </p>
+    </section>
+
+    <!-- Rights -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">Your rights</h2>
+      <p class="text-slate-700 leading-relaxed">
+        Depending on where you live, you may have rights to access,
+        correct, or delete personal data we hold about you, or to
+        object to certain processing. Because we intentionally hold very
+        little data, some requests may have little to act on. To make a
+        request, contact us at
+        <a href={`mailto:${LEGAL_EMAIL}`} class="text-mint-700 underline">{LEGAL_EMAIL}</a>.
+      </p>
+    </section>
+
+    <!-- Changes -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">Changes to this policy</h2>
+      <p class="text-slate-700 leading-relaxed">
+        We may update this policy from time to time. Material changes
+        will be posted at this URL with an updated effective date.
+      </p>
+    </section>
+
+    <!-- Contact -->
+    <section class="soft-card rounded-2xl p-7">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">Contact</h2>
+      <p class="text-slate-700 leading-relaxed mb-3">
+        Questions about this policy or your privacy:
+        <a href={`mailto:${LEGAL_EMAIL}`} class="text-mint-700 underline">{LEGAL_EMAIL}</a>
+      </p>
+      <p class="text-slate-700 leading-relaxed mb-3">
+        General support:
+        <a href={`mailto:${SUPPORT_EMAIL}`} class="text-mint-700 underline">{SUPPORT_EMAIL}</a>
+      </p>
+      <p class="text-sm text-slate-500 font-mono">
+        {LEGAL_ENTITY}<br/>
+        {REGISTERED_ADDR}<br/>
+        Governing law: {GOVERNING_LAW}
+      </p>
+    </section>
+  </article>
 </Layout>
