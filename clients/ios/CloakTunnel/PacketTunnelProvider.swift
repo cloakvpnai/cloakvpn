@@ -192,6 +192,31 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private static let wedgePSKAgeSec: Int = 300
     private static let warmupSuppressionSec: TimeInterval = 60
 
+    /// Initial-PQC-convergence grace window. A tunnel that has NEVER had
+    /// a rosenpass PSK applied (lastPSKAppliedAt == nil) is *converging*,
+    /// not *wedged* — its WG peer legitimately has zero rx and no
+    /// handshake until the first PQ exchange lands. Self-killing the NE
+    /// in that state is actively harmful: it tears down the in-flight
+    /// rosenpass UDP exchange (RosenpassDriver.loopTask + socket), so the
+    /// next process starts the exchange from scratch and the cycle
+    /// repeats — the region-switch "stuck on Handshaking" livelock
+    /// (diagnosed 2026-05-29). On a switch the server-side responder is
+    /// briefly unready (peer revoke/re-add on the region box), so the
+    /// first exchange can take longer than warmupSuppressionSec; the
+    /// stall heuristic then fires before convergence and kills the very
+    /// exchange that would have fixed things.
+    ///
+    /// During this window we DEFER stall-based wedge recovery and let
+    /// RosenpassDriver's own exponential backoff keep retrying the
+    /// handshake until the responder is ready (mirrors Android, whose
+    /// recovery is driven by consecutive *handshake* failures, not WG
+    /// byte-counter stalls — see clients/android .../TunnelManager.kt
+    /// triggerRecovery). Past the window, if PQC still hasn't converged,
+    /// normal recovery resumes as a genuine last resort. PSK-age-based
+    /// recovery (an established tunnel going stale) is unaffected — it
+    /// can only fire once a PSK has been applied.
+    private static let initialConvergenceGraceSec: TimeInterval = 180
+
     // MARK: - Layer 2 — wedge auto-recovery state
 
     /// Sliding window of recent self-kill (cancelTunnelWithError) timestamps.
@@ -988,9 +1013,34 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                rxDelta, txDelta, rxTotal, txTotal,
                handshakeAgeStr, pskAgeStr, consecutiveStallTicks)
 
+        // Initial-PQC-convergence gate. If we've never applied a PSK,
+        // the tunnel is converging, not wedged: a stall here just means
+        // the first rosenpass exchange hasn't landed yet. Self-killing
+        // would destroy that in-flight exchange and restart it from
+        // scratch — the region-switch livelock. Defer stall-based
+        // recovery until either the first PSK lands or the convergence
+        // grace window elapses, letting RosenpassDriver's own backoff
+        // keep retrying the handshake. (PSK-age recovery is intrinsically
+        // gated on lastPSKAppliedAt != nil, so it's never deferred here.)
+        let pqcStillConverging: Bool
+        if lastPSKAppliedAt == nil, let upAt = tunnelUpAt {
+            pqcStillConverging = now.timeIntervalSince(upAt) < Self.initialConvergenceGraceSec
+        } else {
+            pqcStillConverging = false
+        }
+
         // Wedge detection — same condition Layer 2 acts on.
-        let wedgeByStall = consecutiveStallTicks >= Self.wedgeStallTickThreshold
+        let wedgeByStall = consecutiveStallTicks >= Self.wedgeStallTickThreshold && !pqcStillConverging
         let wedgeByPSK = pskAgeSec >= Self.wedgePSKAgeSec && lastPSKAppliedAt != nil
+
+        if wedgeByStall == false, pqcStillConverging,
+           consecutiveStallTicks >= Self.wedgeStallTickThreshold, !suppressWarning {
+            os_log("health: PQC still converging (no PSK yet, %.0fs of %.0fs grace) — deferring stall-based wedge recovery to RosenpassDriver backoff",
+                   log: log, type: .info,
+                   tunnelUpAt.map { now.timeIntervalSince($0) } ?? 0,
+                   Self.initialConvergenceGraceSec)
+        }
+
         if (wedgeByStall || wedgeByPSK) && !suppressWarning {
             let reason: String
             if wedgeByStall {

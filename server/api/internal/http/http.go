@@ -276,15 +276,26 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Region switch — one active region per device: tear down the peer
-		// on the old box, provision on the new one, move the row.
-		if oldReg, ok := h.regs.Get(known.Region); ok {
-			if err := h.rc.Revoke(oldReg, req.WGPubkey); err != nil {
-				// Best effort — a stale peer on the old box is harmless and
-				// must not block the switch.
-				log.Printf("revoke old region %s: %v", known.Region, err)
-			}
-		}
+		// Region switch — one active region per device. ORDERING IS
+		// CRITICAL: provision the NEW box and send the response BEFORE
+		// revoking the old peer.
+		//
+		// The client's provision request travels over the OLD region's
+		// tunnel — iOS host-app sockets cannot bypass the tunnel under
+		// includeAllNetworks=true, so the client's excludedRoutes
+		// control-plane carve-out is a no-op (the same NECP restriction
+		// that forces rosenpass through the NE). If we revoke the old
+		// peer first (the previous behavior), that tunnel goes dark and
+		// the in-flight HTTP response is killed before it reaches the
+		// device — surfaced client-side as "Couldn't reach Lattice."
+		// The failure is timing-dependent: nearby regions provision fast
+		// enough that the response sometimes wins the race, but distant
+		// regions (e.g. za1 Johannesburg) are slow to provision and lose
+		// it every time. Revoking AFTER the response — deferred and
+		// best-effort — keeps the old tunnel alive until the device has
+		// its new config and has moved over. A briefly-lingering old peer
+		// is harmless: a device only ever connects to one region at once.
+		oldRegionID := known.Region
 		ip, err := h.allocIP(regionID)
 		if err != nil {
 			log.Printf("alloc ip %s: %v", regionID, err)
@@ -304,6 +315,20 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 		}
 		known.Region, known.WGIP = regionID, ip
 		h.writeProvision(w, cfg, acct.Tier, *known)
+
+		// Tear down the old region's peer only after the response is on
+		// the wire. Deferred + best-effort so it can never kill the
+		// in-flight response; the device keeps routing over the old
+		// tunnel until it reconnects to the new region.
+		if oldReg, ok := h.regs.Get(oldRegionID); ok {
+			wgPubkey := req.WGPubkey
+			go func() {
+				time.Sleep(8 * time.Second)
+				if err := h.rc.Revoke(oldReg, wgPubkey); err != nil {
+					log.Printf("deferred revoke old region %s: %v", oldRegionID, err)
+				}
+			}()
+		}
 		return
 	}
 
