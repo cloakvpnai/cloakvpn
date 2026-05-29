@@ -15,7 +15,7 @@ loop (see "Next task").
 |------|--------|
 | iOS Build 102 rejection | **ROOT-CAUSED** — Guideline 5.4 (VPN must ship from an org account); rejection predated the KryptoKnightz LLC migration, so it was already resolved |
 | iOS Build 103 (1.0) | **SUBMITTED — "Waiting for Review"** under KryptoKnightz LLC, with reviewer notes + account number |
-| iOS region-switch-while-connected ("Couldn't reach Lattice") | **FIXED** — out-of-tunnel control-plane routing; shipped in local build 104 |
+| iOS region-switch-while-connected ("Couldn't reach Lattice") | ~~FIXED via out-of-tunnel control-plane routing~~ **CORRECTION (see SESSION_HANDOVER_2026-05-29_region-switch-rootcause-and-pqc-grace.md):** the excludedRoutes carve-out was a no-op under `includeAllNetworks=true`. Real root cause was server-side: `POST /v1/device` revoked the old peer before responding. Fixed in cloakvpn-api + deployed. |
 | regionsvc rosenpass restart-per-provision | **MITIGATED + deployed fleet-wide** — idempotency guard (restart only when peer set changes). Necessary but NOT sufficient |
 | **PQC "Handshaking" stuck on region switch** | **DIAGNOSED, NOT FIXED** ← next task. Client recovery loop re-provisions every ~15s; each re-provision restarts rosenpass and kills the in-flight exchange |
 | App icon | Left as-is (text-free shield); good for App Store. Do not change mid-review |
