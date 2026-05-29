@@ -188,7 +188,8 @@ func (c *Controller) Provision(usedIPs []string) (*ClientConfig, error) {
 	}
 
 	// --- Register in server.toml -----------------------------------------
-	if err := c.appendRosenpassPeer(peerName, publicPath); err != nil {
+	rpChanged, err := c.appendRosenpassPeer(peerName, publicPath)
+	if err != nil {
 		_ = os.Remove(secretPath)
 		_ = os.Remove(publicPath)
 		return nil, fmt.Errorf("append to server.toml: %w", err)
@@ -214,8 +215,12 @@ func (c *Controller) Provision(usedIPs []string) (*ClientConfig, error) {
 	}
 
 	// --- Restart rosenpass so the new peer is picked up ------------------
-	if err := c.restartRosenpass(); err != nil {
-		return nil, fmt.Errorf("restart rosenpass: %w", err)
+	// Only when the peer set actually changed — a no-op re-provision must not
+	// bounce the (fleet-wide) rosenpass daemon.
+	if rpChanged {
+		if err := c.restartRosenpass(); err != nil {
+			return nil, fmt.Errorf("restart rosenpass: %w", err)
+		}
 	}
 
 	// Read the server's rosenpass pubkey so the client can pin its identity.
@@ -291,12 +296,20 @@ func (c *Controller) ProvisionWithKeys(usedIPs []string, reuseIP, wgPubkeyB64, r
 	peerName := peerNameFromWG(wgPub)
 	publicPath := filepath.Join(c.cfg.RosenpassDir, peerName+".rosenpass-public")
 
+	// Detect whether the rosenpass public key on disk is actually changing.
+	// A reconnecting device sends the same persisted key every time, so an
+	// identical key means there's no reason to disturb the running daemon.
+	keyChanged := true
+	if old, rerr := os.ReadFile(publicPath); rerr == nil && bytes.Equal(old, rpRaw) {
+		keyChanged = false
+	}
 	if err := os.WriteFile(publicPath, rpRaw, 0600); err != nil {
 		return nil, fmt.Errorf("write rosenpass public: %w", err)
 	}
 
 	// --- Register in server.toml -----------------------------------------
-	if err := c.appendRosenpassPeer(peerName, publicPath); err != nil {
+	tomlChanged, err := c.appendRosenpassPeer(peerName, publicPath)
+	if err != nil {
 		_ = os.Remove(publicPath)
 		return nil, fmt.Errorf("append to server.toml: %w", err)
 	}
@@ -317,8 +330,13 @@ func (c *Controller) ProvisionWithKeys(usedIPs []string, reuseIP, wgPubkeyB64, r
 	}
 
 	// --- Restart rosenpass so the new peer is picked up ------------------
-	if err := c.restartRosenpass(); err != nil {
-		return nil, fmt.Errorf("restart rosenpass: %w", err)
+	// Skip the restart when neither the key file nor server.toml changed: a
+	// reconnect by an already-registered device must not bounce the daemon,
+	// which would drop every other peer's live handshake (and its own).
+	if keyChanged || tomlChanged {
+		if err := c.restartRosenpass(); err != nil {
+			return nil, fmt.Errorf("restart rosenpass: %w", err)
+		}
 	}
 
 	serverRPB64, err := readFileB64(c.cfg.ServerRosenpassPubPath)
@@ -368,28 +386,47 @@ func (c *Controller) Revoke(wgPubkey string) error {
 	publicPath := filepath.Join(c.cfg.RosenpassDir, peerName+".rosenpass-public")
 	secretPath := filepath.Join(c.cfg.RosenpassDir, peerName+".rosenpass-secret")
 
-	if err := c.removeRosenpassPeer(publicPath); err != nil {
+	rpChanged, err := c.removeRosenpassPeer(publicPath)
+	if err != nil {
 		return fmt.Errorf("remove from server.toml: %w", err)
 	}
 	_ = os.Remove(publicPath)
 	_ = os.Remove(secretPath)
 	_ = os.Remove(filepath.Join(wgConfigDir, peerName+".pub"))
 
-	if err := c.restartRosenpass(); err != nil {
-		return fmt.Errorf("restart rosenpass: %w", err)
+	// Only restart if a block was actually removed — revoking an
+	// already-absent peer must not bounce the daemon for everyone else.
+	if rpChanged {
+		if err := c.restartRosenpass(); err != nil {
+			return fmt.Errorf("restart rosenpass: %w", err)
+		}
 	}
 	return nil
 }
 
-// appendRosenpassPeer appends a new [[peers]] block to server.toml using a
-// write-to-temp + atomic-rename so a crash or ENOSPC mid-write can't leave
-// the config file partially populated.
-func (c *Controller) appendRosenpassPeer(peerName, publicPath string) error {
-	// Idempotent: re-provisioning an existing device would otherwise append
-	// a second [[peers]] block for the same peer. Drop any existing block
-	// for this peer first, so the result is always exactly one block.
-	if err := c.removeRosenpassPeer(publicPath); err != nil {
-		return err
+// appendRosenpassPeer ensures server.toml contains exactly one [[peers]] block
+// for this peer, using a write-to-temp + atomic-rename so a crash or ENOSPC
+// mid-write can't leave the config file partially populated.
+//
+// Returns changed=true only when it actually had to modify the file. When the
+// peer's block is already present and correct it returns changed=false, which
+// lets the caller skip restartRosenpass — see the comment there for why that
+// matters (the restart is fleet-wide and drops every peer's in-flight
+// handshake).
+func (c *Controller) appendRosenpassPeer(peerName, publicPath string) (changed bool, err error) {
+	existing, err := os.ReadFile(c.cfg.ServerTomlPath)
+	if err != nil {
+		return false, err
+	}
+
+	// A peer's public_key path is unique (derived from its WG pubkey), so the
+	// presence of this exact line means the peer is already registered. Skip
+	// the rewrite + restart entirely. This is the heart of the
+	// restart-per-provision fix: a reconnecting device that's already in the
+	// config no longer bounces the rosenpass daemon for the whole fleet.
+	marker := []byte(fmt.Sprintf("public_key = %q", publicPath))
+	if bytes.Contains(existing, marker) {
+		return false, nil
 	}
 
 	// protocol_version = "V03" MUST be present. Without it rosenpass falls
@@ -400,39 +437,37 @@ func (c *Controller) appendRosenpassPeer(peerName, publicPath string) error {
 	block := fmt.Sprintf("\n[[peers]]\npublic_key = %q\nkey_out = \"/run/rosenpass/psk-%s\"\nprotocol_version = \"V03\"\n",
 		publicPath, peerName)
 
-	existing, err := os.ReadFile(c.cfg.ServerTomlPath)
-	if err != nil {
-		return err
-	}
-
 	tmp, err := os.CreateTemp(filepath.Dir(c.cfg.ServerTomlPath), "server.toml.*")
 	if err != nil {
-		return err
+		return false, err
 	}
 	tmpName := tmp.Name()
 	// Clean up on any error path before the rename.
 	defer func() {
-		if _, err := os.Stat(tmpName); err == nil {
+		if _, statErr := os.Stat(tmpName); statErr == nil {
 			_ = os.Remove(tmpName)
 		}
 	}()
 
 	if _, err := tmp.Write(existing); err != nil {
 		tmp.Close()
-		return err
+		return false, err
 	}
 	if _, err := tmp.WriteString(block); err != nil {
 		tmp.Close()
-		return err
+		return false, err
 	}
 	if err := tmp.Chmod(0600); err != nil {
 		tmp.Close()
-		return err
+		return false, err
 	}
 	if err := tmp.Close(); err != nil {
-		return err
+		return false, err
 	}
-	return os.Rename(tmpName, c.cfg.ServerTomlPath)
+	if err := os.Rename(tmpName, c.cfg.ServerTomlPath); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // removeRosenpassPeer rewrites server.toml without the [[peers]] block whose
@@ -440,13 +475,20 @@ func (c *Controller) appendRosenpassPeer(peerName, publicPath string) error {
 // emits it only when the *next* block starts (or EOF is reached); if the
 // buffered block matches, it's silently dropped.
 //
+// Returns changed=true only when a block was actually removed, so a Revoke of
+// an already-absent peer doesn't needlessly restart the rosenpass daemon.
+//
 // The server.toml format here is purely line-oriented flat TOML — no nested
 // tables — which is why simple text manipulation is safe instead of pulling
 // in a full TOML parser.
-func (c *Controller) removeRosenpassPeer(publicPath string) error {
-	f, err := os.Open(c.cfg.ServerTomlPath)
+func (c *Controller) removeRosenpassPeer(publicPath string) (changed bool, err error) {
+	current, err := os.ReadFile(c.cfg.ServerTomlPath)
 	if err != nil {
-		return err
+		return false, err
+	}
+	// Nothing references this peer → no change, caller can skip the restart.
+	if !bytes.Contains(current, []byte(fmt.Sprintf("public_key = %q", publicPath))) {
+		return false, nil
 	}
 
 	var (
@@ -470,7 +512,7 @@ func (c *Controller) removeRosenpassPeer(publicPath string) error {
 		inBlock = false
 	}
 
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(bytes.NewReader(current))
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.TrimSpace(line) == "[[peers]]" {
@@ -489,34 +531,36 @@ func (c *Controller) removeRosenpassPeer(publicPath string) error {
 		}
 	}
 	flush()
-	f.Close()
 	if err := scanner.Err(); err != nil {
-		return err
+		return false, err
 	}
 
 	tmp, err := os.CreateTemp(filepath.Dir(c.cfg.ServerTomlPath), "server.toml.*")
 	if err != nil {
-		return err
+		return false, err
 	}
 	tmpName := tmp.Name()
 	defer func() {
-		if _, err := os.Stat(tmpName); err == nil {
+		if _, statErr := os.Stat(tmpName); statErr == nil {
 			_ = os.Remove(tmpName)
 		}
 	}()
 
 	if _, err := tmp.Write(out.Bytes()); err != nil {
 		tmp.Close()
-		return err
+		return false, err
 	}
 	if err := tmp.Chmod(0600); err != nil {
 		tmp.Close()
-		return err
+		return false, err
 	}
 	if err := tmp.Close(); err != nil {
-		return err
+		return false, err
 	}
-	return os.Rename(tmpName, c.cfg.ServerTomlPath)
+	if err := os.Rename(tmpName, c.cfg.ServerTomlPath); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (c *Controller) restartRosenpass() error {
