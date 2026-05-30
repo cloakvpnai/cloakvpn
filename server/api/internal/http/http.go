@@ -320,10 +320,30 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 		// the wire. Deferred + best-effort so it can never kill the
 		// in-flight response; the device keeps routing over the old
 		// tunnel until it reconnects to the new region.
-		if oldReg, ok := h.regs.Get(oldRegionID); ok {
+		//
+		// RE-VALIDATE before revoking: a device that switches away and
+		// back within the delay window (A→B→A) would otherwise have its
+		// now-current region's peer torn down by this stale timer —
+		// revoking the very peer it just reconnected to, which restarts
+		// that box's rosenpass and breaks the live connection. So look
+		// the device up again and skip the revoke if it has returned to
+		// oldRegionID (or the row was reassigned/removed meanwhile).
+		if _, ok := h.regs.Get(oldRegionID); ok {
 			wgPubkey := req.WGPubkey
+			devID := known.ID
 			go func() {
 				time.Sleep(8 * time.Second)
+				cur, err := h.db.DeviceByPubkey(wgPubkey)
+				if err != nil || cur == nil || cur.ID != devID {
+					return // row gone or reassigned — leave it alone
+				}
+				if cur.Region == oldRegionID {
+					return // device came back to the old region; keep its peer
+				}
+				oldReg, ok := h.regs.Get(oldRegionID)
+				if !ok {
+					return
+				}
 				if err := h.rc.Revoke(oldReg, wgPubkey); err != nil {
 					log.Printf("deferred revoke old region %s: %v", oldRegionID, err)
 				}
