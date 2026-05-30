@@ -99,15 +99,27 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     /// both cases the rosenpass UDP relay is inert.
     private var rosenpassServerIP: String?
 
-    // NOTE: a control-plane (api.latticevpn.ai) excludedRoute carve-out
-    // used to live here, intended to keep the host app's region-switch
-    // provision request off the tunnel. It was a no-op: under
-    // includeAllNetworks=true iOS does not honor excludedRoutes for
-    // host-app sockets (the same NECP rule that forces rosenpass through
-    // the NE). The "Couldn't reach Lattice" region-switch failure it was
-    // meant to fix is actually resolved server-side — POST /v1/device now
-    // provisions the new region and responds BEFORE revoking the old peer
-    // (see server/api/internal/http/http.go). Carve-out removed 2026-05-29.
+    /// IP literals of the central account/provisioning API (the host of
+    /// `LatticeAPI.baseURL`). Carved out as excludedRoutes in
+    /// `makeNetworkSettings` so the host app's control-plane calls ride
+    /// the PHYSICAL interface, not utun. Without this, switching regions
+    /// while connected sends the provision request through the current
+    /// tunnel — which the server then tears down as part of the switch,
+    /// killing the in-flight request ("Couldn't reach Lattice"). This is
+    /// the iOS analogue of Android's out-of-tunnel account API.
+    /// Resolved at startTunnel (out-of-tunnel, so reliable); falls back
+    /// to a last-known-good origin IP if DNS fails.
+    private var controlPlaneIPs: [String] = []
+
+    /// Host of the central API. MUST stay in sync with the app target's
+    /// `LatticeAPI.baseURL`. If the API moves to a CDN with rotating IPs,
+    /// revisit this exclusion strategy (a single excluded /32 won't hold).
+    private static let controlPlaneHost = "api.latticevpn.ai"
+
+    /// Last-known-good origin IP for `controlPlaneHost`, used only if
+    /// startTunnel DNS resolution fails. Single stable Hetzner origin as
+    /// of 2026-05.
+    private static let controlPlaneFallbackIPv4 = "5.78.203.171"
 
     /// NE-side UDP socket to the rosenpass server. Lazily created when
     /// the host app's RosenpassBridge first asks us to relay traffic
@@ -274,6 +286,22 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             self.rosenpassServerIP = nil
         }
 
+        // Carve the central control-plane API out of the tunnel so the
+        // host app's account/provision calls ride the physical interface.
+        // Resolved here, while utun is NOT yet the default route, so the
+        // lookup goes out over Wi-Fi/cellular and is reliable. The excluded
+        // /32(s) then survive a region switch that revokes the current peer
+        // mid-request. Falls back to a known-good origin IP if DNS fails.
+        self.controlPlaneIPs = Self.resolveIPs(host: Self.controlPlaneHost)
+        if self.controlPlaneIPs.isEmpty {
+            self.controlPlaneIPs = [Self.controlPlaneFallbackIPv4]
+            os_log("startTunnel: control-plane DNS resolve failed; using fallback %{public}s",
+                   log: log, type: .error, Self.controlPlaneFallbackIPv4)
+        } else {
+            os_log("startTunnel: control-plane excludedRoute targets %{public}s",
+                   log: log, type: .info, self.controlPlaneIPs.joined(separator: ","))
+        }
+
         // Build a WireGuardKit TunnelConfiguration directly from
         // CloakConfig fields. Mullvad's wireguard-apple fork exposes
         // only `WireGuardKit` and `WireGuardKitTypes` as public products
@@ -299,7 +327,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         // running and WG handshakes complete.
         let networkSettings = Self.makeNetworkSettings(
             from: tunnelCfg,
-            rosenpassServerIP: self.rosenpassServerIP
+            rosenpassServerIP: self.rosenpassServerIP,
+            controlPlaneIPs: self.controlPlaneIPs
         )
         os_log("setTunnelNetworkSettings: applying", log: log, type: .info)
         setTunnelNetworkSettings(networkSettings) { [weak self] settingsError in
@@ -1180,7 +1209,8 @@ extension PacketTunnelProvider {
 extension PacketTunnelProvider {
     static func makeNetworkSettings(
         from tunnelCfg: TunnelConfiguration,
-        rosenpassServerIP: String? = nil
+        rosenpassServerIP: String? = nil,
+        controlPlaneIPs: [String] = []
     ) -> NEPacketTunnelNetworkSettings {
         // iOS requires a tunnelRemoteAddress, but WG can have many or
         // zero peers — 127.0.0.1 is the upstream-blessed placeholder.
@@ -1279,6 +1309,21 @@ extension PacketTunnelProvider {
             // exclusion silently here.)
         }
 
+        // Carve out the central control-plane API IP(s) so the host app's
+        // account / provision calls bypass utun. This is what lets a
+        // region switch succeed while connected — the provision request
+        // rides the physical interface instead of the tunnel the switch
+        // is about to tear down. See `controlPlaneIPs` at startTunnel.
+        for ipStr in controlPlaneIPs {
+            if IPv4Address(ipStr) != nil {
+                ipv4ExcludedRoutes.append(NEIPv4Route(destinationAddress: ipStr,
+                                                     subnetMask: "255.255.255.255"))
+            } else if IPv6Address(ipStr) != nil {
+                ipv6ExcludedRoutes.append(NEIPv6Route(destinationAddress: ipStr,
+                                                     networkPrefixLength: NSNumber(value: 128)))
+            }
+        }
+
         // ---- IPv4 settings ----
         let v4 = NEIPv4Settings(addresses: ipv4Addresses.map { $0.addr },
                                 subnetMasks: ipv4Addresses.map { $0.mask })
@@ -1326,5 +1371,44 @@ extension PacketTunnelProvider {
         if IPv4Address(endpoint) != nil { return endpoint }
         if IPv6Address(endpoint) != nil { return endpoint }
         return nil
+    }
+
+    /// Resolve `host` to its IP literals via the system resolver. Intended
+    /// to be called at startTunnel BEFORE utun becomes the default route,
+    /// so the query goes out over the physical interface. Returns an empty
+    /// array on failure (caller falls back to a known-good IP). Synchronous
+    /// and brief — getaddrinfo against an already-cached A record returns
+    /// in microseconds; first-time lookups are bounded by the system
+    /// resolver timeout.
+    static func resolveIPs(host: String) -> [String] {
+        var hints = addrinfo(ai_flags: 0,
+                             ai_family: AF_UNSPEC,
+                             ai_socktype: SOCK_STREAM,
+                             ai_protocol: IPPROTO_TCP,
+                             ai_addrlen: 0,
+                             ai_canonname: nil,
+                             ai_addr: nil,
+                             ai_next: nil)
+        var result: UnsafeMutablePointer<addrinfo>?
+        guard getaddrinfo(host, nil, &hints, &result) == 0, result != nil else {
+            return []
+        }
+        defer { freeaddrinfo(result) }
+
+        var ips: [String] = []
+        var ptr = result
+        while let node = ptr {
+            var buf = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            if getnameinfo(node.pointee.ai_addr,
+                           node.pointee.ai_addrlen,
+                           &buf, socklen_t(buf.count),
+                           nil, 0,
+                           NI_NUMERICHOST) == 0 {
+                let ip = String(cString: buf)
+                if !ip.isEmpty && !ips.contains(ip) { ips.append(ip) }
+            }
+            ptr = node.pointee.ai_next
+        }
+        return ips
     }
 }
