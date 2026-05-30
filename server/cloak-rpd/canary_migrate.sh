@@ -20,6 +20,7 @@ cp "$S/cloak-rpd.service" /etc/systemd/system/cloak-rpd.service
 cp -p /usr/local/bin/regionsvc "/usr/local/bin/regionsvc.bak-$TS"
 install -m 0755 "$S/regionsvc.new" /usr/local/bin/regionsvc.stage
 systemctl daemon-reload
+systemctl enable cloak-rpd 2>/dev/null   # survive reboots
 
 echo "== build preload peer set =="
 /usr/local/bin/rpd-build-peers.sh
