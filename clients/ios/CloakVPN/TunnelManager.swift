@@ -530,12 +530,17 @@ final class TunnelManager: ObservableObject {
             let managers = try await NETunnelProviderManager.loadAllFromPreferences()
             manager = managers.first
             if let m = manager {
-                updateStatus(m.connection.status)
-                observeStatus(m.connection)
+                // Restore the config BEFORE updateStatus so the
+                // connected-state handler (which starts the PQC status
+                // poller) can see pqEnabled. Without this ordering, a
+                // cold launch into an already-up tunnel showed "PQC: idle"
+                // even though the NE was still rotating keys.
                 if let cfgDict = (m.protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration,
                    let cfg = try? CloakConfig(dict: cfgDict) {
                     config = cfg
                 }
+                observeStatus(m.connection)
+                updateStatus(m.connection.status)
             }
         } catch {
             print("TunnelManager.load error: \(error)")
@@ -1043,6 +1048,18 @@ final class TunnelManager: ObservableObject {
         @unknown default: status = .invalid
         }
         debugLog("status change: \(old) → \(status) (raw NEVPNStatus=\(s.rawValue))")
+
+        // Drive the PQC status poller off the tunnel state, not just the
+        // host-app connect() path. The NE runs its rosenpass loop whenever
+        // the tunnel is up — including when the tunnel came up without us
+        // calling connect() (cold launch into a live tunnel, iOS on-demand
+        // reconnect). Starting the poller here guarantees the UI reflects
+        // live PQC instead of getting stuck on "idle". startStatusPolling
+        // is idempotent (it tears down any existing timer first), so the
+        // redundant call on the normal connect() path is harmless.
+        if status == .connected, old != .connected, config?.pqEnabled == true {
+            rosenpass.startStatusPolling()
+        }
 
         // Refresh the user's real public IP cache on transitions to
         // .disconnected. With the VPN off, the next api.ipify.org
