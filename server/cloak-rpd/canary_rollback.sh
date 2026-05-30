@@ -11,6 +11,10 @@ rm -f /run/rosenpass/control.sock
 if [ -f "/usr/local/bin/regionsvc.bak-$TS" ]; then
   cp -p "/usr/local/bin/regionsvc.bak-$TS" /usr/local/bin/regionsvc
 fi
+if [ -f /etc/systemd/system/cloak-rosenpass.service.disabled-by-cloak-rpd ]; then
+  mv -f /etc/systemd/system/cloak-rosenpass.service.disabled-by-cloak-rpd /etc/systemd/system/cloak-rosenpass.service
+  systemctl daemon-reload
+fi
 systemctl unmask cloak-rosenpass 2>/dev/null
 systemctl reset-failed cloak-rosenpass 2>/dev/null
 systemctl start cloak-rosenpass

@@ -30,7 +30,14 @@ echo "== CUTOVER =="
 # cloak-rpd owns :9999. (disable alone doesn't block an explicit restart; mask
 # does.) reset-failed clears any prior crash-loop state.
 systemctl stop cloak-rosenpass
-systemctl mask cloak-rosenpass
+# cloak-rosenpass.service lives in /etc/systemd/system, so `systemctl mask`
+# (which symlinks the unit name to /dev/null) FAILS with "file already exists".
+# Move the unit aside + daemon-reload instead, so its Restart=on-failure can't
+# crash-loop trying to re-bind the now-cloak-rpd-owned :9999.
+if [ -f /etc/systemd/system/cloak-rosenpass.service ]; then
+  mv -f /etc/systemd/system/cloak-rosenpass.service /etc/systemd/system/cloak-rosenpass.service.disabled-by-cloak-rpd
+  systemctl daemon-reload
+fi
 systemctl reset-failed cloak-rosenpass 2>/dev/null
 sleep 1
 systemctl start cloak-rpd
@@ -41,7 +48,10 @@ sleep 2
 if [ "$(systemctl is-active cloak-rpd)" != active ]; then
   echo "!! cloak-rpd failed to start — AUTO-ROLLBACK to cloak-rosenpass"
   journalctl -u cloak-rpd -n 8 --no-pager | tail -8
-  systemctl unmask cloak-rosenpass
+  if [ -f /etc/systemd/system/cloak-rosenpass.service.disabled-by-cloak-rpd ]; then
+    mv -f /etc/systemd/system/cloak-rosenpass.service.disabled-by-cloak-rpd /etc/systemd/system/cloak-rosenpass.service
+    systemctl daemon-reload
+  fi
   systemctl start cloak-rosenpass
   echo "rollback cloak-rosenpass=$(systemctl is-active cloak-rosenpass)"
   exit 1
