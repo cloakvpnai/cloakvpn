@@ -61,6 +61,19 @@ mv -f /usr/local/bin/regionsvc.stage /usr/local/bin/regionsvc
 systemctl restart regionsvc
 sleep 2
 
+# CRITICAL: cloak-psk-installer is PartOf=cloak-rosenpass.service, so moving
+# cloak-rosenpass aside STOPS the installer — and without it cloak-rpd's PSKs
+# never reach wg0, leaving the tunnel up but carrying no traffic. Decouple it
+# and (re)start so it bridges cloak-rpd's PSKs onto WireGuard.
+mkdir -p /etc/systemd/system/cloak-psk-installer.service.d
+printf '[Unit]\nPartOf=\n' > /etc/systemd/system/cloak-psk-installer.service.d/override-cloak-rpd.conf
+systemctl daemon-reload
+systemctl enable cloak-psk-installer 2>/dev/null
+systemctl restart cloak-psk-installer
+sleep 1
+touch /run/rosenpass/psk-* 2>/dev/null || true
+sleep 1
+
 echo "== verify =="
 echo "cloak-rpd      : $(systemctl is-active cloak-rpd)"
 echo "cloak-rosenpass: $(systemctl is-active cloak-rosenpass)  (expect inactive)"

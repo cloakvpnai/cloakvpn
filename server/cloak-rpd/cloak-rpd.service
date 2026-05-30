@@ -2,6 +2,10 @@
 Description=Cloak VPN rosenpass daemon (cloak-rpd: runtime peer mgmt, no restart on add)
 After=network-online.target
 Wants=network-online.target
+# Pull in the PSK installer (the rosenpass->wg0 bridge). It used to be
+# PartOf=cloak-rosenpass; with cloak-rpd as the PSK source it must run alongside
+# us, or derived PSKs never reach WireGuard and the tunnel carries no traffic.
+Wants=cloak-psk-installer.service
 
 [Service]
 Type=simple
