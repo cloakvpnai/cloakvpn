@@ -43,6 +43,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Config struct {
@@ -61,6 +62,13 @@ type Config struct {
 	ServiceName            string // cloak-rosenpass.service
 	ServerRosenpassPubPath string // /etc/rosenpass/server.rosenpass-public
 	RosenpassPort          int    // 9999
+
+	// ControlSocket is the cloak-rpd runtime peer-management socket. When a
+	// daemon is listening there, peers are added live (no restart) over it;
+	// when it's absent (a box still on the legacy cloak-rosenpass), the code
+	// falls back to restarting the service. This lets one regionsvc binary
+	// serve both migrated (canary/fleet) and not-yet-migrated boxes.
+	ControlSocket string // /run/rosenpass/control.sock
 }
 
 type Controller struct {
@@ -89,6 +97,9 @@ func NewController(c Config) *Controller {
 	}
 	if c.RosenpassPort == 0 {
 		c.RosenpassPort = 9999
+	}
+	if c.ControlSocket == "" {
+		c.ControlSocket = "/run/rosenpass/control.sock"
 	}
 	return &Controller{cfg: c}
 }
@@ -218,8 +229,8 @@ func (c *Controller) Provision(usedIPs []string) (*ClientConfig, error) {
 	// Only when the peer set actually changed — a no-op re-provision must not
 	// bounce the (fleet-wide) rosenpass daemon.
 	if rpChanged {
-		if err := c.restartRosenpass(); err != nil {
-			return nil, fmt.Errorf("restart rosenpass: %w", err)
+		if err := c.installPeerLive(peerName, publicPath); err != nil {
+			return nil, fmt.Errorf("install peer: %w", err)
 		}
 	}
 
@@ -334,8 +345,8 @@ func (c *Controller) ProvisionWithKeys(usedIPs []string, reuseIP, wgPubkeyB64, r
 	// reconnect by an already-registered device must not bounce the daemon,
 	// which would drop every other peer's live handshake (and its own).
 	if keyChanged || tomlChanged {
-		if err := c.restartRosenpass(); err != nil {
-			return nil, fmt.Errorf("restart rosenpass: %w", err)
+		if err := c.installPeerLive(peerName, publicPath); err != nil {
+			return nil, fmt.Errorf("install peer: %w", err)
 		}
 	}
 
@@ -397,8 +408,8 @@ func (c *Controller) Revoke(wgPubkey string) error {
 	// Only restart if a block was actually removed — revoking an
 	// already-absent peer must not bounce the daemon for everyone else.
 	if rpChanged {
-		if err := c.restartRosenpass(); err != nil {
-			return fmt.Errorf("restart rosenpass: %w", err)
+		if err := c.revokePeerLive(); err != nil {
+			return fmt.Errorf("revoke peer: %w", err)
 		}
 	}
 	return nil
@@ -561,6 +572,38 @@ func (c *Controller) removeRosenpassPeer(publicPath string) (changed bool, err e
 		return false, err
 	}
 	return true, nil
+}
+
+// installPeerLive registers a peer with the running cloak-rpd daemon over its
+// control socket — zero-disruption, no restart. If the socket isn't present (a
+// box still running the legacy cloak-rosenpass), it falls back to the old
+// restart behavior. One regionsvc binary thus serves both migrated and
+// not-yet-migrated boxes. The pubkey file at publicPath already exists by the
+// time this is called (Provision/ProvisionWithKeys write it first).
+func (c *Controller) installPeerLive(peerName, publicPath string) error {
+	conn, err := net.DialTimeout("unix", c.cfg.ControlSocket, 2*time.Second)
+	if err != nil {
+		// No cloak-rpd here — legacy path.
+		return c.restartRosenpass()
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+	if _, err := fmt.Fprintf(conn, "ADD %s %s\n", peerName, publicPath); err != nil {
+		return fmt.Errorf("cloak-rpd ADD %s: %w", peerName, err)
+	}
+	return nil
+}
+
+// revokePeerLive handles peer removal. cloak-rpd has no runtime peer removal,
+// so on a migrated box we leave the peer resident — harmless, and it drops on
+// the next daemon restart, which reloads the peer set from server.toml (the
+// block has already been removed from there). On a legacy box we restart
+// cloak-rosenpass as before.
+func (c *Controller) revokePeerLive() error {
+	if _, err := os.Stat(c.cfg.ControlSocket); err == nil {
+		return nil // cloak-rpd present; no restart needed
+	}
+	return c.restartRosenpass()
 }
 
 func (c *Controller) restartRosenpass() error {

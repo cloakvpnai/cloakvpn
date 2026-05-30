@@ -1,0 +1,24 @@
+[Unit]
+Description=Cloak VPN rosenpass daemon (cloak-rpd: runtime peer mgmt, no restart on add)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Rebuild the preload peer set from server.toml on every (re)start so a reboot
+# recovers the full peer set. /run is tmpfs, so this must run each start.
+ExecStartPre=/bin/mkdir -p /run/rosenpass
+ExecStartPre=/usr/local/bin/rpd-build-peers.sh
+ExecStart=/usr/local/bin/cloak-rpd \
+  --secret-key /etc/rosenpass/server.rosenpass-secret \
+  --public-key /etc/rosenpass/server.rosenpass-public \
+  --listen 0.0.0.0:9999 \
+  --control /run/rosenpass/control.sock \
+  --peers-dir /run/rosenpass/rpd-peers \
+  --psk-dir /run/rosenpass
+Restart=on-failure
+RestartSec=2
+# Same hardening posture as cloak-rosenpass (root; needs /etc/rosenpass + /run).
+
+[Install]
+WantedBy=multi-user.target
