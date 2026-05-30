@@ -30,10 +30,11 @@ use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
 
-use rosenpass::app_server::{AppServer, Verbosity};
+use rosenpass::app_server::AppServer;
+use rosenpass::config::{ProtocolVersion, Verbosity};
 use rosenpass::protocol::basic_types::{SPk, SSk};
 use rosenpass::protocol::osk_domain_separator::OskDomainSeparator;
-use rosenpass::protocol::ProtocolVersion;
+use rosenpass_util::file::LoadValue; // brings `SSk::load` / `SPk::load` into scope
 
 /// mio token used purely to wake the event loop when a control command is
 /// queued. It is intentionally NOT registered in AppServer.io_source_index —
@@ -45,15 +46,12 @@ const CONTROL_WAKE_TOKEN: mio::Token = mio::Token(0xC0_FFEE);
 /// Where derived PSKs are written, matching cloak-psk-installer's watch dir.
 const PSK_DIR: &str = "/run/rosenpass";
 
-/// Commands the control thread feeds to the event loop.
-pub enum ControlMsg {
-    /// Add (or no-op re-add) a peer at runtime — zero disruption.
-    AddPeer { name: String, pubkey_path: PathBuf },
-    // RemovePeer is intentionally absent: CryptoServer has no runtime peer
-    // removal at b096cb1. Stale peers are harmless and are actually dropped on
-    // the next (rare) daemon restart, which reloads from the on-disk registry.
-    // See the design doc.
-}
+// The event loop's control channel carries `(peerName, pubkeyPath)` tuples
+// (see event_loop_with_control). REMOVE is intentionally unsupported: there is
+// no runtime CryptoServer peer removal at b096cb1; stale peers are harmless and
+// drop on the next (rare) daemon restart, which reloads from the on-disk
+// registry. See the design doc.
+type AddReq = (String, PathBuf);
 
 struct Args {
     secret_key: PathBuf,
@@ -61,6 +59,7 @@ struct Args {
     listen: SocketAddr,
     control: PathBuf,
     peers_dir: Option<PathBuf>,
+    psk_dir: PathBuf,
 }
 
 fn parse_args() -> Result<Args> {
@@ -69,6 +68,7 @@ fn parse_args() -> Result<Args> {
     let mut listen: Option<SocketAddr> = None;
     let mut control = PathBuf::from("/run/rosenpass/control.sock");
     let mut peers_dir = None;
+    let mut psk_dir = PathBuf::from(PSK_DIR);
 
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
@@ -78,6 +78,7 @@ fn parse_args() -> Result<Args> {
             "--listen" => listen = Some(it.next().context("--listen")?.parse()?),
             "--control" => control = PathBuf::from(it.next().context("--control")?),
             "--peers-dir" => peers_dir = Some(PathBuf::from(it.next().context("--peers-dir")?)),
+            "--psk-dir" => psk_dir = PathBuf::from(it.next().context("--psk-dir")?),
             other => bail!("unknown arg: {other}"),
         }
     }
@@ -87,23 +88,24 @@ fn parse_args() -> Result<Args> {
         listen: listen.context("--listen required, e.g. 0.0.0.0:9999")?,
         control,
         peers_dir,
+        psk_dir,
     })
 }
 
 /// Derive the psk outfile for a peer name, matching the existing convention.
-fn psk_outfile(name: &str) -> PathBuf {
-    Path::new(PSK_DIR).join(format!("psk-{name}"))
+fn psk_outfile(dir: &Path, name: &str) -> PathBuf {
+    dir.join(format!("psk-{name}"))
 }
 
 /// Add one peer to the (live) server. Mirrors cli.rs:483 minus the WG broker —
 /// we deliver the PSK via the key_out file (cloak-psk-installer picks it up),
 /// not via rosenpass's own WG broker.
-fn add_peer(srv: &mut AppServer, name: &str, pubkey_path: &Path) -> Result<()> {
+fn add_peer(srv: &mut AppServer, psk_dir: &Path, name: &str, pubkey_path: &Path) -> Result<()> {
     let pk = SPk::load(pubkey_path).with_context(|| format!("load pubkey {pubkey_path:?}"))?;
     srv.add_peer(
         None,                              // psk: none (PQ-only; WG carries data)
         pk,                                // peer rosenpass public key
-        Some(psk_outfile(name)),           // outfile -> /run/rosenpass/psk-<name>
+        Some(psk_outfile(psk_dir, name)),  // outfile -> <psk_dir>/psk-<name>
         None,                              // broker_peer: none
         None,                              // hostname/endpoint: responder learns it from packets
         ProtocolVersion::V03,              // MUST match the V03 clients
@@ -115,7 +117,7 @@ fn add_peer(srv: &mut AppServer, name: &str, pubkey_path: &Path) -> Result<()> {
 /// Control socket: accept connections, read one `ADD <name> <pubkeyPath>` line
 /// each, forward to the loop, and wake it via the mio Waker. Runs on its own
 /// thread so socket I/O never blocks the crypto loop.
-fn control_thread(path: PathBuf, tx: Sender<ControlMsg>, waker: Arc<mio::Waker>) {
+fn control_thread(path: PathBuf, tx: Sender<AddReq>, waker: Arc<mio::Waker>) {
     let _ = std::fs::remove_file(&path);
     let listener = match StdUnixListener::bind(&path) {
         Ok(l) => l,
@@ -138,10 +140,7 @@ fn control_thread(path: PathBuf, tx: Sender<ControlMsg>, waker: Arc<mio::Waker>)
             match parts.next() {
                 Some("ADD") => {
                     if let (Some(name), Some(path)) = (parts.next(), parts.next()) {
-                        let _ = tx.send(ControlMsg::AddPeer {
-                            name: name.to_string(),
-                            pubkey_path: PathBuf::from(path),
-                        });
+                        let _ = tx.send((name.to_string(), PathBuf::from(path)));
                         let _ = waker.wake();
                     }
                 }
@@ -155,14 +154,14 @@ fn control_thread(path: PathBuf, tx: Sender<ControlMsg>, waker: Arc<mio::Waker>)
 /// Load every `*.rosenpass-public` in the peers dir as an initial peer, so a
 /// cold start / crash / upgrade recovers the full peer set from disk before
 /// accepting runtime ADDs.
-fn preload_peers(srv: &mut AppServer, dir: &Path) -> Result<usize> {
+fn preload_peers(srv: &mut AppServer, peers_dir: &Path, psk_dir: &Path) -> Result<usize> {
     let mut n = 0;
-    for entry in std::fs::read_dir(dir)? {
+    for entry in std::fs::read_dir(peers_dir)? {
         let p = entry?.path();
         if p.extension().and_then(|e| e.to_str()) == Some("rosenpass-public") {
             // peer name = file stem (e.g. peer-ab12cd34ef56)
             if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
-                if let Err(e) = add_peer(srv, stem, &p) {
+                if let Err(e) = add_peer(srv, psk_dir, stem, &p) {
                     eprintln!("cloak-rpd: preload {p:?} failed: {e}");
                 } else {
                     n += 1;
@@ -174,8 +173,15 @@ fn preload_peers(srv: &mut AppServer, dir: &Path) -> Result<usize> {
 }
 
 fn main() -> Result<()> {
+    // MUST run before any secret is allocated/loaded (mirrors rosenpass's own
+    // main.rs). Without it, the first SSk/SPk::load panics with
+    // "Secret security policy not specified". We build without the
+    // `experiment_memfd_secret` feature, so use the malloc-secret policy —
+    // exactly the branch rosenpass's main.rs takes in that configuration.
+    rosenpass_secret_memory::policy::secret_policy_use_only_malloc_secrets();
+
     let args = parse_args()?;
-    std::fs::create_dir_all(PSK_DIR).ok();
+    std::fs::create_dir_all(&args.psk_dir).ok();
 
     let sk = SSk::load(&args.secret_key).context("load secret key")?;
     let pk = SPk::load(&args.public_key).context("load public key")?;
@@ -188,7 +194,7 @@ fn main() -> Result<()> {
     )?);
 
     if let Some(dir) = args.peers_dir.as_ref() {
-        let n = preload_peers(&mut srv, dir).unwrap_or(0);
+        let n = preload_peers(&mut srv, dir, &args.psk_dir).unwrap_or(0);
         eprintln!("cloak-rpd: preloaded {n} peers from {dir:?}");
     }
 
@@ -196,7 +202,7 @@ fn main() -> Result<()> {
     // the blocking poll promptly even when the box is momentarily idle.
     let waker = Arc::new(mio::Waker::new(srv.mio_poll.registry(), CONTROL_WAKE_TOKEN)?);
 
-    let (tx, rx): (Sender<ControlMsg>, Receiver<ControlMsg>) = mpsc::channel();
+    let (tx, rx): (Sender<AddReq>, Receiver<AddReq>) = mpsc::channel();
     {
         let path = args.control.clone();
         std::thread::spawn(move || control_thread(path, tx, waker));
@@ -206,5 +212,5 @@ fn main() -> Result<()> {
 
     // Patched loop: drains `rx` (calling add_peer) at the top of each iteration,
     // otherwise identical to AppServer::event_loop. See patches/app_server_control.md.
-    srv.event_loop_with_control(rx)
+    srv.event_loop_with_control(rx, args.psk_dir.clone())
 }

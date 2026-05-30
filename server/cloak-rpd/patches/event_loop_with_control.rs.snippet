@@ -22,10 +22,12 @@
     pub fn event_loop_with_control(
         &mut self,
         ctrl_rx: std::sync::mpsc::Receiver<(String, std::path::PathBuf)>,
+        psk_dir: std::path::PathBuf,
     ) -> anyhow::Result<()> {
-        use crate::protocol::basic_types::SPk;
-        use crate::protocol::osk_domain_separator::OskDomainSeparator;
-        use crate::protocol::ProtocolVersion;
+        // SPk, ProtocolVersion (from crate::config), and OskDomainSeparator are
+        // already in module scope (see app_server.rs top + add_peer signature).
+        // We only need the LoadValue trait so `SPk::load` resolves.
+        use rosenpass_util::file::LoadValue;
 
         let (mut rx, mut tx) = (MsgBuf::zero(), MsgBuf::zero());
 
@@ -52,8 +54,7 @@
             while let Ok((name, pubkey_path)) = ctrl_rx.try_recv() {
                 match SPk::load(&pubkey_path) {
                     Ok(pk) => {
-                        let out = std::path::Path::new("/run/rosenpass")
-                            .join(format!("psk-{name}"));
+                        let out = psk_dir.join(format!("psk-{name}"));
                         if let Err(e) = self.add_peer(
                             None,
                             pk,
