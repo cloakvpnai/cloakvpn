@@ -23,10 +23,14 @@
         &mut self,
         ctrl_rx: std::sync::mpsc::Receiver<(String, std::path::PathBuf)>,
         psk_dir: std::path::PathBuf,
+        mut known_peers: std::collections::HashSet<String>,
     ) -> anyhow::Result<()> {
         // SPk, ProtocolVersion (from crate::config), and OskDomainSeparator are
         // already in module scope (see app_server.rs top + add_peer signature).
         // We only need the LoadValue trait so `SPk::load` resolves.
+        // `known_peers` is seeded with the preloaded peer names so a repeat ADD
+        // (regionsvc now sends ADD on every provision, even when unchanged) is a
+        // harmless no-op instead of a duplicate CryptoServer peer.
         use rosenpass_util::file::LoadValue;
 
         let (mut rx, mut tx) = (MsgBuf::zero(), MsgBuf::zero());
@@ -52,6 +56,11 @@
 
             // --- NEW: drain runtime peer-add requests before polling ---------
             while let Ok((name, pubkey_path)) = ctrl_rx.try_recv() {
+                if known_peers.contains(&name) {
+                    // Already registered (preloaded or added earlier). Idempotent
+                    // no-op — regionsvc sends ADD on every provision.
+                    continue;
+                }
                 match SPk::load(&pubkey_path) {
                     Ok(pk) => {
                         let out = psk_dir.join(format!("psk-{name}"));
@@ -66,6 +75,7 @@
                         ) {
                             log::warn!("cloak-rpd add_peer {name} failed: {e:?}");
                         } else {
+                            known_peers.insert(name.clone());
                             log::info!("cloak-rpd add_peer {name} ok");
                         }
                     }

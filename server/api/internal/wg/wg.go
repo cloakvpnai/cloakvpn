@@ -228,10 +228,9 @@ func (c *Controller) Provision(usedIPs []string) (*ClientConfig, error) {
 	// --- Restart rosenpass so the new peer is picked up ------------------
 	// Only when the peer set actually changed — a no-op re-provision must not
 	// bounce the (fleet-wide) rosenpass daemon.
-	if rpChanged {
-		if err := c.installPeerLive(peerName, publicPath); err != nil {
-			return nil, fmt.Errorf("install peer: %w", err)
-		}
+	// Always inform cloak-rpd (idempotent); changed flag gates legacy restart.
+	if err := c.installPeerLive(peerName, publicPath, rpChanged); err != nil {
+		return nil, fmt.Errorf("install peer: %w", err)
 	}
 
 	// Read the server's rosenpass pubkey so the client can pin its identity.
@@ -344,10 +343,10 @@ func (c *Controller) ProvisionWithKeys(usedIPs []string, reuseIP, wgPubkeyB64, r
 	// Skip the restart when neither the key file nor server.toml changed: a
 	// reconnect by an already-registered device must not bounce the daemon,
 	// which would drop every other peer's live handshake (and its own).
-	if keyChanged || tomlChanged {
-		if err := c.installPeerLive(peerName, publicPath); err != nil {
-			return nil, fmt.Errorf("install peer: %w", err)
-		}
+	// Always inform the live daemon (cloak-rpd) of this peer; the changed flag
+	// only gates the legacy restart fallback. ADD is idempotent daemon-side.
+	if err := c.installPeerLive(peerName, publicPath, keyChanged || tomlChanged); err != nil {
+		return nil, fmt.Errorf("install peer: %w", err)
 	}
 
 	serverRPB64, err := readFileB64(c.cfg.ServerRosenpassPubPath)
@@ -580,13 +579,23 @@ func (c *Controller) removeRosenpassPeer(publicPath string) (changed bool, err e
 // restart behavior. One regionsvc binary thus serves both migrated and
 // not-yet-migrated boxes. The pubkey file at publicPath already exists by the
 // time this is called (Provision/ProvisionWithKeys write it first).
-func (c *Controller) installPeerLive(peerName, publicPath string) error {
+func (c *Controller) installPeerLive(peerName, publicPath string, changed bool) error {
 	conn, err := net.DialTimeout("unix", c.cfg.ControlSocket, 2*time.Second)
 	if err != nil {
-		// No cloak-rpd here — legacy path.
-		return c.restartRosenpass()
+		// No cloak-rpd here (legacy box) — restart only when the peer set
+		// actually changed, preserving the idempotency guard that avoids the
+		// restart storm.
+		if changed {
+			return c.restartRosenpass()
+		}
+		return nil
 	}
 	defer conn.Close()
+	// cloak-rpd path: send ADD on EVERY provision (idempotent daemon-side, keyed
+	// by peer name) — even when the peer set is unchanged. A same-region
+	// reconnect otherwise skips the ADD and relies on the daemon having
+	// preloaded the peer; if it hadn't (e.g. the device re-keyed), the exchange
+	// never starts. Always-ADD guarantees the daemon knows every live peer.
 	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
 	if _, err := fmt.Fprintf(conn, "ADD %s %s\n", peerName, publicPath); err != nil {
 		return fmt.Errorf("cloak-rpd ADD %s: %w", peerName, err)

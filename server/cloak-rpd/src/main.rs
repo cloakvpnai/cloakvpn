@@ -21,6 +21,7 @@
 // cloak-psk-installer already watches.
 // =====================================================================
 
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader};
 use std::net::SocketAddr;
 use std::os::unix::net::UnixListener as StdUnixListener;
@@ -154,7 +155,12 @@ fn control_thread(path: PathBuf, tx: Sender<AddReq>, waker: Arc<mio::Waker>) {
 /// Load every `*.rosenpass-public` in the peers dir as an initial peer, so a
 /// cold start / crash / upgrade recovers the full peer set from disk before
 /// accepting runtime ADDs.
-fn preload_peers(srv: &mut AppServer, peers_dir: &Path, psk_dir: &Path) -> Result<usize> {
+fn preload_peers(
+    srv: &mut AppServer,
+    peers_dir: &Path,
+    psk_dir: &Path,
+    known: &mut HashSet<String>,
+) -> Result<usize> {
     let mut n = 0;
     for entry in std::fs::read_dir(peers_dir)? {
         let p = entry?.path();
@@ -164,6 +170,7 @@ fn preload_peers(srv: &mut AppServer, peers_dir: &Path, psk_dir: &Path) -> Resul
                 if let Err(e) = add_peer(srv, psk_dir, stem, &p) {
                     eprintln!("cloak-rpd: preload {p:?} failed: {e}");
                 } else {
+                    known.insert(stem.to_string());
                     n += 1;
                 }
             }
@@ -193,8 +200,9 @@ fn main() -> Result<()> {
         None,
     )?);
 
+    let mut known_peers: HashSet<String> = HashSet::new();
     if let Some(dir) = args.peers_dir.as_ref() {
-        let n = preload_peers(&mut srv, dir, &args.psk_dir).unwrap_or(0);
+        let n = preload_peers(&mut srv, dir, &args.psk_dir, &mut known_peers).unwrap_or(0);
         eprintln!("cloak-rpd: preloaded {n} peers from {dir:?}");
     }
 
@@ -212,5 +220,5 @@ fn main() -> Result<()> {
 
     // Patched loop: drains `rx` (calling add_peer) at the top of each iteration,
     // otherwise identical to AppServer::event_loop. See patches/app_server_control.md.
-    srv.event_loop_with_control(rx, args.psk_dir.clone())
+    srv.event_loop_with_control(rx, args.psk_dir.clone(), known_peers)
 }
