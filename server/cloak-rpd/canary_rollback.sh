@@ -11,6 +11,8 @@ rm -f /run/rosenpass/control.sock
 if [ -f "/usr/local/bin/regionsvc.bak-$TS" ]; then
   cp -p "/usr/local/bin/regionsvc.bak-$TS" /usr/local/bin/regionsvc
 fi
+systemctl unmask cloak-rosenpass 2>/dev/null
+systemctl reset-failed cloak-rosenpass 2>/dev/null
 systemctl start cloak-rosenpass
 systemctl restart regionsvc
 sleep 2

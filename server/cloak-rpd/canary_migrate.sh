@@ -25,14 +25,28 @@ echo "== build preload peer set =="
 /usr/local/bin/rpd-build-peers.sh
 
 echo "== CUTOVER =="
-# Disable + reset-failed so cloak-rosenpass can't crash-loop trying to re-bind
-# :9999 (Restart=on-failure) once cloak-rpd owns the port.
+# MASK cloak-rosenpass so nothing — including the not-yet-swapped old regionsvc
+# calling `systemctl restart cloak-rosenpass` mid-cutover — can start it while
+# cloak-rpd owns :9999. (disable alone doesn't block an explicit restart; mask
+# does.) reset-failed clears any prior crash-loop state.
 systemctl stop cloak-rosenpass
-systemctl disable cloak-rosenpass 2>/dev/null
+systemctl mask cloak-rosenpass
 systemctl reset-failed cloak-rosenpass 2>/dev/null
 sleep 1
 systemctl start cloak-rpd
 sleep 2
+
+# SAFETY: never leave the box with no rosenpass daemon. If cloak-rpd didn't come
+# up, auto-rollback to cloak-rosenpass and abort this box.
+if [ "$(systemctl is-active cloak-rpd)" != active ]; then
+  echo "!! cloak-rpd failed to start — AUTO-ROLLBACK to cloak-rosenpass"
+  journalctl -u cloak-rpd -n 8 --no-pager | tail -8
+  systemctl unmask cloak-rosenpass
+  systemctl start cloak-rosenpass
+  echo "rollback cloak-rosenpass=$(systemctl is-active cloak-rosenpass)"
+  exit 1
+fi
+
 mv -f /usr/local/bin/regionsvc.stage /usr/local/bin/regionsvc
 systemctl restart regionsvc
 sleep 2
