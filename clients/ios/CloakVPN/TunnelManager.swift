@@ -380,6 +380,20 @@ final class TunnelManager: ObservableObject {
 
         debugLog("selectRegion: \(region.id) — provisioning via account API")
         do {
+            // Switch-while-connected: take the tunnel DOWN before provisioning.
+            // Under includeAllNetworks the provision HTTPS request is forced
+            // through the CURRENT tunnel; on a switch the server tears that
+            // peer down and slow provisions (legacy boxes restart rosenpass,
+            // ~3-9s) let the in-flight request die — surfaced as "Couldn't
+            // reach Lattice." With the tunnel down first, the request rides the
+            // physical interface and always completes. Fresh connects (not
+            // currently connected) are unaffected; the cache-hit path above
+            // makes no network call so it keeps its in-place bounce.
+            let mustReconnect = wasActivelyConnected && switchingRegions
+            if mustReconnect {
+                debugLog("selectRegion: switching while connected — dropping tunnel before provision (out-of-tunnel control plane)")
+                await disconnectAndWait()
+            }
             let configText = try await provisionFromAPIRaw(region: region)
             try await importConfig(configText)
             selectedRegion = region
@@ -391,14 +405,26 @@ final class TunnelManager: ObservableObject {
             provisionedConfigsByRegionID = [region.id: configText]
             persistProvisionedConfigsCache()
             debugLog("selectRegion: \(region.id) configured + cached successfully")
-            await reconnectIfWasConnected(wasConnected: wasActivelyConnected,
-                                          switching: switchingRegions,
-                                          region: region)
+            if mustReconnect {
+                try await connect()
+            }
         } catch {
             let msg = error.localizedDescription
             debugLog("selectRegion: \(region.id) failed: \(msg)")
             lastRegionError = "\(region.displayName): \(msg)"
         }
+    }
+
+    /// Disconnect and poll until the tunnel is actually `.disconnected`, then a
+    /// brief beat for iOS to release the utun. Used to take the tunnel down
+    /// BEFORE a switch-provision so the control-plane request goes out-of-tunnel.
+    private func disconnectAndWait() async {
+        do { try await disconnect() } catch { debugLog("disconnectAndWait: disconnect threw \(error)") }
+        let deadline = Date().addingTimeInterval(8.0)
+        while Date() < deadline && status != .disconnected {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+        try? await Task.sleep(nanoseconds: 500_000_000)
     }
 
     /// If the user tapped a flag while the tunnel was active, tear
