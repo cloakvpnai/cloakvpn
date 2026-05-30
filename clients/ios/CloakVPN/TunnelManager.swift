@@ -1031,6 +1031,82 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    // MARK: - Layer 5 — PQC self-heal (recover poisoned PQC state, no reinstall)
+    //
+    // Root cause 2026-05-30: the App Group's rosenpass keypair / stored server
+    // pubkey could end up missing or stale (notably persisting across
+    // upgrade-installs), so the NE never starts the rosenpass exchange —
+    // WireGuard comes up but PQC stays at 0 rotations and the only known fix was
+    // a full delete+reinstall. This recovers automatically: if PQC has NEVER
+    // rotated by `pqcHealGraceSec` after connecting, regenerate the local
+    // keypair when it's missing, drop the cached config + stale server pubkey for
+    // the active region, and re-provision it fresh. One-shot per connection,
+    // rate-limited, and it can ONLY fire when PQC is provably stuck (>= grace
+    // with zero rotations) — the healthy path is never touched.
+    //
+    // Grace is set comfortably past a normal first rotation (~30-90s) so a
+    // slow-but-working exchange is never interrupted.
+    private static let pqcHealGraceSec: TimeInterval = 150
+    private static let maxPqcHealsPerWindow = 2
+    private static let pqcHealWindowSec: TimeInterval = 600
+    private var pqcHealTimer: Timer?
+    private var pqcHealedThisConnection = false
+    private var pqcHealTimestamps: [Date] = []
+
+    /// Arm the one-shot PQC self-heal grace timer for this connection.
+    private func armPQCSelfHeal() {
+        guard config?.pqEnabled == true else { return }
+        disarmPQCSelfHeal()
+        pqcHealedThisConnection = false
+        let timer = Timer.scheduledTimer(withTimeInterval: Self.pqcHealGraceSec, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.pqcSelfHealCheck() }
+        }
+        pqcHealTimer = timer
+    }
+
+    /// Cancel the grace timer (tunnel left the connected state, or healed).
+    private func disarmPQCSelfHeal() {
+        pqcHealTimer?.invalidate()
+        pqcHealTimer = nil
+    }
+
+    /// Fired `pqcHealGraceSec` after connect. If PQC has never rotated, the NE
+    /// never started its exchange (poisoned PQC state) — recover by regenerating
+    /// the keypair when missing and re-provisioning the active region fresh.
+    private func pqcSelfHealCheck() {
+        // Only act if still connected AND PQC has not established a rotation.
+        guard status == .connected else { return }
+        if case .established(let n) = rosenpass.status, n > 0 { return } // healthy — never touch
+        guard !pqcHealedThisConnection else { return }
+
+        let now = Date()
+        pqcHealTimestamps.removeAll { now.timeIntervalSince($0) > Self.pqcHealWindowSec }
+        guard pqcHealTimestamps.count < Self.maxPqcHealsPerWindow else {
+            debugLog("pqcSelfHeal: rate-limited (\(pqcHealTimestamps.count) in window) — leaving for manual reconnect")
+            return
+        }
+        guard let region = selectedRegion else { return }
+
+        pqcHealedThisConnection = true
+        pqcHealTimestamps.append(now)
+        debugLog("pqcSelfHeal: PQC at 0 rotations \(Int(Self.pqcHealGraceSec))s after connect — regenerating keys if missing + re-provisioning \(region.id)")
+
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            // Integrity: regenerate the rosenpass keypair only if it's gone.
+            if !AppGroupKeyStore.hasLocalKeypair() {
+                AppGroupKeyStore.clearLocalKeypair()
+                await self.ensureLocalKeypair()
+            }
+            // Drop the stale server pubkey (re-saved on the fresh import) and the
+            // cached region config so selectRegion does a full fresh provision.
+            AppGroupKeyStore.clearServerPublicKey()
+            self.provisionedConfigsByRegionID.removeValue(forKey: region.id)
+            self.persistProvisionedConfigsCache()
+            await self.selectRegion(region)
+        }
+    }
+
     private func updateStatus(_ s: NEVPNStatus) {
         let old = status
         switch s {
@@ -1066,6 +1142,13 @@ final class TunnelManager: ObservableObject {
         if status == .disconnected,
            old == .connected || old == .connecting || old == .reasserting {
             checkForWedgeRecoveryAutoReconnect()
+        }
+
+        // Layer 5: arm PQC self-heal on connect; disarm when leaving connected.
+        if status == .connected, old != .connected {
+            armPQCSelfHeal()
+        } else if status != .connected, old == .connected {
+            disarmPQCSelfHeal()
         }
     }
 
