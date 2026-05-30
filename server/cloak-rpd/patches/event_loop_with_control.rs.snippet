@@ -1,0 +1,153 @@
+// ===========================================================================
+// PATCH SNIPPET — insert as a method into `impl AppServer` in
+// rosenpass/src/app_server.rs, immediately BEFORE the line:
+//     /// Helper for [Self::event_loop_without_error_handling] to handle network messages
+// (i.e. right before `fn handle_msg_under_load`).
+//
+// It is a faithful copy of `event_loop_without_error_handling`
+// (app_server.rs:1116) with ONE addition: a control-channel drain at the top of
+// each loop iteration that calls `add_peer` for runtime, zero-disruption peer
+// adds. All symbols (MsgBuf, AppPollResult, KeyOutputReason, HandleMsgResult,
+// Endpoint, SymKey, DoSOperation, AppPeerPtr, info!, attempt!) are already in
+// module scope, exactly as in the original.
+//
+// STATUS: WIP, not yet compiled. Apply via apply_patch.sh.
+// ===========================================================================
+
+    /// Like [Self::event_loop_without_error_handling], but also services a
+    /// runtime peer-add channel. Each queued `(name, pubkey_path)` is added via
+    /// [Self::add_peer] — zero disruption to existing peers (independent
+    /// CryptoServer entries). Used by the `cloak-rpd` binary so provisioning a
+    /// device never restarts the daemon.
+    pub fn event_loop_with_control(
+        &mut self,
+        ctrl_rx: std::sync::mpsc::Receiver<(String, std::path::PathBuf)>,
+    ) -> anyhow::Result<()> {
+        use crate::protocol::basic_types::SPk;
+        use crate::protocol::osk_domain_separator::OskDomainSeparator;
+        use crate::protocol::ProtocolVersion;
+
+        let (mut rx, mut tx) = (MsgBuf::zero(), MsgBuf::zero());
+
+        macro_rules! tx_maybe_with {
+            ($peer:expr, $fn:expr) => {
+                attempt!({
+                    let p = $peer;
+                    if p.get_app(self).endpoint().is_some() {
+                        let len = $fn()?;
+                        let ep: &Endpoint = p.get_app(self).endpoint().unwrap();
+                        ep.send(self, &tx[..len])?;
+                    }
+                    Ok(())
+                })
+            };
+        }
+
+        loop {
+            use crate::protocol::HandleMsgResult;
+            use AppPollResult::*;
+            use KeyOutputReason::*;
+
+            // --- NEW: drain runtime peer-add requests before polling ---------
+            while let Ok((name, pubkey_path)) = ctrl_rx.try_recv() {
+                match SPk::load(&pubkey_path) {
+                    Ok(pk) => {
+                        let out = std::path::Path::new("/run/rosenpass")
+                            .join(format!("psk-{name}"));
+                        if let Err(e) = self.add_peer(
+                            None,
+                            pk,
+                            Some(out),
+                            None,
+                            None,
+                            ProtocolVersion::V03,
+                            OskDomainSeparator::default(),
+                        ) {
+                            log::warn!("cloak-rpd add_peer {name} failed: {e:?}");
+                        } else {
+                            log::info!("cloak-rpd add_peer {name} ok");
+                        }
+                    }
+                    Err(e) => log::warn!("cloak-rpd load {pubkey_path:?} failed: {e:?}"),
+                }
+            }
+            // -----------------------------------------------------------------
+
+            enum CryptoSrv {
+                Avail,
+                Missing,
+            }
+
+            let poll_result = self.poll(&mut *rx)?;
+            let have_crypto = match self.crypto_site.is_available() {
+                true => CryptoSrv::Avail,
+                false => CryptoSrv::Missing,
+            };
+
+            #[allow(clippy::redundant_closure_call)]
+            match (have_crypto, poll_result) {
+                (_, Terminate) => return Ok(()),
+
+                (CryptoSrv::Missing, SendInitiation(_)) => {}
+                (CryptoSrv::Avail, SendInitiation(peer)) => tx_maybe_with!(peer, || self
+                    .crypto_server_mut()?
+                    .initiate_handshake(peer.lower(), &mut *tx))?,
+
+                (CryptoSrv::Missing, SendRetransmission(_)) => {}
+                (CryptoSrv::Avail, SendRetransmission(peer)) => tx_maybe_with!(peer, || self
+                    .crypto_server_mut()?
+                    .retransmit_handshake(peer.lower(), &mut *tx))?,
+
+                (CryptoSrv::Missing, DeleteKey(_)) => {}
+                (CryptoSrv::Avail, DeleteKey(peer)) => {
+                    self.output_key(peer, Stale, &SymKey::random())?;
+                    let p = peer.get_app_mut(self);
+                    p.current_endpoint = Endpoint::discovery_from_multiple_sources(
+                        p.current_endpoint.as_ref(),
+                        p.initial_endpoint.as_ref(),
+                    );
+                }
+
+                (CryptoSrv::Missing, ReceivedMessage(_, _)) => {}
+                (CryptoSrv::Avail, ReceivedMessage(len, endpoint)) => {
+                    let msg_result = match self.under_load {
+                        DoSOperation::UnderLoad => {
+                            self.handle_msg_under_load(&endpoint, &rx[..len], &mut *tx)
+                        }
+                        DoSOperation::Normal => {
+                            self.crypto_server_mut()?.handle_msg(&rx[..len], &mut *tx)
+                        }
+                    };
+                    match msg_result {
+                        Err(ref e) => {
+                            self.verbose().then(|| {
+                                info!(
+                                    "error processing incoming message from {}: {:?} {}",
+                                    endpoint,
+                                    e,
+                                    e.backtrace()
+                                );
+                            });
+                        }
+
+                        Ok(HandleMsgResult {
+                            resp,
+                            exchanged_with,
+                            ..
+                        }) => {
+                            if let Some(len) = resp {
+                                endpoint.send(self, &tx[0..len])?;
+                            }
+
+                            if let Some(p) = exchanged_with {
+                                let ap = AppPeerPtr::lift(p);
+                                ap.get_app_mut(self).current_endpoint = Some(endpoint);
+                                let osk = &self.crypto_server_mut()?.osk(p)?;
+                                self.output_key(ap, Exchanged, osk)?;
+                            }
+                        }
+                    }
+                }
+            };
+        }
+    }
