@@ -99,14 +99,32 @@ final class RosenpassBridge: ObservableObject {
     /// got a chance to write fresh rotation data).
     private var statusPollSessionStartEpoch: TimeInterval = 0
 
+    /// Latches true once PQC has been observed established within the
+    /// current polling session. Rosenpass deliberately pauses rotations
+    /// when the tunnel carries no traffic (and iOS quiesces the NE while
+    /// the link is idle), so the rotation count can sit unchanged for
+    /// minutes at a time. The PQ-derived PSK remains installed and in
+    /// force the entire time — the link is still secured — so once we've
+    /// confirmed establishment we must NOT flip the indicator back to
+    /// "handshaking…" just because rotations paused or the user reopened
+    /// the app. Reset to false in startStatusPolling for each new session.
+    private var sessionHasEstablished = false
+
     private static let appGroupID = "group.ai.cloakvpn.CloakVPN"
     private static let neStatusFilename = "ne-rosenpass-status.json"
 
-    /// Threshold past which we surface a degraded "stale" status to the
-    /// user. Matches the NE-side health monitor's wedgePSKAgeSec — if
-    /// the NE hasn't reported a successful rotation in 5 minutes,
-    /// something's wrong even though Layer 2 may not have fired yet.
-    private static let staleThresholdSec: TimeInterval = 300
+    /// How recent a rotation must be (in wallclock seconds) for us to
+    /// accept it as belonging to THIS tunnel session even though it
+    /// predates this poll session's start. This is what lets the
+    /// indicator survive the user reopening the app several minutes after
+    /// connecting: the last rotation is older than the poll-session start
+    /// but only a few minutes old in absolute terms, so it is
+    /// unambiguously ours — not a stale count left in the App Group file
+    /// by a previous, now-dead tunnel session (the only thing the
+    /// session-start gate was ever meant to guard against). Generous on
+    /// purpose: rotations legitimately pause during idle, so a tight
+    /// window would falsely demote a healthy tunnel to "handshaking".
+    private static let establishFreshnessSec: TimeInterval = 900
 
     // MARK: - Public API
 
@@ -177,6 +195,7 @@ final class RosenpassBridge: ObservableObject {
         // every fresh tunnel start surfaced "PSK stale (Xs old)" until
         // the NE driver completed its first rotation ~30-60s later.
         statusPollSessionStartEpoch = Date().timeIntervalSince1970
+        sessionHasEstablished = false
         // Show .connecting until the first rotation completes; the
         // NE driver typically gets a fresh PSK within 30-60 seconds.
         status = .connecting
@@ -225,36 +244,42 @@ final class RosenpassBridge: ObservableObject {
 
         let rotations = (obj["rotationCount"] as? Int) ?? 0
         let lastSuccessEpoch = (obj["lastSuccessEpoch"] as? Double) ?? 0
-
-        // Gate everything on the session-start epoch. If the most
-        // recent NE-side rotation predates *this* polling session,
-        // it belongs to a previous tunnel run that left its status
-        // file behind in the App Group container. Treat as
-        // "no-fresh-rotation-yet" (.handshaking) rather than
-        // surfacing the stale age — which is what the user saw as
-        // "PSK stale (4900s old)" on every fresh connect before
-        // this gate landed.
-        if lastSuccessEpoch < statusPollSessionStartEpoch {
-            status = .handshaking
-            return
-        }
-
-        guard rotations > 0 else {
-            status = .handshaking
-            return
-        }
-
-        // Now lastSuccessEpoch is genuinely from this session — apply
-        // the normal stale check (NE driver appears alive but hasn't
-        // rotated in ages → something's wrong even if Layer 2 hasn't
-        // fired yet).
         let age = Date().timeIntervalSince1970 - lastSuccessEpoch
-        if age > Self.staleThresholdSec {
-            status = .error("PSK stale (\(Int(age))s old)")
+
+        // Decide whether PQC is established for THIS tunnel session.
+        //
+        // The status file outlives any single NE process, so right after
+        // a fresh connect we may momentarily read a rotation count left
+        // by a previous session before the new NE overwrites it. We
+        // accept an exchange as belonging to this session if it is either
+        //   (a) newer than this poll session's start — a genuinely fresh
+        //       rotation, or
+        //   (b) recent in wallclock terms (< establishFreshnessSec) — which
+        //       covers the user reopening the app a few minutes after
+        //       connecting, where the last rotation predates the poll
+        //       session start but is unmistakably ours.
+        let establishedNow = rotations > 0 &&
+            (lastSuccessEpoch >= statusPollSessionStartEpoch ||
+             age < Self.establishFreshnessSec)
+        if establishedNow {
+            sessionHasEstablished = true
+        }
+
+        // Latch: once established this session, stay established while the
+        // tunnel is up. Rosenpass pauses rotations whenever the link is
+        // idle (and iOS quiesces the NE), so the count can sit unchanged
+        // for minutes — but the installed PSK is still in force and still
+        // protecting traffic, so reporting "handshaking…" or "PSK stale"
+        // would misrepresent a healthy, secured tunnel. Detecting a true
+        // wedge (a PSK desync that actually breaks traffic) is the job of
+        // the NE's auto-recovery layers and TunnelManager's self-heal —
+        // not of this cosmetic indicator.
+        if sessionHasEstablished {
+            status = .established(rotations: rotations)
             return
         }
 
-        status = .established(rotations: rotations)
+        status = .handshaking
     }
 
     // MARK: - Internal loop
