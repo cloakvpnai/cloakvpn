@@ -556,12 +556,16 @@ final class TunnelManager: ObservableObject {
             let managers = try await NETunnelProviderManager.loadAllFromPreferences()
             manager = managers.first
             if let m = manager {
-                updateStatus(m.connection.status)
-                observeStatus(m.connection)
+                // Restore config BEFORE updateStatus so the .connected handler
+                // can start the PQC status poller. Without this ordering, a cold
+                // launch into an already-up tunnel shows "PQC: idle" even though
+                // the NE is actively rotating keys.
                 if let cfgDict = (m.protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration,
                    let cfg = try? CloakConfig(dict: cfgDict) {
                     config = cfg
                 }
+                observeStatus(m.connection)
+                updateStatus(m.connection.status)
             }
         } catch {
             print("TunnelManager.load error: \(error)")
@@ -1170,8 +1174,14 @@ final class TunnelManager: ObservableObject {
             checkForWedgeRecoveryAutoReconnect()
         }
 
+        // Drive the PQC status poller off the connection state (not only the
+        // in-app connect() path) so the indicator reflects the NE's live
+        // rotations on cold launch / reconnect instead of sticking on "idle".
+        // Host-only: cannot affect the NE's actual exchange. startStatusPolling
+        // is idempotent. This also gives the self-heal correct status input.
         // Layer 5: arm PQC self-heal on connect; disarm when leaving connected.
         if status == .connected, old != .connected {
+            if config?.pqEnabled == true { rosenpass.startStatusPolling() }
             armPQCSelfHeal()
         } else if status != .connected, old == .connected {
             disarmPQCSelfHeal()
