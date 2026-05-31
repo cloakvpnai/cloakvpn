@@ -356,14 +356,17 @@ class RosenpassRotator(
         private const val MIN_ROTATION_SEC = 30
 
         /**
-         * Fractional jitter applied to every rotation interval (±25%).
-         * A fixed interval phase-locks with WireGuard's own ~120 s rekey
+         * Fractional jitter applied to every rotation interval (±8%).
+         * A FIXED interval phase-locks with WireGuard's own ~120 s rekey
          * (REKEY_AFTER_TIME): once the periods align they stay aligned and
          * every PSK swap lands on a rekey handshake — the "~3 good cycles
-         * then the tunnel desyncs" failure. Jitter keeps the rotation's
-         * phase relative to the rekey continuously moving.
+         * then the tunnel desyncs" failure. We still jitter to keep the
+         * rotation's phase moving relative to the rekey, but at ±8% (was
+         * ±25%) so the cadence reads as a steady ~2 min like iOS instead of
+         * visibly wandering 1.5–2.5 min. ±8% (≈110–130 s) is ample to avoid
+         * a stable lock with the 120 s rekey while looking regular.
          */
-        private const val ROTATION_JITTER = 0.25
+        private const val ROTATION_JITTER = 0.08
 
         /** Max inbound messages tolerated per handshake. */
         private const val MAX_MESSAGES = 6
