@@ -21,6 +21,7 @@ struct AccountEntryView: View {
 
     @State private var input: String = ""
     @State private var error: String?
+    @State private var showPaywall = false
     @FocusState private var focused: Bool
 
     private var complete: Bool { LatticeAPI.isComplete(input) }
@@ -116,10 +117,10 @@ struct AccountEntryView: View {
                     .disabled(!complete || tunnel.signInBusy)
                     .padding(.top, 20)
 
-                    Button("Don't have an account? Subscribe at latticevpn.ai") {
-                        if let u = URL(string: "https://latticevpn.ai/pricing") { openURL(u) }
+                    Button("Don't have an account? See plans") {
+                        showPaywall = true
                     }
-                    .font(.system(size: 13))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(CloakDesign.brandGreen)
                     .padding(.top, 22)
 
@@ -134,6 +135,10 @@ struct AccountEntryView: View {
                 .padding(.vertical, 48)
                 .frame(maxWidth: .infinity)
             }
+        }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView()
+                .environmentObject(tunnel)
         }
     }
 

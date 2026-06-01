@@ -28,6 +28,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cloakvpn/api/internal/appleiap"
 	httpx "github.com/cloakvpn/api/internal/http"
 	"github.com/cloakvpn/api/internal/regions"
 	"github.com/cloakvpn/api/internal/store"
@@ -65,9 +66,22 @@ func main() {
 		AccountNumberSecret: cfg.AccountNumberSecret,
 	}, db)
 
+	iapH := appleiap.NewHandler(appleiap.Config{
+		BundleID:            cfg.AppleBundleID,
+		ProductBasicMonthly: cfg.AppleProductBasicMonthly,
+		ProductBasicYearly:  cfg.AppleProductBasicYearly,
+		ProductProMonthly:   cfg.AppleProductProMonthly,
+		ProductProYearly:    cfg.AppleProductProYearly,
+		BasicDeviceLimit:    cfg.BasicDeviceLimit,
+		ProDeviceLimit:      cfg.ProDeviceLimit,
+		AccountNumberSecret: cfg.AccountNumberSecret,
+	}, db)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", httpx.Health)
 	mux.HandleFunc("/v1/webhook/stripe", stripeH.Webhook)
+	mux.HandleFunc("/v1/iap", iapH.Verify)
+	mux.HandleFunc("/v1/iap/notifications", iapH.Notifications)
 	mux.HandleFunc("/v1/device", httpx.NewDeviceHandler(db, regs, rc,
 		cfg.AccountNumberSecret, cfg.DefaultRegion, cfg.WGSubnet).ServeHTTP)
 	mux.HandleFunc("/v1/account", httpx.NewAccountHandler(db, cfg.AccountNumberSecret).ServeHTTP)
@@ -113,6 +127,13 @@ type config struct {
 	BasicDeviceLimit int
 	ProDeviceLimit   int
 
+	// Apple IAP — product IDs must match the App Store Connect subscriptions.
+	AppleBundleID            string
+	AppleProductBasicMonthly string
+	AppleProductBasicYearly  string
+	AppleProductProMonthly   string
+	AppleProductProYearly    string
+
 	WGSubnet             string
 	RegionsConfig        string
 	RegionInternalSecret string
@@ -133,6 +154,14 @@ func loadConfig() config {
 
 		BasicDeviceLimit: envInt("BASIC_DEVICE_LIMIT", 3),
 		ProDeviceLimit:   envInt("PRO_DEVICE_LIMIT", 10),
+
+		// Optional (defaults match the planned App Store Connect product IDs)
+		// so deploying this binary needs no new env to keep running.
+		AppleBundleID:            envOr("APPLE_BUNDLE_ID", "ai.cloakvpn.CloakVPN"),
+		AppleProductBasicMonthly: envOr("APPLE_PRODUCT_BASIC_MONTHLY", "ai.cloakvpn.CloakVPN.basic.monthly"),
+		AppleProductBasicYearly:  envOr("APPLE_PRODUCT_BASIC_YEARLY", "ai.cloakvpn.CloakVPN.basic.yearly"),
+		AppleProductProMonthly:   envOr("APPLE_PRODUCT_PRO_MONTHLY", "ai.cloakvpn.CloakVPN.pro.monthly"),
+		AppleProductProYearly:    envOr("APPLE_PRODUCT_PRO_YEARLY", "ai.cloakvpn.CloakVPN.pro.yearly"),
 
 		WGSubnet:             envOr("WG_SUBNET", "10.99.0.0/24"),
 		RegionsConfig:        envOr("REGIONS_CONFIG", "/etc/cloakvpn/regions.json"),

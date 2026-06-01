@@ -52,9 +52,14 @@ type Account struct {
 	AccountNumberHash string
 	StripeCustomerID  string
 	StripeSessionID   string
-	Tier              Tier
-	DeviceLimit       int
-	ActiveUntil       time.Time
+	// AppleOriginalTxnID is the App Store originalTransactionId for accounts
+	// minted from an in-app purchase (empty for Stripe-minted accounts). It
+	// is the stable key for a subscription across renewals, so renewals and
+	// cancellations from App Store Server Notifications map back to the row.
+	AppleOriginalTxnID string
+	Tier               Tier
+	DeviceLimit        int
+	ActiveUntil        time.Time
 }
 
 type Device struct {
@@ -99,7 +104,51 @@ func Open(path string) (*DB, error) {
 	if err := migrateDeviceLastSeen(db); err != nil {
 		return nil, fmt.Errorf("migrate last_seen: %w", err)
 	}
+	if err := migrateAppleTxn(db); err != nil {
+		return nil, fmt.Errorf("migrate apple_original_txn_id: %w", err)
+	}
 	return &DB{db}, nil
+}
+
+// migrateAppleTxn adds accounts.apple_original_txn_id (Migration 3): the App
+// Store originalTransactionId for IAP-minted accounts, so renewals and
+// cancellations from App Store Server Notifications can find the row.
+// Idempotent — a no-op once the column exists.
+func migrateAppleTxn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(accounts)`)
+	if err != nil {
+		return err
+	}
+	has := false
+	for rows.Next() {
+		var (
+			cid         int
+			name, ctype string
+			notnull, pk int
+			dflt        sql.NullString
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "apple_original_txn_id" {
+			has = true
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if has {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE accounts ADD COLUMN apple_original_txn_id TEXT`); err != nil {
+		return fmt.Errorf("add column: %w", err)
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_accounts_apple_txn ON accounts(apple_original_txn_id)`); err != nil {
+		return fmt.Errorf("index: %w", err)
+	}
+	return nil
 }
 
 const schema = `
@@ -253,14 +302,15 @@ func migrateDeviceLastSeen(db *sql.DB) error {
 // keeps the nullable columns scannable into non-pointer Go fields.
 const accountCols = `id, account_number_hash, COALESCE(stripe_customer_id, ''), ` +
 	`COALESCE(stripe_session_id, ''), tier, device_limit, ` +
-	`COALESCE(active_until, '1970-01-01T00:00:00Z')`
+	`COALESCE(active_until, '1970-01-01T00:00:00Z'), ` +
+	`COALESCE(apple_original_txn_id, '')`
 
 func scanAccount(row *sql.Row) (*Account, error) {
 	var a Account
 	var tier string
 	var until string
 	err := row.Scan(&a.ID, &a.AccountNumberHash, &a.StripeCustomerID,
-		&a.StripeSessionID, &tier, &a.DeviceLimit, &until)
+		&a.StripeSessionID, &tier, &a.DeviceLimit, &until, &a.AppleOriginalTxnID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -333,6 +383,77 @@ func (d *DB) AccountByStripeCustomer(customerID string) (*Account, error) {
 func (d *DB) AccountBySession(sessionID string) (*Account, error) {
 	return scanAccount(d.QueryRow(
 		`SELECT ` + accountCols + ` FROM accounts WHERE stripe_session_id = ?`, sessionID))
+}
+
+// ---- Apple in-app-purchase accounts --------------------------------------
+
+// AccountByAppleTxn looks up an account by its App Store originalTransactionId
+// — used by the IAP verify endpoint (to extend an existing subscriber rather
+// than mint a duplicate) and by App Store Server Notifications.
+func (d *DB) AccountByAppleTxn(originalTxnID string) (*Account, error) {
+	return scanAccount(d.QueryRow(
+		`SELECT `+accountCols+` FROM accounts WHERE apple_original_txn_id = ?`, originalTxnID))
+}
+
+// CreateAccountApple mints a new account row for a first-time in-app purchase,
+// keyed by the App Store originalTransactionId. Mirrors CreateAccount but for
+// the Apple payment source (no Stripe customer/session).
+func (d *DB) CreateAccountApple(numberHash, originalTxnID string,
+	tier Tier, limit int, activeUntil time.Time) (*Account, error) {
+	if numberHash == "" {
+		return nil, errors.New("numberHash required")
+	}
+	if originalTxnID == "" {
+		return nil, errors.New("originalTxnID required")
+	}
+	res, err := d.Exec(`
+		INSERT INTO accounts
+		  (account_number_hash, apple_original_txn_id, tier, device_limit, active_until)
+		VALUES (?, ?, ?, ?, ?)`,
+		numberHash, originalTxnID, tier, limit, formatTime(activeUntil))
+	if err != nil {
+		return nil, err
+	}
+	id, _ := res.LastInsertId()
+	return &Account{
+		ID:                 id,
+		AccountNumberHash:  numberHash,
+		AppleOriginalTxnID: originalTxnID,
+		Tier:               tier,
+		DeviceLimit:        limit,
+		ActiveUntil:        activeUntil,
+	}, nil
+}
+
+// UpdateSubscriptionByAppleTxn refreshes tier / limit / expiry on an App Store
+// renewal or plan change (DID_RENEW / DID_CHANGE_RENEWAL_PREF notifications).
+func (d *DB) UpdateSubscriptionByAppleTxn(originalTxnID string, tier Tier,
+	limit int, activeUntil time.Time) error {
+	_, err := d.Exec(`UPDATE accounts
+	                     SET tier = ?, device_limit = ?, active_until = ?
+	                   WHERE apple_original_txn_id = ?`,
+		tier, limit, formatTime(activeUntil), originalTxnID)
+	return err
+}
+
+// UpdateAccountHashByAppleTxn re-points an Apple-minted account at a new
+// account-number hash. Used on a restore from a device with no local copy of
+// the number: we re-mint and return a fresh number rather than store the
+// plaintext server-side (the no-plaintext policy). The subscription identity
+// (originalTransactionId) is unchanged.
+func (d *DB) UpdateAccountHashByAppleTxn(originalTxnID, newHash string) error {
+	_, err := d.Exec(`UPDATE accounts SET account_number_hash = ? WHERE apple_original_txn_id = ?`,
+		newHash, originalTxnID)
+	return err
+}
+
+// DeactivateByAppleTxn clears tier / limit / expiry when an App Store
+// subscription expires, is refunded, or revoked (EXPIRED / REFUND / REVOKE).
+func (d *DB) DeactivateByAppleTxn(originalTxnID string) error {
+	_, err := d.Exec(`UPDATE accounts
+	                     SET tier = '', device_limit = 0, active_until = NULL
+	                   WHERE apple_original_txn_id = ?`, originalTxnID)
+	return err
 }
 
 // UpdateSubscriptionByStripeCustomer refreshes tier / limit / expiry on a
