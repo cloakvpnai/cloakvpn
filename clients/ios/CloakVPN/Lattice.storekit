@@ -1,0 +1,121 @@
+{
+  "identifier" : "B9F2A1C0-LATTICE-STOREKIT-CONFIG",
+  "nonRenewingSubscriptions" : [],
+  "products" : [],
+  "settings" : {
+    "_applicationInternalID" : "6764261045",
+    "_developerTeamID" : "5HYY2YP2G9",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 0,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : []
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "21500001",
+      "localizations" : [
+        {
+          "description" : "Lattice VPN subscription plans.",
+          "displayName" : "Lattice VPN",
+          "locale" : "en_US"
+        }
+      ],
+      "name" : "Lattice VPN",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "9.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "22500003",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "All server regions, up to 10 devices. Billed monthly.",
+              "displayName" : "Lattice Pro — Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "ai.cloakvpn.CloakVPN.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Pro Monthly",
+          "subscriptionGroupID" : "21500001",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : []
+        },
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "99.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "22500004",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "All server regions, up to 10 devices. Two months free.",
+              "displayName" : "Lattice Pro — Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "ai.cloakvpn.CloakVPN.pro.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Pro Yearly",
+          "subscriptionGroupID" : "21500001",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : []
+        },
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "4.99",
+          "familyShareable" : false,
+          "groupNumber" : 3,
+          "internalID" : "22500001",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "All server regions, up to 3 devices. Billed monthly.",
+              "displayName" : "Lattice Basic — Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "ai.cloakvpn.CloakVPN.basic.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Basic Monthly",
+          "subscriptionGroupID" : "21500001",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : []
+        },
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "49.99",
+          "familyShareable" : false,
+          "groupNumber" : 4,
+          "internalID" : "22500002",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "All server regions, up to 3 devices. Two months free.",
+              "displayName" : "Lattice Basic — Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "ai.cloakvpn.CloakVPN.basic.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Basic Yearly",
+          "subscriptionGroupID" : "21500001",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : []
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}
