@@ -13,11 +13,17 @@ import StoreKit
 struct PaywallView: View {
     @EnvironmentObject var tunnel: TunnelManager
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @StateObject private var store = StoreManager()
+
+    private let termsURL = URL(string: "https://latticevpn.ai/terms")!
+    private let privacyURL = URL(string: "https://latticevpn.ai/privacy")!
 
     @State private var busyProductID: String?
     @State private var restoring = false
     @State private var error: String?
+    /// The plan the user tapped — only this row shows the green outline.
+    @State private var selectedProductID: String?
 
     private var anyBusy: Bool { busyProductID != nil || restoring || tunnel.signInBusy }
 
@@ -81,12 +87,24 @@ struct PaywallView: View {
                     .padding(.top, 24)
                     .disabled(anyBusy)
 
-                    Text("Subscriptions renew automatically unless cancelled at least 24 hours before the period ends. Manage or cancel anytime in your Apple ID settings.")
+                    Text("Payment is charged to your Apple Account at confirmation of purchase. Subscriptions renew automatically for the same price and duration unless cancelled at least 24 hours before the period ends. Manage or cancel anytime in your Apple ID settings.")
                         .font(.system(size: 11))
                         .foregroundStyle(.white.opacity(0.45))
                         .multilineTextAlignment(.center)
                         .padding(.top, 18)
                         .padding(.horizontal, 12)
+
+                    // Required for auto-renewable subscriptions (Guideline 3.1.2):
+                    // functional Terms of Use (EULA) + Privacy Policy links in
+                    // the purchase flow.
+                    HStack(spacing: 18) {
+                        Button("Terms of Use") { openURL(termsURL) }
+                        Text("·").foregroundStyle(.white.opacity(0.3))
+                        Button("Privacy Policy") { openURL(privacyURL) }
+                    }
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(CloakDesign.brandGreen)
+                    .padding(.top, 14)
                 }
                 .padding(.horizontal, 22)
                 .padding(.bottom, 40)
@@ -106,7 +124,7 @@ struct PaywallView: View {
 
     @ViewBuilder
     private func planRow(_ product: Product) -> some View {
-        let isPro = product.id.contains(".pro")
+        let selected = (selectedProductID == product.id)
         Button {
             buy(product)
         } label: {
@@ -136,8 +154,8 @@ struct PaywallView: View {
                     .fill(Color.white.opacity(0.06))
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(isPro ? CloakDesign.brandGreen.opacity(0.7) : Color.white.opacity(0.15),
-                                    lineWidth: 1)
+                            .stroke(selected ? CloakDesign.brandGreen : Color.white.opacity(0.15),
+                                    lineWidth: selected ? 2 : 1)
                     )
             )
         }
@@ -149,6 +167,7 @@ struct PaywallView: View {
     private func buy(_ product: Product) {
         guard !anyBusy else { return }
         error = nil
+        selectedProductID = product.id   // highlight only the tapped plan
         busyProductID = product.id
         Task {
             defer { busyProductID = nil }
