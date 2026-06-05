@@ -17,7 +17,6 @@ import SwiftUI
 
 struct AccountEntryView: View {
     @EnvironmentObject var tunnel: TunnelManager
-    @Environment(\.openURL) private var openURL
 
     @State private var input: String = ""
     @State private var error: String?
@@ -124,12 +123,15 @@ struct AccountEntryView: View {
                     .foregroundStyle(CloakDesign.brandGreen)
                     .padding(.top, 22)
 
-                    Button("Lost your account number?") {
-                        if let u = URL(string: "https://latticevpn.ai/recover") { openURL(u) }
-                    }
-                    .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .padding(.top, 10)
+                    // No external link here (App Store Guideline 3.1.1): the
+                    // app must not link to the site, even indirectly. Account
+                    // numbers are printed on the customer's purchase receipt.
+                    Text("Lost your account number? It's on your purchase confirmation email.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 12)
+                        .padding(.horizontal, 8)
                 }
                 .padding(.horizontal, 28)
                 .padding(.vertical, 48)

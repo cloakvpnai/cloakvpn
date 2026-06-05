@@ -729,10 +729,13 @@ struct ContentView: View {
             }
 
             Section {
-                Link("Manage your subscription at latticevpn.ai",
-                     destination: URL(string: "https://latticevpn.ai/recover")!)
+                // App Store Guideline 3.1.1: no link to the website (even
+                // indirectly). IAP subscriptions are managed in the user's
+                // Apple Account settings.
+                Link("Manage subscription",
+                     destination: URL(string: "https://apps.apple.com/account/subscriptions")!)
             } footer: {
-                Text("Billing is handled on the website. Your account number is the only credential — keep it somewhere safe.")
+                Text("Manage or cancel your subscription in your Apple Account settings. Your account number is your only credential — keep it somewhere safe.")
                     .font(.caption)
             }
 
