@@ -17,11 +17,22 @@ import Footer from '@/components/Footer.astro';
 interface Props {
   title: string;
   description?: string;
+  /**
+   * Bare mode: render the page WITHOUT the marketing Navbar and Footer.
+   * Used for legal pages (privacy, terms) that are linked directly from the
+   * iOS/Android apps and the App Store / Play Store metadata. Those nav and
+   * footer components contain a "Pricing" / purchase link, and Apple's
+   * Guideline 3.1.1 prohibits any link to an external purchase mechanism
+   * reachable from the app (App Review followed the in-app privacy link to
+   * the site nav's Pricing link). Bare legal pages have no such links.
+   */
+  bare?: boolean;
 }
 
 const {
   title,
   description = 'Encrypted internet protection built to survive tomorrow’s computers. No logs. No accounts. Just privacy.',
+  bare = false,
 } = Astro.props;
 
 const fullTitle = title === 'home' ? 'Lattice VPN: Post-quantum VPN for Android' : `Lattice VPN: ${title}`;
@@ -58,11 +69,17 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
   </head>
 
   <body class="min-h-screen text-slate-900 antialiased overflow-x-hidden">
-    <Navbar />
+    {!bare && <Navbar />}
     <main class="relative">
       <slot />
     </main>
-    <Footer />
+    {bare ? (
+      <footer class="border-t border-slate-200 py-10 text-center text-sm text-slate-500">
+        <p>© 2026 Lattice VPN · Operated by KryptoKnightz LLC</p>
+      </footer>
+    ) : (
+      <Footer />
+    )}
 
     <script>
       // Reveal-on-scroll handler.
