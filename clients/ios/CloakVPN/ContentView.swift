@@ -641,10 +641,10 @@ struct ContentView: View {
                     } label: {
                         Label("About", systemImage: "info.circle")
                     }
-                    Link(destination: URL(string: "https://cloakvpn.ai/privacy")!) {
+                    Link(destination: URL(string: "https://latticevpn.ai/privacy")!) {
                         Label("Privacy policy", systemImage: "shield.lefthalf.filled")
                     }
-                    Link(destination: URL(string: "mailto:support@cloakvpn.ai")!) {
+                    Link(destination: URL(string: "mailto:support@latticevpn.ai")!) {
                         Label("Support", systemImage: "bubble.left.and.bubble.right")
                     }
                 }
