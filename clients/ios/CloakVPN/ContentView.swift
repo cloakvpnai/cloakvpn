@@ -641,6 +641,11 @@ struct ContentView: View {
                     } label: {
                         Label("About", systemImage: "info.circle")
                     }
+                    NavigationLink {
+                        AcknowledgementsView()
+                    } label: {
+                        Label("Open-source licenses", systemImage: "doc.text")
+                    }
                     Link(destination: URL(string: "https://latticevpn.ai/privacy")!) {
                         Label("Privacy policy", systemImage: "shield.lefthalf.filled")
                     }
