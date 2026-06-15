@@ -32,8 +32,8 @@ android {
         applicationId = "ai.latticevpn.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.0.1"
+        versionCode = 4
+        versionName = "1.0.2"
 
         ndk {
             // Restrict to the ABIs we actually ship rosenpass .so for.
