@@ -2,6 +2,7 @@ package ai.latticevpn.android.ui.screens
 
 import ai.latticevpn.android.data.LatticeApi
 import ai.latticevpn.android.ui.LatticeViewModel
+import ai.latticevpn.android.ui.Screen
 import ai.latticevpn.android.ui.components.LatticeLogo
 import ai.latticevpn.android.ui.theme.LatticeNavy
 import ai.latticevpn.android.ui.theme.LatticeNavyElevated
@@ -163,8 +164,8 @@ fun SignInScreen(vm: LatticeViewModel) {
 
             Spacer(Modifier.height(18.dp))
 
-            TextButton(onClick = { openUrl(context, "https://latticevpn.ai/pricing") }) {
-                Text("Don't have an account? Subscribe at latticevpn.ai")
+            TextButton(onClick = { vm.navigateTo(Screen.PAYWALL) }) {
+                Text("Don't have an account? See plans")
             }
             TextButton(onClick = { openUrl(context, "https://latticevpn.ai/recover") }) {
                 Text("Lost your account number?")

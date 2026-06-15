@@ -2,6 +2,8 @@ package ai.latticevpn.android.ui
 
 import ai.latticevpn.android.ui.screens.AccountScreen
 import ai.latticevpn.android.ui.screens.HomeScreen
+import ai.latticevpn.android.ui.screens.LicensesScreen
+import ai.latticevpn.android.ui.screens.PaywallScreen
 import ai.latticevpn.android.ui.screens.RegionPickerScreen
 import ai.latticevpn.android.ui.screens.SettingsScreen
 import ai.latticevpn.android.ui.screens.SignInScreen
@@ -31,10 +33,12 @@ fun LatticeApp(
     Crossfade(targetState = screen, animationSpec = tween(220), label = "screen") { target ->
         when (target) {
             Screen.SIGN_IN -> SignInScreen(vm = vm)
+            Screen.PAYWALL -> PaywallScreen(vm = vm)
             Screen.HOME -> HomeScreen(vm = vm, onConnect = onConnect)
             Screen.REGIONS -> RegionPickerScreen(vm = vm)
             Screen.SETTINGS -> SettingsScreen(vm = vm)
             Screen.ACCOUNT -> AccountScreen(vm = vm)
+            Screen.LICENSES -> LicensesScreen(vm = vm)
         }
     }
 }

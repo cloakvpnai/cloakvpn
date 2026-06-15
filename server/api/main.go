@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/cloakvpn/api/internal/appleiap"
+	"github.com/cloakvpn/api/internal/googleplay"
 	httpx "github.com/cloakvpn/api/internal/http"
 	"github.com/cloakvpn/api/internal/regions"
 	"github.com/cloakvpn/api/internal/store"
@@ -82,6 +83,39 @@ func main() {
 	mux.HandleFunc("/v1/webhook/stripe", stripeH.Webhook)
 	mux.HandleFunc("/v1/iap", iapH.Verify)
 	mux.HandleFunc("/v1/iap/notifications", iapH.Notifications)
+
+	// Google Play Billing — registered only when a service-account key is
+	// configured (GOOGLE_PLAY_SERVICE_ACCOUNT_JSON). Without it the server
+	// runs exactly as before; the Play verify/notification routes simply
+	// don't exist. This keeps the iOS/Stripe deployment unaffected until the
+	// Play Developer API credentials are in place.
+	if cfg.GooglePlayServiceAccountPath != "" {
+		saJSON, rerr := os.ReadFile(cfg.GooglePlayServiceAccountPath)
+		if rerr != nil {
+			log.Fatalf("google play: read service account %q: %v", cfg.GooglePlayServiceAccountPath, rerr)
+		}
+		gpClient, cerr := googleplay.NewClient(cfg.GooglePlayPackageName, saJSON)
+		if cerr != nil {
+			log.Fatalf("google play: client: %v", cerr)
+		}
+		gpH := googleplay.NewHandler(googleplay.Config{
+			PackageName:         cfg.GooglePlayPackageName,
+			ProductBasicMonthly: cfg.GooglePlayProductBasicMonthly,
+			ProductBasicYearly:  cfg.GooglePlayProductBasicYearly,
+			ProductProMonthly:   cfg.GooglePlayProductProMonthly,
+			ProductProYearly:    cfg.GooglePlayProductProYearly,
+			BasicDeviceLimit:    cfg.BasicDeviceLimit,
+			ProDeviceLimit:      cfg.ProDeviceLimit,
+			AccountNumberSecret: cfg.AccountNumberSecret,
+			NotificationSecret:  cfg.GooglePlayNotificationSecret,
+		}, db, gpClient)
+		mux.HandleFunc("/v1/googleplay", gpH.Verify)
+		mux.HandleFunc("/v1/googleplay/notifications", gpH.Notifications)
+		log.Printf("google play billing enabled (package %s)", cfg.GooglePlayPackageName)
+	} else {
+		log.Printf("google play billing disabled (set GOOGLE_PLAY_SERVICE_ACCOUNT_JSON to enable)")
+	}
+
 	mux.HandleFunc("/v1/device", httpx.NewDeviceHandler(db, regs, rc,
 		cfg.AccountNumberSecret, cfg.DefaultRegion, cfg.WGSubnet).ServeHTTP)
 	mux.HandleFunc("/v1/account", httpx.NewAccountHandler(db, cfg.AccountNumberSecret).ServeHTTP)
@@ -134,6 +168,20 @@ type config struct {
 	AppleProductProMonthly   string
 	AppleProductProYearly    string
 
+	// Google Play Billing — empty service-account path disables the feature.
+	// Product IDs are the Play Console *subscription* IDs returned by the
+	// Developer API's subscriptionsv2 lineItems[].productId. The recommended
+	// setup is two subscriptions, "basic" and "pro", each with a monthly and
+	// a yearly base plan — so the basic.* pair share the value "basic" and the
+	// pro.* pair share "pro" (tier mapping only needs the tier, not the period).
+	GooglePlayPackageName         string
+	GooglePlayServiceAccountPath  string
+	GooglePlayProductBasicMonthly string
+	GooglePlayProductBasicYearly  string
+	GooglePlayProductProMonthly   string
+	GooglePlayProductProYearly    string
+	GooglePlayNotificationSecret  string
+
 	WGSubnet             string
 	RegionsConfig        string
 	RegionInternalSecret string
@@ -162,6 +210,16 @@ func loadConfig() config {
 		AppleProductBasicYearly:  envOr("APPLE_PRODUCT_BASIC_YEARLY", "ai.cloakvpn.CloakVPN.basic.yearly"),
 		AppleProductProMonthly:   envOr("APPLE_PRODUCT_PRO_MONTHLY", "ai.cloakvpn.CloakVPN.pro.monthly"),
 		AppleProductProYearly:    envOr("APPLE_PRODUCT_PRO_YEARLY", "ai.cloakvpn.CloakVPN.pro.yearly"),
+
+		// Google Play Billing (optional). GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is
+		// the path to the service-account key file; unset disables the feature.
+		GooglePlayPackageName:         envOr("GOOGLE_PLAY_PACKAGE_NAME", "ai.latticevpn.android"),
+		GooglePlayServiceAccountPath:  os.Getenv("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"),
+		GooglePlayProductBasicMonthly: envOr("GOOGLE_PLAY_PRODUCT_BASIC_MONTHLY", "basic"),
+		GooglePlayProductBasicYearly:  envOr("GOOGLE_PLAY_PRODUCT_BASIC_YEARLY", "basic"),
+		GooglePlayProductProMonthly:   envOr("GOOGLE_PLAY_PRODUCT_PRO_MONTHLY", "pro"),
+		GooglePlayProductProYearly:    envOr("GOOGLE_PLAY_PRODUCT_PRO_YEARLY", "pro"),
+		GooglePlayNotificationSecret:  os.Getenv("GOOGLE_PLAY_NOTIFICATION_SECRET"),
 
 		WGSubnet:             envOr("WG_SUBNET", "10.99.0.0/24"),
 		RegionsConfig:        envOr("REGIONS_CONFIG", "/etc/cloakvpn/regions.json"),

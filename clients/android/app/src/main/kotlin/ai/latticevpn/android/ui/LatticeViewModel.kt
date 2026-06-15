@@ -1,14 +1,17 @@
 package ai.latticevpn.android.ui
 
+import ai.latticevpn.android.billing.BillingManager
 import ai.latticevpn.android.data.AccountClient
 import ai.latticevpn.android.data.AccountException
 import ai.latticevpn.android.data.AccountStatus
 import ai.latticevpn.android.data.AccountStore
+import ai.latticevpn.android.data.GooglePlayIapClient
 import ai.latticevpn.android.data.IpAddressClient
 import ai.latticevpn.android.data.LatticeRegion
 import ai.latticevpn.android.vpn.RosenpassStatus
 import ai.latticevpn.android.vpn.TunnelManager
 import ai.latticevpn.android.vpn.TunnelState
+import android.app.Activity
 import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
@@ -21,7 +24,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /** The top-level destinations in the UI. */
-enum class Screen { SIGN_IN, HOME, REGIONS, SETTINGS, ACCOUNT }
+enum class Screen { SIGN_IN, PAYWALL, HOME, REGIONS, SETTINGS, ACCOUNT, LICENSES }
 
 /** State of the public-IP lookup shown on the home screen. */
 sealed class IpState {
@@ -53,6 +56,12 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     private val ipClient = IpAddressClient()
     private val accountStore = AccountStore(app)
     private val accountClient = AccountClient(app)
+    private val iapClient = GooglePlayIapClient()
+
+    /** Play Billing client. Purchases are delivered to [onPlayPurchase]. */
+    private val billing = BillingManager(app) { token, productId ->
+        onPlayPurchase(token, productId)
+    }
 
     // ---- Tunnel / region state — delegated straight from TunnelManager ----
 
@@ -294,6 +303,100 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
             if (error == null) refreshAccountStatus()
             onResult(error)
         }
+    }
+
+    // ---- In-app purchase (Google Play Billing) ---------------------------
+
+    /** Subscription plans loaded from Play; empty until billing connects. */
+    val plans: StateFlow<List<BillingManager.SubPlan>> get() = billing.plans
+
+    /** True once the billing client is connected and plans are loaded. */
+    val billingReady: StateFlow<Boolean> get() = billing.ready
+
+    /** A Play-side billing error (connection / purchase-flow), or null. */
+    val billingError: StateFlow<String?> get() = billing.error
+    fun clearBillingError() = billing.clearError()
+
+    private val _purchaseBusy = MutableStateFlow(false)
+    /** True while a purchase is being verified server-side. */
+    val purchaseBusy: StateFlow<Boolean> = _purchaseBusy.asStateFlow()
+
+    private val _purchaseError = MutableStateFlow<String?>(null)
+    /** A server-side verification error after a purchase, or null. */
+    val purchaseError: StateFlow<String?> = _purchaseError.asStateFlow()
+    fun clearPurchaseError() { _purchaseError.value = null }
+
+    /** Connect to Play and load plans — call when the paywall appears. */
+    fun startBilling() = billing.start()
+
+    /** Open the Play purchase sheet for [plan]. */
+    fun launchPurchase(activity: Activity, plan: BillingManager.SubPlan) {
+        _purchaseError.value = null
+        billing.launchPurchase(activity, plan)
+    }
+
+    /**
+     * "Restore purchases": re-deliver a subscription this Google account
+     * already owns. Found purchases flow through [onPlayPurchase] just like a
+     * fresh one; if none are owned, surface a gentle message.
+     */
+    fun restorePurchases() {
+        _purchaseError.value = null
+        _purchaseBusy.value = true
+        billing.restorePurchases { found ->
+            if (!found) {
+                _purchaseBusy.value = false
+                _purchaseError.value =
+                    "No Google Play subscription was found for this account."
+            }
+            // When found, onPlayPurchase drives the rest (and clears busy).
+        }
+    }
+
+    /**
+     * Play confirmed a purchase. Verify the token server-side, which mints or
+     * re-issues the account number, then store it and move to Home — signing
+     * the customer in without them typing anything.
+     */
+    private fun onPlayPurchase(purchaseToken: String, productId: String) {
+        _purchaseBusy.value = true
+        viewModelScope.launch {
+            try {
+                // Restore=true whenever we don't already hold a number, so the
+                // server re-issues one for a reinstall / new device.
+                val restore = !accountStore.isSignedIn()
+                val result = iapClient.verify(purchaseToken, restore = restore)
+                val number = result.accountNumber ?: accountStore.accountNumber()
+                if (number.isNullOrEmpty()) {
+                    _purchaseError.value =
+                        "Your purchase was confirmed but we couldn't issue an account number. " +
+                            "Try Restore purchases, or contact support."
+                } else {
+                    accountStore.save(number)
+                    _screen.value = Screen.HOME
+                    // Signed in — warm up device keys + preferred region so the
+                    // first connect is quick (mirrors signIn()).
+                    viewModelScope.launch {
+                        runCatching {
+                            tm.ensureLocalKeypair()
+                            tm.ensureLocalWgKeypair()
+                            tm.warmUpPreferredRegion()
+                        }
+                    }
+                }
+            } catch (e: AccountException) {
+                _purchaseError.value = e.message
+            } catch (e: Exception) {
+                _purchaseError.value = e.message ?: "Couldn't confirm your purchase."
+            } finally {
+                _purchaseBusy.value = false
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        billing.dispose()
     }
 
     companion object {

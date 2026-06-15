@@ -32,8 +32,8 @@ android {
         applicationId = "ai.latticevpn.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.0"
+        versionCode = 3
+        versionName = "1.0.1"
 
         ndk {
             // Restrict to the ABIs we actually ship rosenpass .so for.
@@ -84,6 +84,14 @@ android {
         // seamless Rosenpass PSK rotation) must take precedence over the
         // copy bundled inside the wireguard-android AAR.
         jniLibs.pickFirsts += "**/libwg-go.so"
+        // 16 KB page-size compliance (v1.0.1): the wireguard-android AAR
+        // also bundles libwg.so (the wg(8) tool) and libwg-quick.so —
+        // both built with 4 KB ELF alignment upstream, and both used ONLY
+        // by the root-mode WgQuickBackend / ToolsInstaller path, which
+        // this app never touches (we use GoBackend exclusively). Dropping
+        // them from the APK removes the 16 KB-page install block on
+        // Android 15+ devices without rebuilding the AAR.
+        jniLibs.excludes += setOf("**/libwg.so", "**/libwg-quick.so")
     }
 }
 
@@ -121,11 +129,22 @@ dependencies {
     // (AccountClient) and the public-IP lookup (IpAddressClient).
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
+    // Google Play Billing — in-app subscription purchases (BillingManager,
+    // PaywallScreen). v7 is the current minimum Google accepts for new
+    // uploads; the -ktx artifact adds the coroutine extensions. The purchase
+    // token is verified server-side (POST /v1/googleplay) which mints/extends
+    // the customer's account number — the same no-account model as Stripe/IAP.
+    implementation("com.android.billingclient:billing-ktx:7.1.1")
+
     // JNA — required by the uniffi-generated Kotlin bindings
     // (uniffi/rosenpassffi/rosenpassffi.kt) to load + call into the
     // native librosenpassffi.so. The @aar classifier pulls the Android
     // build of JNA which bundles its own native .so per ABI.
-    implementation("net.java.dev.jna:jna:5.14.0@aar")
+    // 5.17.0 is the first release whose libjnidispatch.so is built with
+    // 16 KB page alignment (JNA issues #1618/#1647) — required for
+    // Android 15+ devices running in 16 KB page-size mode. Don't
+    // downgrade below 5.17.0.
+    implementation("net.java.dev.jna:jna:5.17.0@aar")
 
     // DataStore for persisting config (encrypted via Android Keystore wrapping)
     implementation("androidx.datastore:datastore-preferences:1.1.1")

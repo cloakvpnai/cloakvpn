@@ -57,9 +57,17 @@ type Account struct {
 	// is the stable key for a subscription across renewals, so renewals and
 	// cancellations from App Store Server Notifications map back to the row.
 	AppleOriginalTxnID string
-	Tier               Tier
-	DeviceLimit        int
-	ActiveUntil        time.Time
+	// GooglePlayPurchaseToken is the Google Play purchase token for accounts
+	// minted from a Play Billing subscription (empty otherwise). It is the
+	// stable key Google's Developer API and Real-time Developer Notifications
+	// use to identify the subscription. NOTE: Google issues a NEW purchase
+	// token on an upgrade/downgrade or resignup; the new token's
+	// linkedPurchaseToken points back to the old one, and we re-point the row
+	// onto the new token (see RelinkGooglePlayToken) so the chain stays one row.
+	GooglePlayPurchaseToken string
+	Tier                    Tier
+	DeviceLimit             int
+	ActiveUntil             time.Time
 }
 
 type Device struct {
@@ -107,7 +115,51 @@ func Open(path string) (*DB, error) {
 	if err := migrateAppleTxn(db); err != nil {
 		return nil, fmt.Errorf("migrate apple_original_txn_id: %w", err)
 	}
+	if err := migrateGooglePlayToken(db); err != nil {
+		return nil, fmt.Errorf("migrate google_play_purchase_token: %w", err)
+	}
 	return &DB{db}, nil
+}
+
+// migrateGooglePlayToken adds accounts.google_play_purchase_token (Migration
+// 4): the Google Play purchase token for accounts minted from a Play Billing
+// subscription, so renewals and cancellations from Real-time Developer
+// Notifications can find the row. Idempotent — a no-op once the column exists.
+func migrateGooglePlayToken(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(accounts)`)
+	if err != nil {
+		return err
+	}
+	has := false
+	for rows.Next() {
+		var (
+			cid         int
+			name, ctype string
+			notnull, pk int
+			dflt        sql.NullString
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "google_play_purchase_token" {
+			has = true
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if has {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE accounts ADD COLUMN google_play_purchase_token TEXT`); err != nil {
+		return fmt.Errorf("add column: %w", err)
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_accounts_gplay_token ON accounts(google_play_purchase_token)`); err != nil {
+		return fmt.Errorf("index: %w", err)
+	}
+	return nil
 }
 
 // migrateAppleTxn adds accounts.apple_original_txn_id (Migration 3): the App
@@ -187,7 +239,7 @@ CREATE INDEX IF NOT EXISTS idx_devices_account ON devices(account_id);
 // and a global UNIQUE on `wg_ip`. The new layout adds `region` and makes IP
 // uniqueness per-region. SQLite cannot drop a column constraint in place, so
 // the table is rebuilt: copy rows into a new table, swap names. Existing
-// rows are pre-multi-region test data and get region=''.
+// rows are pre-multi-region test data and get region=”.
 func migrate(db *sql.DB) error {
 	rows, err := db.Query(`PRAGMA table_info(devices)`)
 	if err != nil {
@@ -196,10 +248,10 @@ func migrate(db *sql.DB) error {
 	hasRegion := false
 	for rows.Next() {
 		var (
-			cid             int
-			name, ctype     string
-			notnull, pk     int
-			dflt            sql.NullString
+			cid         int
+			name, ctype string
+			notnull, pk int
+			dflt        sql.NullString
 		)
 		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
 			rows.Close()
@@ -303,14 +355,16 @@ func migrateDeviceLastSeen(db *sql.DB) error {
 const accountCols = `id, account_number_hash, COALESCE(stripe_customer_id, ''), ` +
 	`COALESCE(stripe_session_id, ''), tier, device_limit, ` +
 	`COALESCE(active_until, '1970-01-01T00:00:00Z'), ` +
-	`COALESCE(apple_original_txn_id, '')`
+	`COALESCE(apple_original_txn_id, ''), ` +
+	`COALESCE(google_play_purchase_token, '')`
 
 func scanAccount(row *sql.Row) (*Account, error) {
 	var a Account
 	var tier string
 	var until string
 	err := row.Scan(&a.ID, &a.AccountNumberHash, &a.StripeCustomerID,
-		&a.StripeSessionID, &tier, &a.DeviceLimit, &until, &a.AppleOriginalTxnID)
+		&a.StripeSessionID, &tier, &a.DeviceLimit, &until, &a.AppleOriginalTxnID,
+		&a.GooglePlayPurchaseToken)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -368,21 +422,21 @@ func (d *DB) CreateAccount(numberHash, stripeCustomerID, stripeSessionID string,
 // number presented by the app. Returns ErrNotFound if there is no match.
 func (d *DB) AccountByNumberHash(hash string) (*Account, error) {
 	return scanAccount(d.QueryRow(
-		`SELECT ` + accountCols + ` FROM accounts WHERE account_number_hash = ?`, hash))
+		`SELECT `+accountCols+` FROM accounts WHERE account_number_hash = ?`, hash))
 }
 
 // AccountByStripeCustomer looks up an account by Stripe customer ID —
 // used by the webhook to apply renewals and cancellations.
 func (d *DB) AccountByStripeCustomer(customerID string) (*Account, error) {
 	return scanAccount(d.QueryRow(
-		`SELECT ` + accountCols + ` FROM accounts WHERE stripe_customer_id = ?`, customerID))
+		`SELECT `+accountCols+` FROM accounts WHERE stripe_customer_id = ?`, customerID))
 }
 
 // AccountBySession looks up an account by the Stripe checkout session ID
 // — used by GET /v1/account-number for the website welcome page.
 func (d *DB) AccountBySession(sessionID string) (*Account, error) {
 	return scanAccount(d.QueryRow(
-		`SELECT ` + accountCols + ` FROM accounts WHERE stripe_session_id = ?`, sessionID))
+		`SELECT `+accountCols+` FROM accounts WHERE stripe_session_id = ?`, sessionID))
 }
 
 // ---- Apple in-app-purchase accounts --------------------------------------
@@ -453,6 +507,89 @@ func (d *DB) DeactivateByAppleTxn(originalTxnID string) error {
 	_, err := d.Exec(`UPDATE accounts
 	                     SET tier = '', device_limit = 0, active_until = NULL
 	                   WHERE apple_original_txn_id = ?`, originalTxnID)
+	return err
+}
+
+// ---- Google Play in-app-purchase accounts --------------------------------
+
+// AccountByGooglePlayToken looks up an account by its Google Play purchase
+// token — used by the Play verify endpoint (to extend an existing subscriber
+// rather than mint a duplicate) and by Real-time Developer Notifications.
+func (d *DB) AccountByGooglePlayToken(token string) (*Account, error) {
+	return scanAccount(d.QueryRow(
+		`SELECT `+accountCols+` FROM accounts WHERE google_play_purchase_token = ?`, token))
+}
+
+// CreateAccountGooglePlay mints a new account row for a first-time Play Billing
+// purchase, keyed by the Google Play purchase token. Mirrors CreateAccount but
+// for the Google payment source (no Stripe customer/session, no Apple txn).
+func (d *DB) CreateAccountGooglePlay(numberHash, purchaseToken string,
+	tier Tier, limit int, activeUntil time.Time) (*Account, error) {
+	if numberHash == "" {
+		return nil, errors.New("numberHash required")
+	}
+	if purchaseToken == "" {
+		return nil, errors.New("purchaseToken required")
+	}
+	res, err := d.Exec(`
+		INSERT INTO accounts
+		  (account_number_hash, google_play_purchase_token, tier, device_limit, active_until)
+		VALUES (?, ?, ?, ?, ?)`,
+		numberHash, purchaseToken, tier, limit, formatTime(activeUntil))
+	if err != nil {
+		return nil, err
+	}
+	id, _ := res.LastInsertId()
+	return &Account{
+		ID:                      id,
+		AccountNumberHash:       numberHash,
+		GooglePlayPurchaseToken: purchaseToken,
+		Tier:                    tier,
+		DeviceLimit:             limit,
+		ActiveUntil:             activeUntil,
+	}, nil
+}
+
+// UpdateSubscriptionByGooglePlayToken refreshes tier / limit / expiry on a Play
+// renewal or plan change (SUBSCRIPTION_RENEWED / _RECOVERED / _PURCHASED RTDNs).
+func (d *DB) UpdateSubscriptionByGooglePlayToken(token string, tier Tier,
+	limit int, activeUntil time.Time) error {
+	_, err := d.Exec(`UPDATE accounts
+	                     SET tier = ?, device_limit = ?, active_until = ?
+	                   WHERE google_play_purchase_token = ?`,
+		tier, limit, formatTime(activeUntil), token)
+	return err
+}
+
+// RelinkGooglePlayToken re-points an account from an old purchase token to a
+// new one. Google issues a fresh purchase token on an upgrade/downgrade or a
+// resubscribe; the new purchase's linkedPurchaseToken names the old token. We
+// move the row onto the new token so the subscription stays one account across
+// the change. No-op rows-affected when oldToken is unknown.
+func (d *DB) RelinkGooglePlayToken(oldToken, newToken string) error {
+	_, err := d.Exec(`UPDATE accounts SET google_play_purchase_token = ? WHERE google_play_purchase_token = ?`,
+		newToken, oldToken)
+	return err
+}
+
+// UpdateAccountHashByGooglePlayToken re-points a Play-minted account at a new
+// account-number hash. Used on a restore from a device with no local copy of
+// the number: we re-mint and return a fresh number rather than store the
+// plaintext server-side (the no-plaintext policy). The subscription identity
+// (purchase token) is unchanged.
+func (d *DB) UpdateAccountHashByGooglePlayToken(token, newHash string) error {
+	_, err := d.Exec(`UPDATE accounts SET account_number_hash = ? WHERE google_play_purchase_token = ?`,
+		newHash, token)
+	return err
+}
+
+// DeactivateByGooglePlayToken clears tier / limit / expiry when a Play
+// subscription expires, is revoked, or refunded (SUBSCRIPTION_EXPIRED /
+// _REVOKED).
+func (d *DB) DeactivateByGooglePlayToken(token string) error {
+	_, err := d.Exec(`UPDATE accounts
+	                     SET tier = '', device_limit = 0, active_until = NULL
+	                   WHERE google_play_purchase_token = ?`, token)
 	return err
 }
 
