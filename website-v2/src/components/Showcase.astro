@@ -1,0 +1,235 @@
+---
+/**
+ * Showcase — interactive three-panel "pillars" section (light theme).
+ *
+ * Three tall image cards (Connect / Protect / Private). On desktop the
+ * hovered card expands and reveals its detail copy while the others shrink;
+ * on touch devices, tapping a card expands it. Modeled on the conversion
+ * pattern used by commercial VPN sites, built original for Lattice with our
+ * own imagery and messaging. Photos live in /public/showcase.
+ *
+ * Interaction is progressive-enhancement: with JS off, all three cards render
+ * with their copy visible (the .is-open default is applied by the inline
+ * script; CSS keeps the labels readable regardless).
+ */
+const panels = [
+  {
+    key: 'connect',
+    img: '/showcase/connect.jpg',
+    kicker: 'Connect',
+    title: 'One tap to anywhere',
+    body: "Pick the US, Germany, or Finland and you're through in under a second — WireGuard speed, unlimited bandwidth, no throttling.",
+  },
+  {
+    key: 'protect',
+    img: '/showcase/protect.jpg',
+    kicker: 'Protect',
+    title: 'Encryption that outlives quantum',
+    body: "Every session is wrapped in post-quantum cryptography that today's — and tomorrow's — computers can't break, with an always-on kill switch.",
+  },
+  {
+    key: 'private',
+    img: '/showcase/private.jpg',
+    kicker: 'Private',
+    title: 'No account. No logs. No trace.',
+    body: "No email, no name, no password — just an account number. We never record your IP, traffic, or DNS. Nothing to leak, nothing to hand over.",
+  },
+];
+---
+
+<section class="relative py-24">
+  <div class="mx-auto max-w-6xl px-6">
+    <div class="text-center mb-12">
+      <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 mb-4 reveal">
+        ONE APP, EVERYTHING PRIVATE
+      </span>
+      <h2 class="font-display text-3xl md:text-4xl font-extrabold tracking-tight text-slate-900 reveal" style="transition-delay: 80ms;">
+        Privacy you can see in action.
+      </h2>
+      <p class="mt-3 text-slate-600 max-w-2xl mx-auto reveal" style="transition-delay: 160ms;">
+        Connect, protect, and stay invisible — from one tap on your phone.
+      </p>
+    </div>
+
+    <div class="js-showcase reveal" style="transition-delay: 220ms;" role="group" aria-label="Lattice VPN pillars">
+      {panels.map((p, i) => (
+        <button
+          type="button"
+          class:list={['panel', i === 1 && 'is-open']}
+          data-panel={p.key}
+          aria-label={`${p.kicker}: ${p.title}`}
+        >
+          <img src={p.img} alt={`${p.kicker} — ${p.title}`} class="panel-img" loading="lazy" decoding="async" />
+          <span class="panel-scrim" aria-hidden="true"></span>
+          <span class="panel-content">
+            <span class="panel-kicker">{p.kicker}</span>
+            <span class="panel-detail">
+              <span class="panel-title">{p.title}</span>
+              <span class="panel-body">{p.body}</span>
+            </span>
+          </span>
+        </button>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .js-showcase {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .panel {
+    position: relative;
+    display: block;
+    width: 100%;
+    height: 300px;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    border-radius: 24px;
+    overflow: hidden;
+    cursor: pointer;
+    background: #0f172a;
+    text-align: left;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.06), 0 10px 24px -8px rgb(15 23 42 / 0.18);
+    transition: height 480ms cubic-bezier(0.16, 1, 0.3, 1);
+    outline: none;
+  }
+  .panel:focus-visible {
+    box-shadow: 0 0 0 3px rgba(95, 227, 181, 0.7);
+  }
+
+  .panel-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center top;
+    transition: transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .panel.is-open .panel-img { transform: scale(1.03); }
+
+  .panel-scrim {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to top,
+      rgba(8, 15, 30, 0.92) 0%,
+      rgba(8, 15, 30, 0.55) 28%,
+      rgba(8, 15, 30, 0.05) 55%,
+      rgba(8, 15, 30, 0.0) 100%
+    );
+  }
+
+  .panel-content {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: block;
+    padding: 22px 24px;
+    color: #fff;
+  }
+
+  .panel-kicker {
+    display: inline-block;
+    font-weight: 800;
+    font-size: 1.35rem;
+    letter-spacing: -0.01em;
+    text-shadow: 0 1px 12px rgba(0, 0, 0, 0.4);
+  }
+  .panel-kicker::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 9999px;
+    background: #5FE3B5;
+    margin-right: 10px;
+    vertical-align: middle;
+    box-shadow: 0 0 10px rgba(95, 227, 181, 0.9);
+  }
+
+  .panel-detail {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: grid-template-rows 480ms cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 360ms ease, transform 420ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .panel-detail > * { overflow: hidden; min-height: 0; }
+  .panel.is-open .panel-detail {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .panel-title {
+    display: block;
+    font-weight: 700;
+    font-size: 1.05rem;
+    margin-top: 8px;
+  }
+  .panel-body {
+    display: block;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: rgba(241, 245, 249, 0.85);
+    margin-top: 6px;
+    max-width: 42ch;
+  }
+
+  /* ---- Desktop: horizontal row, hover/active expands width ---- */
+  @media (min-width: 768px) {
+    .js-showcase {
+      flex-direction: row;
+      height: 540px;
+      gap: 16px;
+    }
+    .panel {
+      height: 100%;
+      flex: 1 1 0;
+      min-width: 0;
+      transition: flex-grow 520ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .panel.is-open { flex-grow: 2.6; }
+    /* Collapsed panels keep the kicker rotated-free and readable; the detail
+       simply stays collapsed until the panel becomes active. */
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .panel, .panel-img, .panel-detail { transition: none; }
+  }
+</style>
+
+<script>
+  // Progressive enhancement for the showcase pillars.
+  // Desktop (hover-capable): expand the panel under the pointer, keep it open.
+  // Touch: tap a panel to expand it. Exactly one panel open at a time.
+  document.querySelectorAll<HTMLElement>('.js-showcase').forEach((group) => {
+    const panels = Array.from(group.querySelectorAll<HTMLElement>('.panel'));
+    if (panels.length === 0) return;
+
+    const open = (target: HTMLElement) => {
+      panels.forEach((p) => p.classList.toggle('is-open', p === target));
+    };
+
+    const hoverCapable =
+      window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
+    panels.forEach((panel) => {
+      if (hoverCapable) {
+        panel.addEventListener('pointerenter', () => open(panel));
+        panel.addEventListener('focus', () => open(panel));
+      }
+      // Click/tap works on every device (also handles keyboard Enter/Space
+      // since these are <button> elements).
+      panel.addEventListener('click', () => open(panel));
+    });
+  });
+</script>
