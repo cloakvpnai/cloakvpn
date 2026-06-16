@@ -18,21 +18,21 @@ const panels = [
     img: '/showcase/private.jpg',
     kicker: 'Connect',
     title: 'One tap to anywhere',
-    body: "Pick the US, Germany, or Finland and you're through in under a second — WireGuard speed, unlimited bandwidth, no throttling.",
+    body: "Pick the US, Germany, or Finland and you're through in under a second. WireGuard speed, unlimited bandwidth, no throttling.",
   },
   {
     key: 'protect',
     img: '/showcase/protect.jpg',
     kicker: 'Protect',
     title: 'Encryption that outlives quantum',
-    body: "Every session is wrapped in post-quantum cryptography that today's — and tomorrow's — computers can't break, with an always-on kill switch.",
+    body: "Every session is wrapped in post-quantum cryptography that today's and tomorrow's computers can't break, with an always-on kill switch.",
   },
   {
     key: 'private',
     img: '/showcase/connect.jpg',
     kicker: 'Private',
     title: 'No account. No logs. No trace.',
-    body: "No email, no name, no password — just an account number. We never record your IP, traffic, or DNS. Nothing to leak, nothing to hand over.",
+    body: "No email, no name, no password. Just an account number. We never record your IP, traffic, or DNS, so there's nothing to leak and nothing to hand over.",
   },
 ];
 ---
@@ -47,7 +47,7 @@ const panels = [
         Privacy you can see in action.
       </h2>
       <p class="mt-3 text-slate-600 max-w-2xl mx-auto reveal" style="transition-delay: 160ms;">
-        Connect, protect, and stay invisible — from one tap on your phone.
+        Connect, protect, and stay invisible, all from one tap on your phone.
       </p>
     </div>
 
@@ -59,7 +59,7 @@ const panels = [
           data-panel={p.key}
           aria-label={`${p.kicker}: ${p.title}`}
         >
-          <img src={p.img} alt={`${p.kicker} — ${p.title}`} class="panel-img" loading="lazy" decoding="async" />
+          <img src={p.img} alt={`${p.kicker}: ${p.title}`} class="panel-img" loading="lazy" decoding="async" />
           <span class="panel-scrim" aria-hidden="true"></span>
           <span class="panel-content">
             <span class="panel-kicker">{p.kicker}</span>
