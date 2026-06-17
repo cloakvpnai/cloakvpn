@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+
+# Transactional / utility pages — keep out of the index.
+Disallow: /welcome
+Disallow: /account
+Disallow: /recover
+
+Sitemap: https://latticevpn.ai/sitemap.xml

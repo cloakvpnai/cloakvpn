@@ -27,17 +27,48 @@ interface Props {
    * the site nav's Pricing link). Bare legal pages have no such links.
    */
   bare?: boolean;
+  /** When true, emit <meta robots="noindex"> — for transactional pages
+   *  (e.g. /welcome shows a freshly-minted account number) that must never
+   *  appear in search results. */
+  noindex?: boolean;
 }
 
 const {
   title,
   description = 'Encrypted internet protection built to survive tomorrow’s computers. No logs. No accounts. Just privacy.',
   bare = false,
+  noindex = false,
 } = Astro.props;
 
 const fullTitle = title === 'home' ? 'Lattice VPN: Post-quantum VPN for Android' : `Lattice VPN: ${title}`;
 const ogImage = '/og-image.png';
 const canonical = new URL(Astro.url.pathname, Astro.site).toString();
+
+// Structured data (JSON-LD) so search engines understand the entity and the
+// product. Organization establishes the brand; SoftwareApplication describes
+// the app + price for rich results.
+const orgSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: 'Lattice VPN',
+  url: 'https://latticevpn.ai',
+  logo: 'https://latticevpn.ai/lattice-logo.png',
+  description: 'Post-quantum VPN with strict no-logs and no-account privacy.',
+  sameAs: [
+    'https://www.linkedin.com/company/lattice-vpn',
+  ],
+};
+const appSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'Lattice VPN',
+  operatingSystem: 'Android',
+  applicationCategory: 'SecurityApplication',
+  description:
+    'Post-quantum VPN for Android. WireGuard speed with quantum-resistant encryption, a strict no-logs policy, and no account or email required.',
+  url: 'https://play.google.com/store/apps/details?id=ai.latticevpn.android',
+  offers: { '@type': 'Offer', price: '4.99', priceCurrency: 'USD' },
+};
 ---
 
 <!doctype html>
@@ -47,6 +78,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#040810" />
     <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex,nofollow" />}
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
@@ -66,6 +98,10 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
 
     <!-- Preconnects for font CDN -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+
+    <!-- Structured data for search engines -->
+    <script type="application/ld+json" set:html={JSON.stringify(orgSchema)} />
+    <script type="application/ld+json" set:html={JSON.stringify(appSchema)} />
   </head>
 
   <body class="min-h-screen text-slate-900 antialiased overflow-x-hidden">
