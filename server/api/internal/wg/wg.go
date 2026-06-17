@@ -104,6 +104,16 @@ func NewController(c Config) *Controller {
 	return &Controller{cfg: c}
 }
 
+// ipv6Blackhole is a non-routable ULA address (RFC 4193, fd00::/8) handed to
+// every client interface. Paired with the "::/0" route already in AllowedIPs,
+// it makes the OS pull ALL IPv6 into the tunnel: without a v6 address on the
+// tunnel interface the OS ignores the v6 default route and lets IPv6 escape via
+// the device's other interfaces (e.g. cellular) — the classic IPv4-only-VPN
+// IPv6 leak (observed leaking Apple Push over cellular). Because this address is
+// ULA (never globally routable) and the concentrators have no IPv6 forwarding,
+// the captured IPv6 is simply dropped, not tunneled out — i.e. IPv6 is blocked.
+const ipv6Blackhole = "fd00::2/128"
+
 // ClientConfig is what we hand back to the app. All Rosenpass material is
 // base64-encoded so it fits cleanly in a JSON response body.
 type ClientConfig struct {
@@ -243,7 +253,7 @@ func (c *Controller) Provision(usedIPs []string) (*ClientConfig, error) {
 	return &ClientConfig{
 		InterfacePrivateKey: wgPriv,
 		InterfacePublicKey:  wgPub,
-		InterfaceAddress:    ip + "/32",
+		InterfaceAddress:    ip + "/32, " + ipv6Blackhole,
 		InterfaceDNS:        c.cfg.DNS,
 		PeerPublicKey:       c.cfg.ServerPub,
 		PeerEndpoint:        c.cfg.Endpoint,
@@ -359,7 +369,7 @@ func (c *Controller) ProvisionWithKeys(usedIPs []string, reuseIP, wgPubkeyB64, r
 	// kept its own WireGuard + Rosenpass secrets.
 	return &ClientConfig{
 		InterfacePublicKey: wgPub,
-		InterfaceAddress:   ip + "/32",
+		InterfaceAddress:   ip + "/32, " + ipv6Blackhole,
 		InterfaceDNS:       c.cfg.DNS,
 		PeerPublicKey:      c.cfg.ServerPub,
 		PeerEndpoint:       c.cfg.Endpoint,
@@ -404,12 +414,15 @@ func (c *Controller) Revoke(wgPubkey string) error {
 	_ = os.Remove(secretPath)
 	_ = os.Remove(filepath.Join(wgConfigDir, peerName+".pub"))
 
-	// Only restart if a block was actually removed — revoking an
-	// already-absent peer must not bounce the daemon for everyone else.
-	if rpChanged {
-		if err := c.revokePeerLive(); err != nil {
-			return fmt.Errorf("revoke peer: %w", err)
-		}
+	// Always tell cloak-rpd to drop the peer (idempotent daemon-side, keyed by
+	// peer name) — the symmetric counterpart to installPeerLive's always-ADD.
+	// Runtime peers live in the daemon but NOT in server.toml, so gating this
+	// on rpChanged (server.toml changed) left them resident: cloak-rpd kept
+	// deriving /run/rosenpass/psk-<peer> for a device whose wg entry + .pub were
+	// already deleted here — the orphaned-PSK leak. The changed flag now only
+	// gates the legacy-box restart fallback.
+	if err := c.revokePeerLive(peerName, rpChanged); err != nil {
+		return fmt.Errorf("revoke peer: %w", err)
 	}
 	return nil
 }
@@ -603,16 +616,30 @@ func (c *Controller) installPeerLive(peerName, publicPath string, changed bool) 
 	return nil
 }
 
-// revokePeerLive handles peer removal. cloak-rpd has no runtime peer removal,
-// so on a migrated box we leave the peer resident — harmless, and it drops on
-// the next daemon restart, which reloads the peer set from server.toml (the
-// block has already been removed from there). On a legacy box we restart
-// cloak-rosenpass as before.
-func (c *Controller) revokePeerLive() error {
-	if _, err := os.Stat(c.cfg.ControlSocket); err == nil {
-		return nil // cloak-rpd present; no restart needed
+// revokePeerLive removes a peer from the live daemon. cloak-rpd path: send
+// REMOVE on every revoke (idempotent daemon-side, keyed by peer name) so a
+// revoked / region-switched device stops deriving PSKs immediately instead of
+// lingering until the next (now-rare) daemon restart and accumulating orphaned
+// /run/rosenpass/psk-<peer> files that cloak-psk-installer can never apply.
+// Requires cloak-rpd's runtime-REMOVE support (control command + the
+// AppServer::remove_peer patch — see
+// server/cloak-rpd/patches/app_server_remove_peer.md). On a legacy box (no
+// control socket) we fall back to a restart, but only when the peer set
+// actually changed, preserving the restart-storm guard.
+func (c *Controller) revokePeerLive(peerName string, changed bool) error {
+	conn, err := net.DialTimeout("unix", c.cfg.ControlSocket, 2*time.Second)
+	if err != nil {
+		if changed {
+			return c.restartRosenpass()
+		}
+		return nil
 	}
-	return c.restartRosenpass()
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+	if _, err := fmt.Fprintf(conn, "REMOVE %s\n", peerName); err != nil {
+		return fmt.Errorf("cloak-rpd REMOVE %s: %w", peerName, err)
+	}
+	return nil
 }
 
 func (c *Controller) restartRosenpass() error {
