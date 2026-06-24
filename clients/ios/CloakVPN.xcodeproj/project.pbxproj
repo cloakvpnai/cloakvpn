@@ -272,7 +272,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\n# Find SourcePackages by walking up from BUILT_PRODUCTS_DIR.\n#\n# Layout differs between Debug and Archive builds:\n#   Debug:   .../DerivedData/<proj>/Build/Products/Debug-iphoneos/\n#            -> SourcePackages is 3 levels up\n#   Archive: .../DerivedData/<proj>/Build/Intermediates.noindex/ArchiveIntermediates/CloakVPN/BuildProductsPath/Release-iphoneos/\n#            -> SourcePackages is 6 levels up (still under DerivedData/<proj>/)\n#\n# A simple parent-walk handles both cases without hardcoding either\n# layout. We stop when we find a SourcePackages dir containing the\n# wireguard-apple checkout. The hardcoded `../../../` form failed\n# silently on Archive builds and blocked TestFlight submission.\nWG_GO_DIR=\"\"\nDIR=\"$BUILT_PRODUCTS_DIR\"\nwhile [ \"$DIR\" != \"/\" ]; do\n    CANDIDATE=\"$DIR/SourcePackages/checkouts/wireguard-apple/Sources/WireGuardKitGo\"\n    if [ -d \"$CANDIDATE\" ]; then\n        WG_GO_DIR=\"$CANDIDATE\"\n        break\n    fi\n    DIR=\"$(dirname \"$DIR\")\"\ndone\n[ -n \"$WG_GO_DIR\" ] || { echo \"error: WireGuardKitGo source not found anywhere above $BUILT_PRODUCTS_DIR\"; exit 1; }\necho \"info: building wg-go bridge in $WG_GO_DIR\"\n# Mullvad's `make clean` does `rm -rf $(CONFIGURATION_BUILD_DIR)`, which\n# would obliterate the entire Xcode Build Products dir. NEVER call clean.\nexport PATH=\"/opt/homebrew/bin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin\"\ncd \"$WG_GO_DIR\"\nmake -j$(sysctl -n hw.ncpu)\n";
+			shellScript = "set -euo pipefail\n# Find SourcePackages by walking up from BUILT_PRODUCTS_DIR.\n#\n# Layout differs between Debug and Archive builds:\n#   Debug:   .../DerivedData/<proj>/Build/Products/Debug-iphoneos/\n#            -> SourcePackages is 3 levels up\n#   Archive: .../DerivedData/<proj>/Build/Intermediates.noindex/ArchiveIntermediates/CloakVPN/BuildProductsPath/Release-iphoneos/\n#            -> SourcePackages is 6 levels up (still under DerivedData/<proj>/)\n#\n# A simple parent-walk handles both cases without hardcoding either\n# layout. We stop when we find a SourcePackages dir containing the\n# wireguard-apple checkout. The hardcoded `../../../` form failed\n# silently on Archive builds and blocked TestFlight submission.\nWG_GO_DIR=\"\"\nDIR=\"$BUILT_PRODUCTS_DIR\"\nwhile [ \"$DIR\" != \"/\" ]; do\n    CANDIDATE=\"$DIR/SourcePackages/checkouts/wireguard-apple/Sources/WireGuardKitGo\"\n    if [ -d \"$CANDIDATE\" ]; then\n        WG_GO_DIR=\"$CANDIDATE\"\n        break\n    fi\n    DIR=\"$(dirname \"$DIR\")\"\ndone\n[ -n \"$WG_GO_DIR\" ] || { echo \"error: WireGuardKitGo source not found anywhere above $BUILT_PRODUCTS_DIR\"; exit 1; }\necho \"info: building wg-go bridge in $WG_GO_DIR\"\n# Mullvad's `make clean` does `rm -rf $(CONFIGURATION_BUILD_DIR)`, which\n# would obliterate the entire Xcode Build Products dir. NEVER call clean.\nexport PATH=\"/opt/homebrew/bin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\"\ncd \"$WG_GO_DIR\"\nmake -j$(sysctl -n hw.ncpu)\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -426,7 +426,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = CloakVPN/CloakVPN.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 109;
+				CURRENT_PROJECT_VERSION = 110;
 				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -475,7 +475,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = CloakVPN/CloakVPN.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 109;
+				CURRENT_PROJECT_VERSION = 110;
 				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -521,7 +521,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = CloakTunnel/CloakTunnel.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 109;
+				CURRENT_PROJECT_VERSION = 110;
 				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -557,7 +557,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = CloakTunnel/CloakTunnel.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 109;
+				CURRENT_PROJECT_VERSION = 110;
 				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;

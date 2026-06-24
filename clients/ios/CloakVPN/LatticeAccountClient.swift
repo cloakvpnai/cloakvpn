@@ -197,7 +197,16 @@ struct LatticeAccountClient {
 
         let assignedIP = s("AssignedIP")                  // "10.99.0.5"
         let addressV4 = {
-            let v = s("InterfaceAddress")                 // "10.99.0.5/32"
+            // InterfaceAddress may now carry a trailing IPv6 ULA appended for
+            // the Android IPv6 leak fix, e.g. "10.99.0.5/32, fd00::2/128".
+            // iOS assigns its own IPv6 (addressV6 below), so take only the
+            // first comma-separated entry: the IPv4 CIDR. Passing the whole
+            // string would make IPAddressRange(from:) fail and the tunnel
+            // would throw badField("addressV4") at connect time.
+            let v = s("InterfaceAddress")
+                .split(separator: ",")
+                .first
+                .map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
             return v.isEmpty ? "\(assignedIP)/32" : v
         }()
         let lastOctet = assignedIP.split(separator: ".").last.map(String.init) ?? "2"
