@@ -1,26 +1,277 @@
 ---
 /**
- * Terms page — placeholder.
- * Phase 3 will port the full content from website/terms.html into a
- * design-system-matching Astro template with the same legal text but
- * presented with the new Lattice visual identity. For now this stub
- * keeps the navigation working and provides a clear link to the live
- * legal content.
+ * Terms of Service, live, customer-facing.
+ *
+ * Source of truth for the terms text. Ported from the legacy
+ * website/terms.html (git bf10a17) and updated for the Lattice rebrand
+ * and all three billing channels (Apple App Store IAP, Google Play
+ * Billing, Stripe web checkout).
+ *
+ * Linked from:
+ *   - the iOS app purchase flow (PaywallView "Terms of Use" button) —
+ *     REQUIRED functional link for App Store Guideline 3.1.2
+ *   - the Android app (Settings → About)
+ *   - the website Footer component
+ *
+ * Any time you change material terms, bump EFFECTIVE_DATE.
  */
 import Layout from '@/layouts/Layout.astro';
+
+const EFFECTIVE_DATE   = '2026-07-09';
+const LEGAL_ENTITY     = 'KRYPTOKNIGHTZ LLC';
+const REGISTERED_ADDR  = '87-154a Maipalaoa Road, Waianae, HI 96792, USA';
+const GOVERNING_LAW    = 'the State of Hawaii, United States of America';
+const LEGAL_EMAIL      = 'legal@latticevpn.ai';
+const SUPPORT_EMAIL    = 'support@latticevpn.ai';
 ---
-<Layout bare title="Terms" description="Lattice VPN terms information.">
-  <div class="pt-32 pb-16 mx-auto max-w-2xl px-6 text-center">
-    <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 border border-slate-200 px-3 py-1 text-xs font-semibold tracking-wide text-slate-600 mb-6">
-      PHASE 3
-    </span>
-    <h1 class="font-display font-extrabold text-4xl tracking-tight text-slate-900 mb-4">Terms</h1>
-    <p class="text-slate-600 mb-8">
-      This page is being rebuilt with the new design system. Full content lives at the legacy URL while we finish the redesign.
-    </p>
-    <a href="https://cloakvpn.ai/terms" class="inline-flex items-center gap-2 rounded-full bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm px-6 py-3 transition-colors">
-      Read current terms page
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 17L17 7M7 7h10v10"/></svg>
-    </a>
-  </div>
+<Layout
+  bare
+  title="Terms of Service"
+  description="The rules of using Lattice VPN. Short, plain English."
+>
+  <article class="pt-32 pb-20 mx-auto max-w-3xl px-6">
+    <header class="text-center mb-12">
+      <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 border border-slate-200 px-3 py-1 text-xs font-semibold tracking-wide text-slate-600 mb-6">
+        TERMS OF SERVICE
+      </span>
+      <h1 class="font-display font-extrabold text-4xl md:text-5xl tracking-tight text-slate-900 mb-3">
+        Terms of Service
+      </h1>
+      <p class="text-sm text-slate-500 font-mono">
+        Effective {EFFECTIVE_DATE} · Applies to the Lattice VPN applications and the Lattice VPN service.
+      </p>
+      <p class="text-sm text-slate-500 font-mono mt-1">
+        Provider: {LEGAL_ENTITY} ("Lattice", "we", "us") · Contact: <a href={`mailto:${LEGAL_EMAIL}`} class="text-mint-700 underline">{LEGAL_EMAIL}</a>
+      </p>
+    </header>
+
+    <!-- Intro -->
+    <section class="soft-card rounded-2xl p-7 mb-10">
+      <p class="text-slate-700 leading-relaxed">
+        These Terms of Service ("Terms") govern your use of the Lattice VPN
+        applications and service ("the Service"), provided by {LEGAL_ENTITY}.
+        By installing or using Lattice VPN, you agree to these Terms. These
+        Terms constitute the end user license agreement (EULA) for the
+        Lattice VPN applications.
+      </p>
+    </section>
+
+    <!-- 1 -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">1. Description of service</h2>
+      <p class="text-slate-700 leading-relaxed">
+        Lattice VPN is a virtual private network service that routes your
+        internet traffic through one of our region servers using the
+        WireGuard protocol with Rosenpass post-quantum key exchange. The
+        Service is provided "as is" and "as available."
+      </p>
+    </section>
+
+    <!-- 2 -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">2. Eligibility</h2>
+      <p class="text-slate-700 leading-relaxed">
+        You must be at least 18 years old or have parental consent to use
+        the Service. You are solely responsible for any use of the Service
+        made under your account.
+      </p>
+    </section>
+
+    <!-- 3 -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">3. Subscriptions and billing</h2>
+      <p class="text-slate-700 leading-relaxed mb-3">
+        Lattice VPN offers Basic and Pro subscription tiers, each available
+        as a monthly or yearly auto-renewing subscription. Your tier
+        determines the number of devices you may connect simultaneously.
+        Depending on where you subscribe, billing is handled by one of the
+        following:
+      </p>
+      <ul class="text-slate-700 leading-relaxed space-y-3 list-disc pl-6">
+        <li>
+          <strong class="font-semibold">Apple App Store (in-app purchase).</strong>
+          Payment is charged to your Apple Account at confirmation of
+          purchase. Subscriptions renew automatically for the same price
+          and duration unless cancelled at least 24 hours before the end of
+          the current period. You can manage and cancel your subscription
+          in your Apple Account's Subscriptions settings. Refunds are
+          handled by Apple under Apple's standard refund policy.
+        </li>
+        <li>
+          <strong class="font-semibold">Google Play (in-app billing).</strong>
+          Subscriptions renew automatically unless cancelled before the end
+          of the current period. You can manage and cancel your
+          subscription in the Google Play Store's Subscriptions settings.
+          Refunds are handled under Google Play's refund policy.
+        </li>
+        <li>
+          <strong class="font-semibold">latticevpn.ai (Stripe).</strong>
+          Subscriptions purchased on our website are processed by Stripe
+          and renew automatically until cancelled. You can manage and
+          cancel your subscription from the account page at
+          latticevpn.ai/account.
+        </li>
+      </ul>
+    </section>
+
+    <!-- 4 -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">4. Account number</h2>
+      <p class="text-slate-700 leading-relaxed">
+        Lattice VPN does not use email addresses or passwords. When you
+        subscribe, we generate a random account number, which is your only
+        credential for the Service. Keep it safe: anyone who has your
+        account number can use your subscription, and if you lose it we may
+        be unable to recover your account precisely because we store no
+        personal information that could identify it as yours.
+      </p>
+    </section>
+
+    <!-- 5 -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">5. Acceptable use</h2>
+      <p class="text-slate-700 leading-relaxed mb-3">You agree not to use the Service to:</p>
+      <ul class="text-slate-700 leading-relaxed space-y-2 list-disc pl-6">
+        <li>violate any applicable law in your jurisdiction or the jurisdiction of the region server you connect to;</li>
+        <li>distribute malware, conduct denial-of-service attacks, or scan systems you do not own;</li>
+        <li>send unsolicited bulk email (spam) or perform email-related abuse;</li>
+        <li>engage in copyright infringement (the Service is not a tool for piracy);</li>
+        <li>distribute content involving the sexual exploitation of minors;</li>
+        <li>resell, sublicense, or redistribute access to the Service without our written permission.</li>
+      </ul>
+      <p class="text-slate-700 leading-relaxed mt-3">
+        We reserve the right to terminate accounts engaging in any of the
+        above without notice or refund.
+      </p>
+    </section>
+
+    <!-- 6 -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">6. No-logs commitment</h2>
+      <p class="text-slate-700 leading-relaxed mb-3">
+        We do not log your browsing activity, source IP, or DNS queries.
+        See our <a href="/privacy" class="text-mint-700 underline">Privacy Policy</a>
+        for the complete data handling description.
+      </p>
+      <p class="text-slate-700 leading-relaxed">
+        We will respond to lawful requests for information from competent
+        authorities, but cannot produce information we do not collect or
+        retain. See our <a href="/canary" class="text-mint-700 underline">warrant canary</a>
+        for the latest status on requests received.
+      </p>
+    </section>
+
+    <!-- 7 -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">7. Service availability</h2>
+      <p class="text-slate-700 leading-relaxed mb-3">
+        We strive for high availability but do not guarantee uninterrupted
+        service. Region servers may be taken offline for maintenance,
+        software updates, or in response to abuse. We provide multiple
+        regions so a single region's unavailability does not prevent
+        service use.
+      </p>
+      <p class="text-slate-700 leading-relaxed">
+        We do not guarantee any specific connection speed. Speed depends on
+        factors including your local internet connection, the chosen
+        region's network conditions, and the destination service's
+        responsiveness.
+      </p>
+    </section>
+
+    <!-- 8 -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">8. Intellectual property</h2>
+      <p class="text-slate-700 leading-relaxed">
+        The Lattice VPN client applications, server software, brand, logo,
+        and documentation are owned by {LEGAL_ENTITY} and licensed to you
+        for personal use under these Terms. The underlying open-source
+        components (WireGuard, Rosenpass, others) are governed by their
+        respective licenses.
+      </p>
+    </section>
+
+    <!-- 9 -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">9. Disclaimers and limitation of liability</h2>
+      <p class="text-slate-700 leading-relaxed mb-3">
+        THE SERVICE IS PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS
+        WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+        WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR
+        NON-INFRINGEMENT.
+      </p>
+      <p class="text-slate-700 leading-relaxed">
+        TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, {LEGAL_ENTITY}
+        SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, CONSEQUENTIAL,
+        SPECIAL, OR EXEMPLARY DAMAGES, INCLUDING BUT NOT LIMITED TO LOSS OF
+        DATA, REVENUE, OR GOODWILL, ARISING FROM YOUR USE OF OR INABILITY
+        TO USE THE SERVICE.
+      </p>
+    </section>
+
+    <!-- 10 -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">10. Indemnification</h2>
+      <p class="text-slate-700 leading-relaxed">
+        You agree to indemnify and hold harmless {LEGAL_ENTITY} from any
+        claims, damages, losses, or expenses arising from your violation of
+        these Terms or your misuse of the Service.
+      </p>
+    </section>
+
+    <!-- 11 -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">11. Changes to these Terms</h2>
+      <p class="text-slate-700 leading-relaxed">
+        We may update these Terms from time to time. Material changes will
+        be posted at this URL with an updated effective date. Continued use
+        of the Service after a change constitutes acceptance of the updated
+        Terms.
+      </p>
+    </section>
+
+    <!-- 12 -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">12. Termination</h2>
+      <p class="text-slate-700 leading-relaxed">
+        You may terminate these Terms at any time by uninstalling the
+        applications and cancelling any active subscription. We may
+        terminate or suspend your access to the Service at any time for
+        violation of these Terms.
+      </p>
+    </section>
+
+    <!-- 13 -->
+    <section class="mb-10">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">13. Governing law</h2>
+      <p class="text-slate-700 leading-relaxed">
+        These Terms are governed by the laws of {GOVERNING_LAW}, without
+        regard to its conflict of law provisions. Any dispute arising under
+        these Terms will be resolved in the state or federal courts located
+        in Honolulu, Hawaii.
+      </p>
+    </section>
+
+    <!-- Contact -->
+    <section class="soft-card rounded-2xl p-7">
+      <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">14. Contact</h2>
+      <p class="text-slate-700 leading-relaxed mb-3">
+        Questions about these Terms:
+        <a href={`mailto:${LEGAL_EMAIL}`} class="text-mint-700 underline">{LEGAL_EMAIL}</a>
+      </p>
+      <p class="text-slate-700 leading-relaxed mb-3">
+        General support:
+        <a href={`mailto:${SUPPORT_EMAIL}`} class="text-mint-700 underline">{SUPPORT_EMAIL}</a>
+      </p>
+      <p class="text-sm text-slate-500 font-mono">
+        {LEGAL_ENTITY}<br/>
+        {REGISTERED_ADDR}<br/>
+        Governing law: {GOVERNING_LAW}
+      </p>
+      <p class="text-sm text-slate-500 mt-4">
+        See also: <a href="/privacy" class="text-mint-700 underline">Privacy Policy</a> ·
+        <a href="/canary" class="text-mint-700 underline">Warrant Canary</a>
+      </p>
+    </section>
+  </article>
 </Layout>
