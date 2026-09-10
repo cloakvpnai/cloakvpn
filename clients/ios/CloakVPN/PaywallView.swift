@@ -14,6 +14,7 @@ struct PaywallView: View {
     @EnvironmentObject var tunnel: TunnelManager
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var store = StoreManager()
 
     private let termsURL = URL(string: "https://latticevpn.ai/terms")!
@@ -56,11 +57,34 @@ struct PaywallView: View {
                         .padding(.horizontal, 8)
                         .padding(.bottom, 26)
 
-                    if store.loadFailed {
-                        Text("Couldn't load plans. Check your connection and try again.")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.red)
+                    if store.loadState == .loading && store.products.isEmpty {
+                        ProgressView()
+                            .tint(.white)
                             .padding(.bottom, 16)
+                    }
+
+                    if let message = store.loadState.message {
+                        VStack(spacing: 10) {
+                            Text(message)
+                                .font(.system(size: 13))
+                                .foregroundStyle(.red)
+                                .multilineTextAlignment(.center)
+
+                            if let diagnostic = store.loadState.diagnostic {
+                                Text(diagnostic)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.white.opacity(0.4))
+                                    .multilineTextAlignment(.center)
+                            }
+
+                            Button("Try Again") {
+                                Task { await store.loadProducts() }
+                            }
+                            .font(.system(size: 14, weight: .semibold))
+                            .buttonStyle(.bordered)
+                            .tint(CloakDesign.brandGreen)
+                        }
+                        .padding(.bottom, 16)
                     }
 
                     ForEach(store.sortedProducts, id: \.id) { product in
@@ -120,6 +144,14 @@ struct PaywallView: View {
             .disabled(anyBusy)
         }
         .task { await store.loadProducts() }
+        .onChange(of: scenePhase) { _, newPhase in
+            // Reviewers and users routinely leave the app and come back. If the
+            // first load was cancelled while backgrounded, retry instead of
+            // leaving a permanently dead screen.
+            if newPhase == .active, store.products.isEmpty {
+                Task { await store.loadProducts() }
+            }
+        }
     }
 
     @ViewBuilder

@@ -32,7 +32,55 @@ final class StoreManager: ObservableObject {
     ]
 
     @Published private(set) var products: [Product] = []
-    @Published private(set) var loadFailed = false
+    @Published private(set) var loadState: LoadState = .idle
+
+    /// Kept so existing call sites that read `loadFailed` keep compiling.
+    var loadFailed: Bool { loadState.isFailure }
+
+    /// Distinguishes "Apple answered and had nothing for us" from "we never
+    /// reached Apple." The previous code collapsed both into a single
+    /// "check your connection" message — which is what App Review saw on
+    /// 2026-08-12, and which pointed at the one thing that wasn't wrong.
+    enum LoadState: Equatable {
+        case idle
+        case loading
+        case loaded
+        /// StoreKit answered successfully but returned zero products.
+        case empty(storefront: String)
+        /// StoreKit threw before it could answer.
+        case failed(detail: String)
+
+        var isFailure: Bool {
+            switch self {
+            case .empty, .failed:          return true
+            case .idle, .loading, .loaded: return false
+            }
+        }
+
+        var message: String? {
+            switch self {
+            case .empty:
+                return "No plans are available on this Apple Account right now. "
+                     + "This isn't a problem with your connection — please try again."
+            case .failed:
+                return "Couldn't reach the App Store. If you're connected to "
+                     + "Lattice, disconnect and try again."
+            case .idle, .loading, .loaded:
+                return nil
+            }
+        }
+
+        /// Short technical detail for the small secondary line. Contains no
+        /// user data — it exists so that a failure is diagnosable from a
+        /// screenshot instead of requiring three weeks of guessing.
+        var diagnostic: String? {
+            switch self {
+            case .empty(let storefront):   return "No products returned (storefront: \(storefront))"
+            case .failed(let detail):      return detail
+            case .idle, .loading, .loaded: return nil
+            }
+        }
+    }
 
     private var updatesTask: Task<Void, Never>?
 
@@ -60,13 +108,53 @@ final class StoreManager: ObservableObject {
         }
     }
 
-    func loadProducts() async {
-        do {
-            let fetched = try await Product.products(for: Self.productIDs)
-            self.products = fetched
-            self.loadFailed = fetched.isEmpty
-        } catch {
-            self.loadFailed = true
+    /// Loads the four subscription products, retrying briefly on transient
+    /// failure.
+    ///
+    /// The original implementation loaded exactly once. SwiftUI cancels a
+    /// `.task` when its view is torn down — on iPad that happens for rotation,
+    /// Split View and Stage Manager, none of which occur on iPhone — and the
+    /// resulting throw was recorded as a permanent failure with no way back.
+    /// One bad moment killed the only screen that sells anything.
+    func loadProducts(retries: Int = 2) async {
+        loadState = .loading
+        var lastThrownDetail: String?
+
+        for attempt in 0...retries {
+            if attempt > 0 {
+                let ns: UInt64 = attempt == 1 ? 1_000_000_000 : 3_000_000_000
+                try? await Task.sleep(nanoseconds: ns)
+                // Don't keep retrying into a torn-down view.
+                if Task.isCancelled { return }
+            }
+
+            do {
+                let fetched = try await Product.products(for: Self.productIDs)
+                if !fetched.isEmpty {
+                    products = fetched
+                    loadState = .loaded
+                    return
+                }
+                // Reached Apple and got nothing back. Clear any earlier thrown
+                // error so we report .empty rather than a stale network message.
+                lastThrownDetail = nil
+            } catch is CancellationError {
+                return
+            } catch {
+                lastThrownDetail = (error as NSError).localizedDescription
+            }
+        }
+
+        products = []
+
+        if let detail = lastThrownDetail {
+            loadState = .failed(detail: detail)
+        } else {
+            // A nil storefront means StoreKit never established an App Store
+            // session at all; a real country code means the session was fine
+            // and the account genuinely served nothing.
+            let storefront = await Storefront.current
+            loadState = .empty(storefront: storefront?.countryCode ?? "none")
         }
     }
 

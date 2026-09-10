@@ -221,6 +221,24 @@ final class RosenpassDriver {
                     // outgoing bytes (the RespHello that requires us to
                     // emit InitConf). Fetch it from the session's stash.
                     if let psk = session.lastDerivedPsk(), psk.count == 32 {
+                        // DESYNC FIX (2026-07-01): these outgoing bytes are
+                        // the InitConf that lets the SERVER commit the same
+                        // PSK. We derived the PSK on our side already, but if
+                        // this single InitConf datagram is dropped (UDP, and
+                        // more likely on high-latency / lossy links), the
+                        // server never commits — it holds no PSK while we
+                        // apply ours to wg-go. WireGuard mixes the PSK into
+                        // the NEXT handshake, so the tunnel silently wedges
+                        // ~30s later ("connects then drops, no internet").
+                        // Retransmit InitConf a few times before handing the
+                        // PSK to the tunnel so a lone lost packet can't cause
+                        // the desync. Idempotent: the responder commits on
+                        // first receipt and safely ignores duplicates.
+                        for _ in 0..<4 {
+                            try? await Task.sleep(nanoseconds: 180_000_000) // 180ms
+                            if Task.isCancelled { break }
+                            try? await sendUDP(bytes)
+                        }
                         return psk
                     }
                 case .derivedPsk(let psk):

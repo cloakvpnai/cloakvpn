@@ -60,11 +60,33 @@ struct AccountEntryView: View {
                         .foregroundStyle(.white)
                         .padding(.bottom, 10)
 
-                    Text("Enter your account number to get started. No email, no password — your account number is the only key you need.")
+                    Text("Subscribe to get started. Post-quantum encrypted VPN, with no email and no password to remember.")
                         .font(.system(size: 14))
                         .foregroundStyle(.white.opacity(0.7))
                         .multilineTextAlignment(.center)
                         .padding(.bottom, 28)
+
+                    // PRIMARY action: in-app purchase. App Store Guideline 3.1.1
+                    // requires subscribing to be available and prominent inside
+                    // the app, not hidden behind account-number entry.
+                    Button {
+                        showPaywall = true
+                    } label: {
+                        Text("See Plans")
+                            .font(.system(size: 16, weight: .semibold))
+                            .frame(maxWidth: .infinity, minHeight: 52)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(CloakDesign.brandGreen)
+                    .foregroundStyle(.white)
+                    .padding(.bottom, 34)
+
+                    // Secondary path: customers who already subscribed and hold
+                    // an account number sign in with it.
+                    Text("Already have an account number?")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .padding(.bottom, 12)
 
                     TextField("", text: accountBinding, prompt:
                         Text("XXXXX-XXXXX-XXXXX-XXXXX-XXXXX")
@@ -104,13 +126,13 @@ struct AccountEntryView: View {
                                 ProgressView()
                                     .tint(.white)
                             } else {
-                                Text("Continue")
+                                Text("Sign In")
                                     .font(.system(size: 16, weight: .semibold))
                             }
                         }
                         .frame(maxWidth: .infinity, minHeight: 52)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
                     .tint(CloakDesign.brandGreen)
                     .foregroundStyle(.white)
                     .disabled(!complete || tunnel.signInBusy)
