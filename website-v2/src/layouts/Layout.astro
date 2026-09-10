@@ -58,17 +58,34 @@ const orgSchema = {
     'https://www.linkedin.com/company/lattice-vpn',
   ],
 };
-const appSchema = {
-  '@context': 'https://schema.org',
-  '@type': 'SoftwareApplication',
-  name: 'Lattice VPN',
-  operatingSystem: 'Android',
-  applicationCategory: 'SecurityApplication',
-  description:
-    'Post-quantum VPN for Android. WireGuard speed with quantum-resistant encryption, a strict no-logs policy, and no account or email required.',
-  url: 'https://play.google.com/store/apps/details?id=ai.latticevpn.android',
-  offers: { '@type': 'Offer', price: '4.99', priceCurrency: 'USD' },
-};
+/**
+ * One SoftwareApplication entry per store listing. JSON-LD allows a
+ * top-level array, so both are emitted from a single script tag.
+ */
+const appSchemas = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'Lattice VPN',
+    operatingSystem: 'iOS',
+    applicationCategory: 'SecurityApplication',
+    description:
+      'Post-quantum VPN for iPhone and iPad. WireGuard speed with quantum-resistant encryption, a strict no-logs policy, and no account or email required.',
+    url: 'https://apps.apple.com/app/id6764261045',
+    offers: { '@type': 'Offer', price: '4.99', priceCurrency: 'USD' },
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'Lattice VPN',
+    operatingSystem: 'Android',
+    applicationCategory: 'SecurityApplication',
+    description:
+      'Post-quantum VPN for Android. WireGuard speed with quantum-resistant encryption, a strict no-logs policy, and no account or email required.',
+    url: 'https://play.google.com/store/apps/details?id=ai.latticevpn.android',
+    offers: { '@type': 'Offer', price: '4.99', priceCurrency: 'USD' },
+  },
+];
 ---
 
 <!doctype html>
@@ -105,7 +122,7 @@ const appSchema = {
 
     <!-- Structured data for search engines -->
     <script type="application/ld+json" set:html={JSON.stringify(orgSchema)} />
-    <script type="application/ld+json" set:html={JSON.stringify(appSchema)} />
+    <script type="application/ld+json" set:html={JSON.stringify(appSchemas)} />
   </head>
 
   <body class="min-h-screen text-slate-900 antialiased overflow-x-hidden">
