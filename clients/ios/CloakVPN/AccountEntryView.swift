@@ -3,24 +3,31 @@
 // Lattice VPN — account-number entry (first-launch sign-in).
 //
 // In the no-account billing model the customer's only credential is the
-// account number they received after subscribing at latticevpn.ai —
-// there is no email and no password. The number is validated against the
-// central account API (GET /v1/account) before it is stored, so a typo
-// is caught here rather than at the first connect.
+// account number issued when they subscribe — there is no email and no
+// password. The number is validated against the central account API
+// (GET /v1/account) before it is stored, so a typo is caught here rather
+// than at the first connect.
+//
+// The number is never emailed: for App Store purchases Apple does not give
+// us the buyer's address, and the Stripe path shows the number on /welcome
+// and stores it in customer metadata. Recovery therefore runs through
+// Restore Purchases, which is offered on this screen.
 //
 // Presented as a full-screen cover by ContentView whenever no account
-// number is stored. Deliberately payment-silent (no prices, no checkout,
-// no in-app purchase) — selling happens on the website; see
-// docs/BILLING_INTEGRATION.md §9.
+// number is stored. Subscribing is available and prominent here via
+// See Plans (App Store Guideline 3.1.1); see docs/BILLING_INTEGRATION.md.
 
 import SwiftUI
 
 struct AccountEntryView: View {
     @EnvironmentObject var tunnel: TunnelManager
 
+    @StateObject private var store = StoreManager()
+
     @State private var input: String = ""
     @State private var error: String?
     @State private var showPaywall = false
+    @State private var restoring = false
     @FocusState private var focused: Bool
 
     private var complete: Bool { LatticeAPI.isComplete(input) }
@@ -145,14 +152,33 @@ struct AccountEntryView: View {
                     .foregroundStyle(CloakDesign.brandGreen)
                     .padding(.top, 22)
 
-                    // No external link here (App Store Guideline 3.1.1): the
-                    // app must not link to the site, even indirectly. Account
-                    // numbers are printed on the customer's purchase receipt.
-                    Text("Lost your account number? It's on your purchase confirmation email.")
+                    // Recovery path for a customer who already subscribed but
+                    // has no number — after a reinstall, on a new device, or
+                    // having simply lost it. Restore re-verifies the App Store
+                    // entitlement and the server issues a fresh number, so no
+                    // email and no external link is required (Guideline 3.1.1).
+                    Button(action: restore) {
+                        ZStack {
+                            if restoring {
+                                ProgressView().tint(.white)
+                            } else {
+                                Text("Restore Purchases")
+                                    .font(.system(size: 15, weight: .semibold))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 46)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.white.opacity(0.8))
+                    .foregroundStyle(.white)
+                    .disabled(restoring || tunnel.signInBusy)
+                    .padding(.top, 22)
+
+                    Text("Subscribed on this Apple Account? Restore Purchases signs you back in with a new account number. Your previous number stops working.")
                         .font(.system(size: 12))
                         .foregroundStyle(.white.opacity(0.45))
                         .multilineTextAlignment(.center)
-                        .padding(.top, 12)
+                        .padding(.top, 10)
                         .padding(.horizontal, 8)
                 }
                 .padding(.horizontal, 28)
@@ -163,6 +189,35 @@ struct AccountEntryView: View {
         .sheet(isPresented: $showPaywall) {
             PaywallView()
                 .environmentObject(tunnel)
+        }
+    }
+
+    /// Restore an existing App Store subscription and sign back in.
+    ///
+    /// Mirrors PaywallView.restore(), offered here as well so a returning
+    /// customer never has to open the paywall — a screen that reads like it
+    /// charges money — just to recover an account they already paid for.
+    /// Works even when product loading fails, since StoreManager.restore()
+    /// needs only AppStore.sync() and Transaction.currentEntitlements.
+    private func restore() {
+        guard !restoring, !tunnel.signInBusy else { return }
+        focused = false
+        error = nil
+        restoring = true
+        Task {
+            defer { restoring = false }
+            do {
+                let number = try await store.restore()
+                guard !number.isEmpty else {
+                    error = "Subscription found, but no account number was returned."
+                    return
+                }
+                // On success tunnel.isSignedIn flips and ContentView's
+                // fullScreenCover dismisses this view automatically.
+                if let err = await tunnel.signIn(number) { error = err }
+            } catch {
+                self.error = error.localizedDescription
+            }
         }
     }
 
