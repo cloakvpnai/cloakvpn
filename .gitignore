@@ -65,3 +65,16 @@ node_modules/
 !.dev.vars.example
 .env*
 !.env.example
+
+# Editor / tooling backups. Timestamped .bak-* files are produced when a
+# config or source file is edited in place (e.g. project.pbxproj version
+# bumps); the real history lives in git, so they are never committed.
+*.bak
+*.bak-*
+
+# Scratch build logs written next to the Xcode project.
+build_cowork.log
+
+# One-off experiment scratch dirs (e.g. the 2026-09 iOS deployment-target
+# trial). Kept on disk for reference, out of the repo.
+clients/ios/_deployment-target-experiment-*/
