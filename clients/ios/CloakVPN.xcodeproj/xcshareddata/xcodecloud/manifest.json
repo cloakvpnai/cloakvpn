@@ -1,0 +1,9 @@
+{
+  "id" : "f854601c-5fc7-46a8-bc99-3046f04f0a7e",
+  "targets" : [
+    {
+      "id" : "1E9E11AF-B0E3-4A61-9179-AA1F776838F2",
+      "name" : "CloakVPN"
+    }
+  ]
+}
