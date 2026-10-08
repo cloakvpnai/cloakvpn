@@ -1,0 +1,30 @@
+groups:
+  - name: fleet-pqc-peer-state
+    rules:
+      # 2026-07-01 incident signatures, per-peer. See
+      # SESSION_HANDOVER_2026-07-01b_android-rootcause-and-rpd-tombstone-bug.md
+      # Metrics come from cloak-textfile.sh (server/scripts/cloak-textfile.sh).
+      - alert: ActivePeerWithoutPsk
+        expr: cloak_wg_active_nopsk_peers > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $labels.region }}: {{ $value }} ACTIVE peer(s) with NO PQC PSK installed'
+          description: >-
+            A peer is exchanging WG traffic without a preshared key: PQC never
+            completed or was never installed (poisoned client / psk-installer
+            down / cloak-rpd ADD not drained / tombstoned peer). Intentional
+            plain-WG peers belong in /etc/cloakvpn/nopsk-allowlist on the box.
+      - alert: PeerDialingNeverHandshakes
+        expr: cloak_wg_dialing_nohandshake_peers > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.region }}: {{ $value }} peer(s) dialing but wg handshake NEVER completes'
+          description: >-
+            A client reached the box but the WG handshake has never completed —
+            classic stale-client-PSK signature (client presents a PSK the
+            server does not have). May persist until the broken peer is revoked
+            or re-provisions.
