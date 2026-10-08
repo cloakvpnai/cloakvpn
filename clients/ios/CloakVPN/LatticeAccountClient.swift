@@ -21,7 +21,12 @@ import Foundation
 /// react appropriately (retry vs. re-enter the number vs. renew).
 enum AccountError: LocalizedError {
     /// The account number was not recognized (HTTP 401).
-    case unauthorized
+    /// `serverKeepsPreviousNumbers` is true when the server marked the 401
+    /// with `X-Lattice-Keeps-Previous-Numbers: 1`, i.e. it keeps old numbers
+    /// valid on a store restore, so silently redeeming this device's App Store
+    /// entitlement for a new number cannot sign out the customer's other
+    /// devices. Older servers omit the header; never auto-redeem against them.
+    case unauthorized(serverKeepsPreviousNumbers: Bool)
     /// A number that used to work is no longer recognized, and it could not
     /// be recovered automatically from an App Store subscription on this
     /// device. Raised by TunnelManager, never by the HTTP layer.
@@ -184,7 +189,9 @@ struct LatticeAccountClient {
             return data
         }
         switch http.statusCode {
-        case 401: throw AccountError.unauthorized
+        case 401:
+            let keeps = http.value(forHTTPHeaderField: "X-Lattice-Keeps-Previous-Numbers") == "1"
+            throw AccountError.unauthorized(serverKeepsPreviousNumbers: keeps)
         case 402: throw AccountError.noSubscription
         case 403: throw AccountError.deviceLimit
         case 400: throw AccountError.badRegion

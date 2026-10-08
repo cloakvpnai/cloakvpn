@@ -1,7 +1,11 @@
 package store
 
 import (
+	"context"
+	"database/sql"
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -227,5 +231,85 @@ func TestAliasTableOnExistingDB(t *testing.T) {
 			t.Fatalf("Open #%d: %v", i+1, err)
 		}
 		db.Close()
+	}
+}
+
+// TestConcurrentRestores: restores run as read-then-write transactions. With
+// the default deferred BEGIN, overlapping ones failed outright with
+// SQLITE_BUSY under WAL (busy_timeout cannot help a lock upgrade), which the
+// handler surfaced as a 500. Every restore must succeed.
+func TestConcurrentRestores(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+
+	const accounts, perAccount = 10, 4
+	for i := 0; i < accounts; i++ {
+		if _, err := db.CreateAccountApple(fmt.Sprintf("a%d-n0", i), fmt.Sprintf("txn-%d", i),
+			TierPro, 10, time.Now().Add(24*time.Hour)); err != nil {
+			t.Fatalf("create %d: %v", i, err)
+		}
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, accounts*perAccount)
+	for i := 0; i < accounts; i++ {
+		for j := 1; j <= perAccount; j++ {
+			wg.Add(1)
+			go func(i, j int) {
+				defer wg.Done()
+				if err := db.AddAccountNumberByAppleTxn(fmt.Sprintf("txn-%d", i),
+					fmt.Sprintf("a%d-n%d", i, j)); err != nil {
+					errs <- fmt.Errorf("account %d restore %d: %w", i, j, err)
+				}
+			}(i, j)
+		}
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+	// Every number ever issued is still live (cap 10 > 5 issued per account).
+	for i := 0; i < accounts; i++ {
+		for j := 0; j <= perAccount; j++ {
+			if _, err := db.AccountByNumberHash(fmt.Sprintf("a%d-n%d", i, j)); err != nil {
+				t.Errorf("a%d-n%d not live: %v", i, j, err)
+			}
+		}
+	}
+}
+
+// TestPragmasOnEveryConnection: settings must apply to all pooled
+// connections, not only the first (the old PRAGMA-Exec approach).
+func TestPragmasOnEveryConnection(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	var conns []*sql.Conn
+	for i := 0; i < 4; i++ {
+		c, err := db.Conn(ctx) // held open, so each is a distinct connection
+		if err != nil {
+			t.Fatalf("conn %d: %v", i, err)
+		}
+		conns = append(conns, c)
+	}
+	for i, c := range conns {
+		var fk, bt int
+		if err := c.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&fk); err != nil {
+			t.Fatalf("conn %d foreign_keys: %v", i, err)
+		}
+		if err := c.QueryRowContext(ctx, "PRAGMA busy_timeout").Scan(&bt); err != nil {
+			t.Fatalf("conn %d busy_timeout: %v", i, err)
+		}
+		if fk != 1 || bt != 5000 {
+			t.Errorf("conn %d: foreign_keys=%d busy_timeout=%d, want 1/5000", i, fk, bt)
+		}
+		c.Close()
 	}
 }

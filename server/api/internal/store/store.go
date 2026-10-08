@@ -85,24 +85,23 @@ type Device struct {
 type DB struct{ *sql.DB }
 
 func Open(path string) (*DB, error) {
-	// modernc.org/sqlite uses driver name "sqlite" (not "sqlite3"). Pragmas
-	// are set via separate PRAGMA statements rather than DSN query params,
-	// since the modernc DSN syntax differs from go-sqlite3.
-	db, err := sql.Open("sqlite", path)
+	// modernc.org/sqlite uses driver name "sqlite" (not "sqlite3"), and its
+	// DSN syntax differs from go-sqlite3: _pragma=name(value), _txlock=mode.
+	// Connection settings go in the DSN so they apply to EVERY pooled
+	// connection, not just the first one a PRAGMA Exec happens to land on
+	// (database/sql opens more connections under load; before this change
+	// those ran with busy_timeout=0 and foreign_keys=0). _txlock=immediate
+	// makes db.Begin() take the write lock up front: a read-then-write
+	// transaction (see addAccountNumber) would otherwise fail with
+	// SQLITE_BUSY instead of waiting when two of them overlap under WAL.
+	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)" +
+		"&_pragma=journal_mode(WAL)&_txlock=immediate"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
 	if err := db.Ping(); err != nil {
 		return nil, err
-	}
-	for _, p := range []string{
-		"PRAGMA journal_mode=WAL",
-		"PRAGMA foreign_keys=ON",
-		"PRAGMA busy_timeout=5000",
-	} {
-		if _, err := db.Exec(p); err != nil {
-			return nil, fmt.Errorf("%s: %w", p, err)
-		}
 	}
 	// Base schema first (no-op on an existing DB), then version migrations.
 	if _, err := db.Exec(schema); err != nil {

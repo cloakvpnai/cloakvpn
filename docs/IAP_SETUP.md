@@ -75,11 +75,21 @@ The binary already ships safe defaults (the product IDs above and bundle
 
 ## Account-number recovery note
 
-The minted number should be saved to the iCloud Keychain (synchronizable) so a
-reinstall/second Apple device recovers it. If absent, **Restore Purchases**
-calls `/v1/iap` with `restore=true` and the server re-issues a fresh number for
-the same subscription (the previous number stops working). Confirm the sign-in
-path writes to the synchronizable keychain; otherwise add that.
+The minted number lives only in the device's App Group container (iCloud
+Keychain sync is not implemented). A reinstall or a second Apple device
+recovers through **Restore Purchases**, which calls `/v1/iap` with
+`restore=true`. The server issues an additional number for the same
+subscription and **keeps the previous numbers valid** (table
+`account_number_aliases`, capped at clamp(device_limit, 3, 10) live numbers
+per account, oldest dropped first), so the customer's other devices stay
+signed in. Google Play restores behave the same way.
+
+Before 2026-10-08 a restore REPLACED the only number, which signed out every
+other device on the subscription (incident 2026-10-07). The server now tags
+"unknown account" 401s with `X-Lattice-Keeps-Previous-Numbers: 1`; the iOS app
+silently redeems its App Store entitlement for a new number only when that
+header is present, so a new app build can never trigger the old behavior
+against an older server.
 
 ---
 

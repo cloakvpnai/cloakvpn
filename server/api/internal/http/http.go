@@ -136,6 +136,7 @@ func (h *DeviceHandler) authAccount(w http.ResponseWriter, r *http.Request) *sto
 	}
 	acct, err := h.db.AccountByNumberHash(account.Hash(num, h.accountSecret))
 	if errors.Is(err, store.ErrNotFound) {
+		markNumberRecoverable(w)
 		http.Error(w, "unknown account", http.StatusUnauthorized)
 		return nil
 	}
@@ -482,6 +483,7 @@ func (h *AccountHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	acct, err := h.db.AccountByNumberHash(account.Hash(num, h.accountSecret))
 	if errors.Is(err, store.ErrNotFound) {
+		markNumberRecoverable(w)
 		http.Error(w, "unknown account", http.StatusUnauthorized)
 		return
 	}
@@ -561,4 +563,14 @@ func (h *AccountNumberHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(accountNumberResp{AccountNumber: number})
+}
+
+// markNumberRecoverable tags an "unknown account" 401 so clients know this
+// server keeps previously issued account numbers valid on a store restore
+// (store.account_number_aliases). The iOS app only auto-recovers a rejected
+// number by redeeming its App Store entitlement when this header is present:
+// against an older server, that redeem would REPLACE the subscription's only
+// number and sign out the customer's other devices.
+func markNumberRecoverable(w http.ResponseWriter) {
+	w.Header().Set("X-Lattice-Keeps-Previous-Numbers", "1")
 }

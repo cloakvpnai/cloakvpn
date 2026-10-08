@@ -117,9 +117,14 @@ final class TunnelManager: ObservableObject {
     /// "Sign Out" so the customer reaches Restore Purchases / number entry.
     @Published private(set) var accountNeedsReentry: Bool = false
 
-    /// Last silent account-number recovery attempt. Rate-limits recovery so a
-    /// persistent 401 can never turn into a tight redeem loop.
-    private var lastAccountRecoveryAttempt: Date?
+    /// In-flight silent account-number recovery. Concurrent callers (launch
+    /// refresh, warm-up, a region tap, the Account sheet) all await this one
+    /// task instead of each redeeming the entitlement separately.
+    private var accountRecoveryTask: Task<String?, Never>?
+
+    /// When the last recovery attempt FAILED. Blocks retries for 60 s so a
+    /// persistent failure can never turn into a redeem loop.
+    private var lastFailedAccountRecovery: Date?
 
     /// True once a validated account number is stored.
     var isSignedIn: Bool { !(accountNumber ?? "").isEmpty }
@@ -266,11 +271,13 @@ final class TunnelManager: ObservableObject {
             let status = try await accountClient.fetchAccount(accountNumber: number)
             accountStatus = status
             SubscriptionInfo.recordTier(status.tier)
-        } catch AccountError.unauthorized {
+        } catch AccountError.unauthorized(let serverKeepsPreviousNumbers) {
             // The stored number is dead (e.g. replaced by a restore on another
             // device under the old server behavior). Heal it now, before the
             // customer taps a region and hits the error. recover… refreshes
-            // accountStatus itself on success.
+            // accountStatus itself on success. A concurrent recovery may have
+            // already swapped the number: then there is nothing to do.
+            guard serverKeepsPreviousNumbers, accountNumber == number else { return }
             _ = await recoverAccountNumberFromAppStore()
         } catch {
             // Network etc.: keep the previous accountStatus.
@@ -281,18 +288,33 @@ final class TunnelManager: ObservableObject {
     /// involving the customer: if this device holds a verified App Store
     /// subscription, redeem it for a fresh number (no Apple ID prompt), adopt
     /// it, and return it. Returns nil when there is nothing to recover from
-    /// (web/Stripe customers) or an attempt ran in the last 60 seconds.
+    /// (web/Stripe customers) or a FAILED attempt ran in the last 60 seconds.
+    /// Concurrent callers share one in-flight attempt.
     ///
     /// Safe because the server keeps previously issued numbers valid on a
     /// restore (account_number_aliases), so this does not sign out the
     /// customer's other devices. Deploy that server change BEFORE shipping
     /// this build.
     private func recoverAccountNumberFromAppStore() async -> String? {
-        if let last = lastAccountRecoveryAttempt, Date().timeIntervalSince(last) < 60 {
-            debugLog("accountRecovery: skipped (attempted \(Int(Date().timeIntervalSince(last)))s ago)")
+        if let inFlight = accountRecoveryTask {
+            return await inFlight.value
+        }
+        if let last = lastFailedAccountRecovery, Date().timeIntervalSince(last) < 60 {
+            debugLog("accountRecovery: skipped (last attempt failed \(Int(Date().timeIntervalSince(last)))s ago)")
             return nil
         }
-        lastAccountRecoveryAttempt = Date()
+        let task = Task { @MainActor [weak self] () -> String? in
+            await self?.performAccountRecovery()
+        }
+        accountRecoveryTask = task
+        let result = await task.value
+        accountRecoveryTask = nil
+        if result == nil { lastFailedAccountRecovery = Date() }
+        return result
+    }
+
+    /// The body of recoverAccountNumberFromAppStore. Call only through it.
+    private func performAccountRecovery() async -> String? {
         let fresh: String
         do {
             guard let n = try await StoreManager.redeemCurrentEntitlement(), !n.isEmpty else {
@@ -304,6 +326,9 @@ final class TunnelManager: ObservableObject {
             debugLog("accountRecovery: redeem failed: \(error.localizedDescription)")
             return nil
         }
+        // The customer may have signed out while the redeem was in flight;
+        // never sign them back in behind their back.
+        guard accountNumber != nil else { return nil }
         let formatted = LatticeAPI.format(fresh)
         do {
             try AppGroupKeyStore.saveAccountNumber(formatted)
@@ -406,6 +431,7 @@ final class TunnelManager: ObservableObject {
         defer { regionSelectionInProgress = false }
 
         lastRegionError = nil  // clear previous error before retry
+        accountNeedsReentry = false  // re-set only by THIS attempt's 401
 
         // Snapshot the current connection state BEFORE we touch the
         // config. If the user is currently connected (or actively
@@ -913,31 +939,42 @@ final class TunnelManager: ObservableObject {
 
         debugLog("provisionFromAPIRaw: region=\(region.id) (wg_pub=\(wgKeys.publicB64.prefix(8))…, rp_pub=\(rpKeys.publicB64.prefix(12))…)")
 
-        do {
-            return try await accountClient.provisionDevice(
-                accountNumber: number,
-                wgPubkeyB64: wgKeys.publicB64,
-                rosenpassPubkeyB64: rpKeys.publicB64,
-                region: region.id
-            )
-        } catch AccountError.unauthorized {
-            // The stored number was rejected. Recover it from this device's
-            // App Store subscription and retry ONCE; if that is not possible,
-            // surface a message that says what happened and how to fix it
-            // instead of "check it and try again" (there is nothing to check
-            // — the customer never typed it).
-            debugLog("provisionFromAPIRaw: 401 — attempting account recovery")
-            guard let recovered = await recoverAccountNumberFromAppStore() else {
-                accountNeedsReentry = true
-                throw AccountError.numberReplaced
-            }
-            return try await accountClient.provisionDevice(
-                accountNumber: recovered,
+        func provision(_ accountNumber: String) async throws -> String {
+            try await accountClient.provisionDevice(
+                accountNumber: accountNumber,
                 wgPubkeyB64: wgKeys.publicB64,
                 rosenpassPubkeyB64: rpKeys.publicB64,
                 region: region.id
             )
         }
+
+        let configText: String
+        do {
+            configText = try await provision(number)
+        } catch AccountError.unauthorized(let serverKeepsPreviousNumbers) {
+            // The stored number was rejected. Retry ONCE with a recovered
+            // number; if that is not possible, surface a message that says
+            // what happened and how to fix it instead of "check it and try
+            // again" (there is nothing to check: the customer never typed it).
+            guard let current = accountNumber else {
+                // Signed out while this request was in flight.
+                throw TunnelError.parse("Enter your account number to connect.")
+            }
+            if current != number {
+                // A concurrent recovery already replaced the number.
+                debugLog("provisionFromAPIRaw: 401 on a superseded number — retrying with the current one")
+                configText = try await provision(current)
+            } else if serverKeepsPreviousNumbers,
+                      let recovered = await recoverAccountNumberFromAppStore() {
+                debugLog("provisionFromAPIRaw: 401 — recovered account number, retrying")
+                configText = try await provision(recovered)
+            } else {
+                accountNeedsReentry = true
+                throw AccountError.numberReplaced
+            }
+        }
+        accountNeedsReentry = false
+        return configText
     }
 
     func connect() async throws {
