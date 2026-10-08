@@ -315,6 +315,10 @@ final class TunnelManager: ObservableObject {
 
     /// The body of recoverAccountNumberFromAppStore. Call only through it.
     private func performAccountRecovery() async -> String? {
+        // The number that failed. If it changes while the redeem is in
+        // flight (sign-out, or sign-out + sign-in with a typed number), the
+        // customer has acted: never overwrite their choice.
+        guard let failing = accountNumber else { return nil }
         let fresh: String
         do {
             guard let n = try await StoreManager.redeemCurrentEntitlement(), !n.isEmpty else {
@@ -326,9 +330,10 @@ final class TunnelManager: ObservableObject {
             debugLog("accountRecovery: redeem failed: \(error.localizedDescription)")
             return nil
         }
-        // The customer may have signed out while the redeem was in flight;
-        // never sign them back in behind their back.
-        guard accountNumber != nil else { return nil }
+        guard accountNumber == failing else {
+            debugLog("accountRecovery: account changed during redeem — discarding recovered number")
+            return nil
+        }
         let formatted = LatticeAPI.format(fresh)
         do {
             try AppGroupKeyStore.saveAccountNumber(formatted)
@@ -960,15 +965,23 @@ final class TunnelManager: ObservableObject {
                 // Signed out while this request was in flight.
                 throw TunnelError.parse("Enter your account number to connect.")
             }
+            let retryNumber: String
             if current != number {
                 // A concurrent recovery already replaced the number.
                 debugLog("provisionFromAPIRaw: 401 on a superseded number — retrying with the current one")
-                configText = try await provision(current)
+                retryNumber = current
             } else if serverKeepsPreviousNumbers,
                       let recovered = await recoverAccountNumberFromAppStore() {
                 debugLog("provisionFromAPIRaw: 401 — recovered account number, retrying")
-                configText = try await provision(recovered)
+                retryNumber = recovered
             } else {
+                accountNeedsReentry = true
+                throw AccountError.numberReplaced
+            }
+            do {
+                configText = try await provision(retryNumber)
+            } catch AccountError.unauthorized(_) {
+                // Still rejected after recovery: same customer-facing outcome.
                 accountNeedsReentry = true
                 throw AccountError.numberReplaced
             }
