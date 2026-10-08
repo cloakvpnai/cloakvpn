@@ -112,6 +112,15 @@ final class TunnelManager: ObservableObject {
     /// True while a sign-in (account-number validation) is in flight.
     @Published private(set) var signInBusy: Bool = false
 
+    /// True when the API rejected the stored account number and it could not
+    /// be recovered automatically. The region-error alert then offers
+    /// "Sign Out" so the customer reaches Restore Purchases / number entry.
+    @Published private(set) var accountNeedsReentry: Bool = false
+
+    /// Last silent account-number recovery attempt. Rate-limits recovery so a
+    /// persistent 401 can never turn into a tight redeem loop.
+    private var lastAccountRecoveryAttempt: Date?
+
     /// True once a validated account number is stored.
     var isSignedIn: Bool { !(accountNumber ?? "").isEmpty }
 
@@ -239,6 +248,7 @@ final class TunnelManager: ObservableObject {
             try? AppGroupKeyStore.saveAccountNumber(formatted)
             accountNumber = formatted
             accountStatus = status
+            accountNeedsReentry = false
             SubscriptionInfo.recordTier(status.tier)
             return nil
         } catch let e as AccountError {
@@ -252,10 +262,64 @@ final class TunnelManager: ObservableObject {
     /// — failures just leave the previous `accountStatus` in place.
     func refreshAccountStatus() async {
         guard let number = accountNumber, !number.isEmpty else { return }
-        if let status = try? await accountClient.fetchAccount(accountNumber: number) {
+        do {
+            let status = try await accountClient.fetchAccount(accountNumber: number)
+            accountStatus = status
+            SubscriptionInfo.recordTier(status.tier)
+        } catch AccountError.unauthorized {
+            // The stored number is dead (e.g. replaced by a restore on another
+            // device under the old server behavior). Heal it now, before the
+            // customer taps a region and hits the error. recover… refreshes
+            // accountStatus itself on success.
+            _ = await recoverAccountNumberFromAppStore()
+        } catch {
+            // Network etc.: keep the previous accountStatus.
+        }
+    }
+
+    /// Recover from an account number the API no longer recognizes, without
+    /// involving the customer: if this device holds a verified App Store
+    /// subscription, redeem it for a fresh number (no Apple ID prompt), adopt
+    /// it, and return it. Returns nil when there is nothing to recover from
+    /// (web/Stripe customers) or an attempt ran in the last 60 seconds.
+    ///
+    /// Safe because the server keeps previously issued numbers valid on a
+    /// restore (account_number_aliases), so this does not sign out the
+    /// customer's other devices. Deploy that server change BEFORE shipping
+    /// this build.
+    private func recoverAccountNumberFromAppStore() async -> String? {
+        if let last = lastAccountRecoveryAttempt, Date().timeIntervalSince(last) < 60 {
+            debugLog("accountRecovery: skipped (attempted \(Int(Date().timeIntervalSince(last)))s ago)")
+            return nil
+        }
+        lastAccountRecoveryAttempt = Date()
+        let fresh: String
+        do {
+            guard let n = try await StoreManager.redeemCurrentEntitlement(), !n.isEmpty else {
+                debugLog("accountRecovery: no App Store entitlement on this device")
+                return nil
+            }
+            fresh = n
+        } catch {
+            debugLog("accountRecovery: redeem failed: \(error.localizedDescription)")
+            return nil
+        }
+        let formatted = LatticeAPI.format(fresh)
+        do {
+            try AppGroupKeyStore.saveAccountNumber(formatted)
+        } catch {
+            // Still usable for this session; it will be re-recovered on the
+            // next launch if the write keeps failing.
+            debugLog("accountRecovery: could not persist recovered number: \(error)")
+        }
+        accountNumber = formatted
+        accountNeedsReentry = false
+        debugLog("accountRecovery: adopted a recovered account number")
+        if let status = try? await accountClient.fetchAccount(accountNumber: formatted) {
             accountStatus = status
             SubscriptionInfo.recordTier(status.tier)
         }
+        return formatted
     }
 
     /// Forget the account number and all per-region tunnel state. Drops
@@ -268,6 +332,7 @@ final class TunnelManager: ObservableObject {
         AppGroupKeyStore.clearAccountNumber()
         accountNumber = nil
         accountStatus = nil
+        accountNeedsReentry = false
         // Per-region provisioned configs were tied to the old account —
         // clear them so a future sign-in re-provisions cleanly.
         provisionedConfigsByRegionID = [:]
@@ -848,12 +913,31 @@ final class TunnelManager: ObservableObject {
 
         debugLog("provisionFromAPIRaw: region=\(region.id) (wg_pub=\(wgKeys.publicB64.prefix(8))…, rp_pub=\(rpKeys.publicB64.prefix(12))…)")
 
-        return try await accountClient.provisionDevice(
-            accountNumber: number,
-            wgPubkeyB64: wgKeys.publicB64,
-            rosenpassPubkeyB64: rpKeys.publicB64,
-            region: region.id
-        )
+        do {
+            return try await accountClient.provisionDevice(
+                accountNumber: number,
+                wgPubkeyB64: wgKeys.publicB64,
+                rosenpassPubkeyB64: rpKeys.publicB64,
+                region: region.id
+            )
+        } catch AccountError.unauthorized {
+            // The stored number was rejected. Recover it from this device's
+            // App Store subscription and retry ONCE; if that is not possible,
+            // surface a message that says what happened and how to fix it
+            // instead of "check it and try again" (there is nothing to check
+            // — the customer never typed it).
+            debugLog("provisionFromAPIRaw: 401 — attempting account recovery")
+            guard let recovered = await recoverAccountNumberFromAppStore() else {
+                accountNeedsReentry = true
+                throw AccountError.numberReplaced
+            }
+            return try await accountClient.provisionDevice(
+                accountNumber: recovered,
+                wgPubkeyB64: wgKeys.publicB64,
+                rosenpassPubkeyB64: rpKeys.publicB64,
+                region: region.id
+            )
+        }
     }
 
     func connect() async throws {

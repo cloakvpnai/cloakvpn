@@ -22,6 +22,10 @@ import Foundation
 enum AccountError: LocalizedError {
     /// The account number was not recognized (HTTP 401).
     case unauthorized
+    /// A number that used to work is no longer recognized, and it could not
+    /// be recovered automatically from an App Store subscription on this
+    /// device. Raised by TunnelManager, never by the HTTP layer.
+    case numberReplaced
     /// Recognized, but the subscription is not active (HTTP 402).
     case noSubscription
     /// Every device slot for this subscription is in use (HTTP 403).
@@ -38,6 +42,8 @@ enum AccountError: LocalizedError {
         switch self {
         case .unauthorized:
             return "That account number wasn't recognized. Check it and try again."
+        case .numberReplaced:
+            return "This device's account number is no longer active. It may have been replaced when your subscription was restored on another device. Sign out, then tap Restore Purchases or enter your current account number."
         case .noSubscription:
             return "This subscription isn't active. Renew it at latticevpn.ai to continue."
         case .deviceLimit:

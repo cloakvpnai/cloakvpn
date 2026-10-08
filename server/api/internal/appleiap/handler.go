@@ -148,22 +148,23 @@ func (h *Handler) Verify(w http.ResponseWriter, r *http.Request) {
 		}
 		resp := verifyResp{Tier: string(tier), ActiveUntil: until.UTC().Format(time.RFC3339)}
 		if req.Restore {
-			// App has no local number → re-issue one (no-plaintext policy
+			// App has no local number → issue one (no-plaintext policy
 			// means we can't return the original). Subscription identity is
-			// unchanged; the previously-issued number stops working.
+			// unchanged, and previously-issued numbers keep working so the
+			// customer's other devices are not signed out.
 			number, err := account.Generate()
 			if err != nil {
 				http.Error(w, "server", http.StatusInternalServerError)
 				return
 			}
 			hash := account.Hash(number, h.cfg.AccountNumberSecret)
-			if err := h.db.UpdateAccountHashByAppleTxn(tx.OriginalTransactionID, hash); err != nil {
+			if err := h.db.AddAccountNumberByAppleTxn(tx.OriginalTransactionID, hash); err != nil {
 				log.Printf("iap verify: re-issue: %v", err)
 				http.Error(w, "server", http.StatusInternalServerError)
 				return
 			}
 			resp.AccountNumber = number
-			log.Printf("iap: re-issued account number on restore for originalTxn %s", tx.OriginalTransactionID)
+			log.Printf("iap: issued additional account number on restore for originalTxn %s", tx.OriginalTransactionID)
 		}
 		writeJSON(w, resp)
 

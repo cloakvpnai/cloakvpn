@@ -101,3 +101,131 @@ func TestSubscriptionUpdateAndDeactivate(t *testing.T) {
 		t.Errorf("after deactivate: tier/limit = %s/%d, want none/0", got.Tier, got.DeviceLimit)
 	}
 }
+
+// TestRestoreKeepsOtherDevicesSignedIn is the regression test for the
+// 2026-10-07 incident: Restore Purchases on an iPad re-minted the Apple
+// account's number and REPLACED the only stored hash, so the customer's
+// iPhone got "account number wasn't recognized" (HTTP 401) on every region.
+// A restore must add a number, not invalidate the ones other devices hold.
+func TestRestoreKeepsOtherDevicesSignedIn(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		create func(db *DB, hash string) (*Account, error)
+		add    func(db *DB, hash string) error
+	}{
+		{
+			"apple",
+			func(db *DB, h string) (*Account, error) {
+				return db.CreateAccountApple(h, "txn-1", TierBasic, 3, time.Now().Add(24*time.Hour))
+			},
+			func(db *DB, h string) error { return db.AddAccountNumberByAppleTxn("txn-1", h) },
+		},
+		{
+			"google",
+			func(db *DB, h string) (*Account, error) {
+				return db.CreateAccountGooglePlay(h, "tok-1", TierBasic, 3, time.Now().Add(24*time.Hour))
+			},
+			func(db *DB, h string) error { return db.AddAccountNumberByGooglePlayToken("tok-1", h) },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+			if err != nil {
+				t.Fatalf("Open: %v", err)
+			}
+			defer db.Close()
+
+			acct, err := tc.create(db, "phone-number")
+			if err != nil {
+				t.Fatalf("create: %v", err)
+			}
+			if err := tc.add(db, "tablet-number"); err != nil {
+				t.Fatalf("add: %v", err)
+			}
+			for _, h := range []string{"phone-number", "tablet-number"} {
+				got, err := db.AccountByNumberHash(h)
+				if err != nil {
+					t.Fatalf("%s should still authenticate: %v", h, err)
+				}
+				if got.ID != acct.ID {
+					t.Errorf("%s: account %d, want %d", h, got.ID, acct.ID)
+				}
+			}
+			// The newest number becomes the account's current one.
+			got, _ := db.AccountByNumberHash("phone-number")
+			if got.AccountNumberHash != "tablet-number" {
+				t.Errorf("current hash = %q, want tablet-number", got.AccountNumberHash)
+			}
+			// Unknown numbers are still rejected.
+			if _, err := db.AccountByNumberHash("never-issued"); err != ErrNotFound {
+				t.Errorf("unknown number: err = %v, want ErrNotFound", err)
+			}
+		})
+	}
+}
+
+// TestRestoreCapsLiveNumbers checks the oldest numbers age out once a
+// subscription exceeds its live-number cap, so repeated restores cannot
+// accumulate unbounded credentials.
+func TestRestoreCapsLiveNumbers(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+
+	// Basic plan: device_limit 3 → 3 live numbers.
+	if _, err := db.CreateAccountApple("n0", "txn-cap", TierBasic, 3,
+		time.Now().Add(24*time.Hour)); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	for _, h := range []string{"n1", "n2", "n3", "n4"} {
+		if err := db.AddAccountNumberByAppleTxn("txn-cap", h); err != nil {
+			t.Fatalf("add %s: %v", h, err)
+		}
+	}
+	for _, h := range []string{"n0", "n1"} {
+		if _, err := db.AccountByNumberHash(h); err != ErrNotFound {
+			t.Errorf("%s should have aged out: err = %v", h, err)
+		}
+	}
+	for _, h := range []string{"n2", "n3", "n4"} {
+		if _, err := db.AccountByNumberHash(h); err != nil {
+			t.Errorf("%s should be live: %v", h, err)
+		}
+	}
+
+	// Re-adding the current number is a no-op, not a duplicate.
+	if err := db.AddAccountNumberByAppleTxn("txn-cap", "n4"); err != nil {
+		t.Fatalf("idempotent add: %v", err)
+	}
+	if _, err := db.AccountByNumberHash("n2"); err != nil {
+		t.Errorf("idempotent add must not prune: %v", err)
+	}
+
+	// Unknown subscription → ErrNotFound, nothing written.
+	if err := db.AddAccountNumberByAppleTxn("no-such-txn", "x"); err != ErrNotFound {
+		t.Errorf("unknown txn: err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestLiveNumberCap(t *testing.T) {
+	for limit, want := range map[int]int{0: 3, 1: 3, 3: 3, 6: 6, 10: 10, 50: 10} {
+		if got := liveNumberCap(limit); got != want {
+			t.Errorf("liveNumberCap(%d) = %d, want %d", limit, got, want)
+		}
+	}
+}
+
+// TestAliasTableOnExistingDB opens a DB twice: the second Open must not fail
+// on the already-created alias table (the schema runs on every startup).
+func TestAliasTableOnExistingDB(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	for i := 0; i < 2; i++ {
+		db, err := Open(path)
+		if err != nil {
+			t.Fatalf("Open #%d: %v", i+1, err)
+		}
+		db.Close()
+	}
+}

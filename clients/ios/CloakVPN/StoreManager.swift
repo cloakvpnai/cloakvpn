@@ -10,10 +10,13 @@
 // The account number remains the single credential the VPN layer uses — IAP is
 // just a second way to obtain one, alongside web/Stripe.
 //
-// Account-number recovery: the minted number is stored in the iCloud Keychain
-// (synchronizable) by the sign-in path, so a reinstall or a second Apple
-// device can recover it. If that fails, "Restore Purchases" re-issues a fresh
-// number from the same subscription (restore=true).
+// Account-number recovery: the minted number is stored only in this device's
+// App Group container (iCloud Keychain sync is NOT implemented yet), so a
+// reinstall or a second Apple device recovers via "Restore Purchases", which
+// issues an additional number for the same subscription (restore=true). Older
+// numbers stay valid server-side, so other devices are not signed out. If the
+// API ever rejects the stored number, TunnelManager recovers silently through
+// redeemCurrentEntitlement().
 
 import Combine
 import Foundation
@@ -191,15 +194,34 @@ final class StoreManager: ObservableObject {
     /// ask the server to re-issue this subscription's account number.
     func restore() async throws -> String {
         try? await AppStore.sync()
-        for await entitlement in Transaction.currentEntitlements {
-            guard case .verified(let transaction) = entitlement,
-                  transaction.productType == .autoRenewable,
-                  Self.productIDs.contains(transaction.productID) else { continue }
-            let number = try await IAPClient.redeem(
-                signedTransaction: entitlement.jwsRepresentation, restore: true)
+        if let number = try await Self.redeemCurrentEntitlement() {
             return number
         }
         throw StoreError.nothingToRestore
+    }
+
+    /// Redeem this device's current App Store entitlement for an account
+    /// number, WITHOUT calling AppStore.sync() — so it never shows an Apple ID
+    /// password prompt and is safe to run silently in the background.
+    ///
+    /// Returns nil when this device holds no verified Lattice subscription
+    /// (e.g. the customer subscribed on the web and typed their number in).
+    /// The returned string may be empty if the server sent no number.
+    ///
+    /// Used by TunnelManager to recover from an account number the server no
+    /// longer recognizes (HTTP 401). The server keeps previously issued numbers
+    /// valid on a restore, so this does not sign out the customer's other
+    /// devices. REQUIRES the server change that added account_number_aliases;
+    /// against an older server, every restore replaced the only valid number.
+    static func redeemCurrentEntitlement() async throws -> String? {
+        for await entitlement in Transaction.currentEntitlements {
+            guard case .verified(let transaction) = entitlement,
+                  transaction.productType == .autoRenewable,
+                  productIDs.contains(transaction.productID) else { continue }
+            return try await IAPClient.redeem(
+                signedTransaction: entitlement.jwsRepresentation, restore: true)
+        }
+        return nil
     }
 
     enum StoreError: LocalizedError {

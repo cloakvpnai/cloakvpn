@@ -6,6 +6,8 @@
 //   - accounts(id, account_number_hash, stripe_customer_id,
 //     stripe_session_id, tier, device_limit, active_until)
 //   - devices(id, account_id, region, wg_pubkey, wg_ip, created_at)
+//   - account_number_aliases(id, account_id, number_hash, created_at):
+//     previous numbers that still authenticate after a store restore
 //
 // There is no email, no name, no password. A subscription is identified only
 // by a random account number, and this table holds only a keyed HMAC of that
@@ -227,6 +229,21 @@ CREATE TABLE IF NOT EXISTS devices (
   UNIQUE(region, wg_ip)
 );
 CREATE INDEX IF NOT EXISTS idx_devices_account ON devices(account_id);
+
+-- Previously issued account numbers that still authenticate (Migration 5).
+-- A store restore (App Store / Google Play) re-mints a number for a device
+-- that has no local copy. The newest number lives in
+-- accounts.account_number_hash; the numbers it replaced move here so the
+-- customer's OTHER devices keep working instead of being silently signed
+-- out. Pruned to a small per-account cap (see AddAccountNumber). Holds only
+-- keyed HMACs, never plaintext, same as accounts.account_number_hash.
+CREATE TABLE IF NOT EXISTS account_number_aliases (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id  INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  number_hash TEXT NOT NULL UNIQUE,
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_aliases_account ON account_number_aliases(account_id);
 `
 
 // migrate brings an already-existing database forward to the current
@@ -419,10 +436,88 @@ func (d *DB) CreateAccount(numberHash, stripeCustomerID, stripeSessionID string,
 }
 
 // AccountByNumberHash looks up an account by the HMAC of the account
-// number presented by the app. Returns ErrNotFound if there is no match.
+// number presented by the app. It matches the account's current number or
+// any still-live previous number (account_number_aliases), so a restore on
+// one device does not lock out the customer's other devices. Returns
+// ErrNotFound if there is no match.
 func (d *DB) AccountByNumberHash(hash string) (*Account, error) {
 	return scanAccount(d.QueryRow(
-		`SELECT `+accountCols+` FROM accounts WHERE account_number_hash = ?`, hash))
+		`SELECT `+accountCols+` FROM accounts
+		  WHERE account_number_hash = ?
+		     OR id = (SELECT account_id FROM account_number_aliases WHERE number_hash = ?)
+		  LIMIT 1`, hash, hash))
+}
+
+// Live account numbers per account (current + previous), bounded so a
+// subscription cannot accumulate unbounded credentials. The cap follows the
+// device limit (one number per device the plan allows), clamped to
+// [minLiveNumbers, maxLiveNumbers] so a deactivated account (limit 0) or a
+// small plan still covers a phone + tablet + one reinstall.
+const (
+	minLiveNumbers = 3
+	maxLiveNumbers = 10
+)
+
+func liveNumberCap(deviceLimit int) int {
+	switch {
+	case deviceLimit < minLiveNumbers:
+		return minLiveNumbers
+	case deviceLimit > maxLiveNumbers:
+		return maxLiveNumbers
+	default:
+		return deviceLimit
+	}
+}
+
+// addAccountNumber makes newHash the current number of the account selected
+// by `keyCol = key`, keeping the number it replaces valid as an alias, then
+// prunes the oldest aliases beyond the live-number cap. All in one
+// transaction. Returns ErrNotFound if no account matches. keyCol is a
+// compile-time constant from this package, never caller input.
+func (d *DB) addAccountNumber(keyCol, key, newHash string) error {
+	if newHash == "" {
+		return errors.New("newHash required")
+	}
+	tx, err := d.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }() // no-op after a successful Commit
+
+	var (
+		id      int64
+		oldHash string
+		limit   int
+	)
+	err = tx.QueryRow(`SELECT id, account_number_hash, device_limit FROM accounts WHERE `+
+		keyCol+` = ?`, key).Scan(&id, &oldHash, &limit)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if oldHash == newHash {
+		return nil
+	}
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO account_number_aliases (account_id, number_hash)
+	                      VALUES (?, ?)`, id, oldHash); err != nil {
+		return fmt.Errorf("keep previous number: %w", err)
+	}
+	if _, err := tx.Exec(`UPDATE accounts SET account_number_hash = ? WHERE id = ?`,
+		newHash, id); err != nil {
+		return fmt.Errorf("set current number: %w", err)
+	}
+	// Keep the newest (cap-1) aliases; the current number is the cap-th.
+	if _, err := tx.Exec(`DELETE FROM account_number_aliases
+	                       WHERE account_id = ?
+	                         AND id NOT IN (SELECT id FROM account_number_aliases
+	                                         WHERE account_id = ?
+	                                         ORDER BY id DESC LIMIT ?)`,
+		id, id, liveNumberCap(limit)-1); err != nil {
+		return fmt.Errorf("prune previous numbers: %w", err)
+	}
+	return tx.Commit()
 }
 
 // AccountByStripeCustomer looks up an account by Stripe customer ID —
@@ -490,15 +585,16 @@ func (d *DB) UpdateSubscriptionByAppleTxn(originalTxnID string, tier Tier,
 	return err
 }
 
-// UpdateAccountHashByAppleTxn re-points an Apple-minted account at a new
-// account-number hash. Used on a restore from a device with no local copy of
+// AddAccountNumberByAppleTxn issues an additional account number for an
+// Apple-minted account. Used on a restore from a device with no local copy of
 // the number: we re-mint and return a fresh number rather than store the
-// plaintext server-side (the no-plaintext policy). The subscription identity
-// (originalTransactionId) is unchanged.
-func (d *DB) UpdateAccountHashByAppleTxn(originalTxnID, newHash string) error {
-	_, err := d.Exec(`UPDATE accounts SET account_number_hash = ? WHERE apple_original_txn_id = ?`,
-		newHash, originalTxnID)
-	return err
+// plaintext server-side (the no-plaintext policy). The number it supersedes
+// stays valid as an alias, so the customer's other devices (an iPad on the
+// same Apple ID, say) are NOT signed out. Previously this REPLACED the only
+// number, which silently locked out every other device on the subscription.
+// The subscription identity (originalTransactionId) is unchanged.
+func (d *DB) AddAccountNumberByAppleTxn(originalTxnID, newHash string) error {
+	return d.addAccountNumber("apple_original_txn_id", originalTxnID, newHash)
 }
 
 // DeactivateByAppleTxn clears tier / limit / expiry when an App Store
@@ -572,15 +668,13 @@ func (d *DB) RelinkGooglePlayToken(oldToken, newToken string) error {
 	return err
 }
 
-// UpdateAccountHashByGooglePlayToken re-points a Play-minted account at a new
-// account-number hash. Used on a restore from a device with no local copy of
-// the number: we re-mint and return a fresh number rather than store the
-// plaintext server-side (the no-plaintext policy). The subscription identity
-// (purchase token) is unchanged.
-func (d *DB) UpdateAccountHashByGooglePlayToken(token, newHash string) error {
-	_, err := d.Exec(`UPDATE accounts SET account_number_hash = ? WHERE google_play_purchase_token = ?`,
-		newHash, token)
-	return err
+// AddAccountNumberByGooglePlayToken issues an additional account number for
+// a Play-minted account on a restore, keeping the number it supersedes valid
+// so the customer's other devices stay signed in. See
+// AddAccountNumberByAppleTxn. The subscription identity (purchase token) is
+// unchanged.
+func (d *DB) AddAccountNumberByGooglePlayToken(token, newHash string) error {
+	return d.addAccountNumber("google_play_purchase_token", token, newHash)
 }
 
 // DeactivateByGooglePlayToken clears tier / limit / expiry when a Play

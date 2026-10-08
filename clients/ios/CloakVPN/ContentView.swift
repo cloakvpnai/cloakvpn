@@ -142,7 +142,19 @@ struct ContentView: View {
             // the silent no-op we shipped initially). Tied to
             // tunnel.lastRegionError; tapping Dismiss clears it.
             .alert("Region select failed", isPresented: .constant(tunnel.lastRegionError != nil), actions: {
-                Button("Dismiss") { tunnel.lastRegionError = nil }
+                // The stored account number is dead and could not be
+                // recovered silently: give the customer the one-tap way out.
+                // Signing out shows AccountEntryView, which offers Restore
+                // Purchases and number entry.
+                if tunnel.accountNeedsReentry {
+                    Button("Sign Out") {
+                        tunnel.lastRegionError = nil
+                        Task { await tunnel.signOut() }
+                    }
+                }
+                Button(tunnel.accountNeedsReentry ? "Not Now" : "Dismiss", role: .cancel) {
+                    tunnel.lastRegionError = nil
+                }
             }, message: { Text(tunnel.lastRegionError ?? "") })
             .alert("Reset Tunnel?", isPresented: $showingResetConfirm) {
                 Button("Reset", role: .destructive) {

@@ -160,22 +160,23 @@ func (h *Handler) Verify(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if req.Restore {
-			// App has no local number → re-issue one (no-plaintext policy
+			// App has no local number → issue one (no-plaintext policy
 			// means we can't return the original). Subscription identity is
-			// unchanged; the previously-issued number stops working.
+			// unchanged, and previously-issued numbers keep working so the
+			// customer's other devices are not signed out.
 			number, gerr := account.Generate()
 			if gerr != nil {
 				http.Error(w, "server", http.StatusInternalServerError)
 				return
 			}
 			hash := account.Hash(number, h.cfg.AccountNumberSecret)
-			if herr := h.db.UpdateAccountHashByGooglePlayToken(req.PurchaseToken, hash); herr != nil {
+			if herr := h.db.AddAccountNumberByGooglePlayToken(req.PurchaseToken, hash); herr != nil {
 				log.Printf("googleplay verify: re-issue: %v", herr)
 				http.Error(w, "server", http.StatusInternalServerError)
 				return
 			}
 			resp.AccountNumber = number
-			log.Printf("googleplay: re-issued account number on restore for purchaseToken %s…", short(req.PurchaseToken))
+			log.Printf("googleplay: issued additional account number on restore for purchaseToken %s…", short(req.PurchaseToken))
 		}
 
 	default:
