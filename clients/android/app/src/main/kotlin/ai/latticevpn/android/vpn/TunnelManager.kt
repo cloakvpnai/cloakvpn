@@ -299,7 +299,16 @@ class TunnelManager private constructor(appCtx: Context) {
             rosenpassPubkeyB64 = keys.first.publicB64,
             region = regionId,
         )
-        return latticeConfigFrom(provision.config)
+        val cfg = latticeConfigFrom(provision.config)
+        // A fresh registration means the server-side peer is brand new and
+        // holds NO preshared key — any PSK persisted from an earlier
+        // registration against this server is now poison: baking it into
+        // the tunnel makes the WireGuard handshake permanently fail
+        // (2026-07-01 root cause #2). Clear it here, at provision time, so
+        // the invalidation also covers configs that are cached now and
+        // imported later (prefetch, region switch back).
+        repository.clearPersistedPsk(cfg.peerPublicKey)
+        return cfg
     }
 
     /** Manual-paste path: parse a raw INI block off the main thread, then apply it. */
@@ -409,12 +418,12 @@ class TunnelManager private constructor(appCtx: Context) {
         }
 
         // Live mid-session PSK rotation is gated behind LIVE_ROTATION_ENABLED
-        // (currently OFF — see that constant). OFF: one handshake per
-        // connection (SESSION_PSK_LIFETIME_SEC), no watchdog — the
-        // proven-stable mode. ON: re-key every cfg.pskRotationSeconds with
-        // the desync watchdog active. The handshake hardening, seamless-path
-        // PSK persistence and watchdog/recovery code all stay compiled in
-        // either way; only this gate changes behaviour.
+        // (currently ON — see that constant). ON: re-key every
+        // cfg.pskRotationSeconds with the desync watchdog active. OFF: one
+        // handshake per connection (SESSION_PSK_LIFETIME_SEC), no watchdog.
+        // The handshake hardening, seamless-path PSK persistence and
+        // watchdog/recovery code all stay compiled in either way; only this
+        // gate changes behaviour.
         val rotationSeconds =
             if (LIVE_ROTATION_ENABLED) cfg.pskRotationSeconds else SESSION_PSK_LIFETIME_SEC
         val r = buildRotator(rotationSeconds) ?: return
@@ -748,16 +757,16 @@ class TunnelManager private constructor(appCtx: Context) {
         /**
          * Master switch for mid-session post-quantum PSK rotation.
          *
-         * OFF (current): one Rosenpass handshake per connection — the
-         * proven-stable mode. The key is still post-quantum; it simply is
-         * not re-keyed mid-session, and the desync watchdog is dormant.
+         * ON (current): re-key every `cfg.pskRotationSeconds` with the
+         * desync watchdog active. Enabled since the Rosenpass handshake
+         * runs OUTSIDE the WireGuard tunnel (RosenpassTransport binds its
+         * socket to the underlying network) — a rotation no longer depends
+         * on tunnel health, so it cannot deadlock and a desync self-heals
+         * on the next cycle. See SESSION_HANDOVER_2026-05-23_pqc-rotation.md.
          *
-         * ON: re-key every `cfg.pskRotationSeconds` with the watchdog
-         * active. Enabled now that the Rosenpass handshake runs OUTSIDE
-         * the WireGuard tunnel (RosenpassTransport binds its socket to the
-         * underlying network) — a rotation no longer depends on tunnel
-         * health, so it cannot deadlock and a desync self-heals on the
-         * next cycle. See SESSION_HANDOVER_2026-05-23_pqc-rotation.md.
+         * OFF: one Rosenpass handshake per connection
+         * (SESSION_PSK_LIFETIME_SEC); the key is still post-quantum, it
+         * simply is not re-keyed mid-session, and the watchdog is dormant.
          */
         private const val LIVE_ROTATION_ENABLED = true
 

@@ -17,6 +17,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import uniffi.rosenpassffi.StepResult
+import java.net.SocketTimeoutException
 import java.util.Base64
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -209,7 +210,17 @@ class RosenpassRotator(
                 _consecutiveFailures.value = fails
                 val msg = e.message ?: e.javaClass.simpleName
                 Log.e(TAG, "handshake failed ($fails consecutive): $msg")
-                _status.value = RosenpassStatus.Error(msg)
+                // Initial convergence: while NO exchange has ever landed on
+                // this run, a failed attempt is an expected part of bringing
+                // the tunnel up (first packet lost, responder briefly busy).
+                // Keep showing "Handshaking" instead of flashing an error at
+                // the user — the Android analogue of the iOS NE
+                // convergence-grace (2026-05-29). Failures still count
+                // toward _consecutiveFailures, so the TunnelManager
+                // watchdog's recovery semantics are unchanged.
+                _status.value =
+                    if (rotations == 0) RosenpassStatus.Handshaking
+                    else RosenpassStatus.Error(msg)
                 // Exponential backoff, capped at 60 s — matches the iOS
                 // RosenpassDriver: min(60, 1 << min(failures, 6)).
                 val backoff = min(MAX_BACKOFF_SEC, 1 shl min(fails, 6))
@@ -273,19 +284,51 @@ class RosenpassRotator(
         val session = RosenpassBridge.newSession(clientSecret, clientPublic, serverPublic)
         try {
             transport.connect()
-            transport.send(session.initiate())
+            var lastOutbound: ByteArray = session.initiate()
+            transport.send(lastOutbound)
 
             // ---- Phase 1 — drive the handshake until the PSK is derived.
-            // Up to MAX_MESSAGES iterations: covers V03's 1.5-RTT pattern
-            // plus a few server-side retransmits under packet loss.
+            // Up to MAX_MESSAGES inbound messages: covers V03's 1.5-RTT
+            // pattern plus a few server-side retransmits under packet loss.
+            //
+            // RETRANSMIT-WITHIN-THE-EXCHANGE (2026-06-11): the wait for each
+            // inbound message is sliced into RETRANSMIT_INTERVAL_SEC windows;
+            // every quiet slice retransmits the last outbound message
+            // (InitHello or InitConf) until HANDSHAKE_DEADLINE_SEC. The
+            // previous code sent each message exactly ONCE and then blocked
+            // 8 s — so a single lost UDP datagram failed the whole attempt
+            // (8 s + backoff), which users saw as "PQC timed out" on every
+            // fresh Play-store connect and as multi-minute rotation stalls
+            // (us-west-1 journal, peer-7bc7a25d3e97). Stock rosenpass
+            // retransmits inside the exchange for exactly this reason; the
+            // responder treats duplicates idempotently.
             var psk: ByteArray? = null
             var initConf: ByteArray? = null
-            for (i in 0 until MAX_MESSAGES) {
+            var inboundHandled = 0
+            var retransmits = 0
+            val deadlineNanos =
+                System.nanoTime() + HANDSHAKE_DEADLINE_SEC * 1_000_000_000L
+            while (inboundHandled < MAX_MESSAGES) {
                 coroutineContext.ensureActive()
-                val inbound = transport.receive(RECEIVE_TIMEOUT_SEC)
+                val inbound = try {
+                    transport.receive(RETRANSMIT_INTERVAL_SEC)
+                } catch (e: RosenpassTransportException) {
+                    if (e.cause !is SocketTimeoutException) throw e
+                    if (System.nanoTime() >= deadlineNanos) {
+                        throw RosenpassTransportException(
+                            "handshake timed out after ${HANDSHAKE_DEADLINE_SEC}s " +
+                                "($retransmits retransmits)",
+                        )
+                    }
+                    retransmits += 1
+                    transport.send(lastOutbound)
+                    continue
+                }
+                inboundHandled += 1
                 when (val result = session.handleMessage(inbound)) {
                     is StepResult.SendMessage -> {
                         transport.send(result.bytes)
+                        lastOutbound = result.bytes
                         // The PSK may have been derived during the same
                         // handle_message call that produced these bytes
                         // (the RespHello that requires us to emit
@@ -371,8 +414,17 @@ class RosenpassRotator(
         /** Max inbound messages tolerated per handshake. */
         private const val MAX_MESSAGES = 6
 
-        /** Per-message inbound UDP timeout. */
-        private const val RECEIVE_TIMEOUT_SEC = 8
+        /**
+         * Quiet-wait slice between retransmits of the last outbound
+         * handshake message. 2 s comfortably covers the RTT to any region
+         * plus the responder's PQC compute, while recovering from a lost
+         * datagram ~4x faster than the previous single-send 8 s wait.
+         */
+        private const val RETRANSMIT_INTERVAL_SEC = 2
+
+        /** Overall per-attempt budget for phase 1 (was a single 8 s wait
+         *  per message with no retransmission). */
+        private const val HANDSHAKE_DEADLINE_SEC = 12L
 
         /**
          * Best-effort InitConf retransmits after the first send — the

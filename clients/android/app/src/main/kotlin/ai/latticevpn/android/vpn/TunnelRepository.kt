@@ -340,6 +340,30 @@ class TunnelRepository private constructor(private val appCtx: Context) {
             ?.takeIf { it.size == 32 }
     }
 
+    /**
+     * Forget the persisted PSK for [serverPublicKey] (and [currentPsk], if
+     * the active config points at that same server).
+     *
+     * Called by TunnelManager whenever this device is FRESHLY PROVISIONED
+     * against a server (POST /v1/device) — a new registration means the
+     * server-side peer is brand new and holds NO preshared key, so
+     * re-presenting a PSK persisted from an earlier registration makes the
+     * WireGuard handshake impossible: the server silently drops every
+     * response validation and the tunnel is black from second zero, which
+     * no Rosenpass retransmit mitigation can repair (2026-07-01 Android
+     * root cause #2). The per-server persistence above is only valid for
+     * the LIFETIME OF ONE REGISTRATION; a re-provision invalidates it.
+     */
+    fun clearPersistedPsk(serverPublicKey: String) {
+        appCtx.getSharedPreferences("lattice", Context.MODE_PRIVATE)
+            .edit()
+            .remove(pskKey(serverPublicKey))
+            .apply()
+        if (_config.value?.peerPublicKey == serverPublicKey) {
+            currentPsk = null
+        }
+    }
+
     companion object {
         /**
          * Settle delay between the DOWN and UP halves of a PSK

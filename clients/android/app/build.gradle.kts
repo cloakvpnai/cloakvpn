@@ -26,14 +26,14 @@ val releaseKeyPassword: String = latticeSecrets.getProperty("RELEASE_KEY_PASSWOR
 
 android {
     namespace = "ai.latticevpn.android"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "ai.latticevpn.android"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 4
-        versionName = "1.0.2"
+        targetSdk = 36
+        versionCode = 6
+        versionName = "1.0.4"
 
         ndk {
             // Restrict to the ABIs we actually ship rosenpass .so for.
@@ -130,11 +130,11 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // Google Play Billing — in-app subscription purchases (BillingManager,
-    // PaywallScreen). v7 is the current minimum Google accepts for new
-    // uploads; the -ktx artifact adds the coroutine extensions. The purchase
+    // PaywallScreen). v8.0.0+ is required by Google Play policy (Aug 2026); we
+    // ship v9.0.0, the latest; the -ktx artifact adds the coroutine extensions. The purchase
     // token is verified server-side (POST /v1/googleplay) which mints/extends
     // the customer's account number — the same no-account model as Stripe/IAP.
-    implementation("com.android.billingclient:billing-ktx:7.1.1")
+    implementation("com.android.billingclient:billing-ktx:9.0.0")
 
     // JNA — required by the uniffi-generated Kotlin bindings
     // (uniffi/rosenpassffi/rosenpassffi.kt) to load + call into the

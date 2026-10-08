@@ -123,13 +123,13 @@ class BillingManager(
             )
             .build()
 
-        client.queryProductDetailsAsync(params) { result, productDetailsList ->
+        client.queryProductDetailsAsync(params) { result, queryResult ->
             if (result.responseCode != BillingClient.BillingResponseCode.OK) {
                 _error.value = "Couldn't load plans from Google Play (${result.responseCode})."
                 return@queryProductDetailsAsync
             }
             val out = mutableListOf<SubPlan>()
-            for (pd in productDetailsList) {
+            for (pd in queryResult.productDetailsList) {
                 val offers = pd.subscriptionOfferDetails ?: continue
                 // For each base plan, prefer the plain base-plan offer (no
                 // offerId, i.e. no intro/free-trial offer) so the displayed

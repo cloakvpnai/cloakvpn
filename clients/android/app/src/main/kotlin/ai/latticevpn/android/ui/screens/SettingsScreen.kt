@@ -146,6 +146,13 @@ fun SettingsScreen(vm: LatticeViewModel) {
                     label = "Locations",
                     value = LatticeRegion.all.size.let { n -> if (n == 1) "1 region" else "$n regions" },
                 )
+                RowDivider()
+                SettingsItem(
+                    title = "Open-source licenses",
+                    subtitle = "WireGuard, Rosenpass, liboqs, and other " +
+                        "software Lattice is built on.",
+                    onClick = { vm.navigateTo(Screen.LICENSES) },
+                )
             }
 
             Spacer(Modifier.height(24.dp))
