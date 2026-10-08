@@ -78,3 +78,13 @@ build_cowork.log
 # One-off experiment scratch dirs (e.g. the 2026-09 iOS deployment-target
 # trial). Kept on disk for reference, out of the repo.
 clients/ios/_deployment-target-experiment-*/
+
+# Local build / diagnostic output (2026-10-08 cleanup): Android build logs,
+# saved output of scripts/diag-*.sh (fleet details), and locally built server
+# binaries. The scripts themselves are tracked; their output is not.
+clients/android/*.log
+scripts/*.out
+server/api/dist/
+_to_delete/
+server/cloak-rpd/.work/
+server/cloak-rpd/build.log
