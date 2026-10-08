@@ -23,7 +23,7 @@ confirmed). Web/Stripe billing unaffected; dual billing as designed.
 - **Env added** to `/etc/cloakvpn/api.env` (root, 0600):
   - `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON=/etc/cloakvpn/play-service-account.json`
   - `GOOGLE_PLAY_PACKAGE_NAME=ai.latticevpn.android`
-  - `GOOGLE_PLAY_NOTIFICATION_SECRET=336059bce39ed9e3716737e47049ecdab5638085f610744e`
+  - `GOOGLE_PLAY_NOTIFICATION_SECRET=<redacted: rotated 2026-10-08, value lives only in /etc/cloakvpn/api.env>`
   - (Product IDs left at defaults `basic`/`pro`.)
 - **Service-account key** installed at `/etc/cloakvpn/play-service-account.json`
   (root, 0600). NOT in git. Email:
