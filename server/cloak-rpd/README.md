@@ -35,12 +35,23 @@ the daemon reloads on a (rare) restart.
 - `src/main.rs` — the daemon (first draft).
 - `patches/app_server_control.md` — the `AppServer::event_loop_with_control`
   patch spec.
+- `patches/app_server_remove_peer.md` — runtime peer **REMOVE** spec (`PeerCtl`
+  enum + `AppServer::remove_peer_by_outfile`). Closes the orphaned-PSK leak:
+  revoked/region-switched peers stayed resident in the live daemon and kept
+  deriving `psk-<peer>` forever. `src/main.rs` (REMOVE control command) and
+  `server/api/internal/wg/wg.go` (`Revoke` now always sends REMOVE) are done;
+  the rosenpass-crate `remove_peer_by_outfile` impl is the remaining gate.
 
 ## Remaining work (in order)
 1. Finalize + apply the `event_loop_with_control` patch; get `cargo build
    --features experiment_api --bin cloak-rpd` green (iterate in Docker).
-2. **Local two-endpoint spike** — peer A live + rotating; `ADD` peer B over the
-   socket; assert A never stalls and B reaches first key. THIS IS THE GATE.
-3. systemd unit + packaging; `regionsvc` control-socket client.
-4. Canary on us-east-1 under real traffic + soak; verify zero rosenpass
-   restarts and steady PQC; then fleet rollout (per the design doc).
+2. Apply the `app_server_remove_peer` patch (`PeerCtl` + `remove_peer_by_outfile`,
+   tombstone strategy) in the same build.
+3. **Local two-endpoint spike** — peer A live + rotating; `ADD` peer B; assert A
+   never stalls and B reaches first key. Then `REMOVE B`; assert A keeps
+   rotating, B's `psk-B` stops + is deleted, and a later InitHello from B is
+   ignored until re-ADD. THIS IS THE GATE.
+4. systemd unit + packaging; `regionsvc` control-socket client (done in wg.go).
+5. Canary on us-east-1 under real traffic + soak; verify zero rosenpass
+   restarts, steady PQC, and `cloak_psk_orphaned_total` → 0 after revokes; then
+   fleet rollout (per the design doc).

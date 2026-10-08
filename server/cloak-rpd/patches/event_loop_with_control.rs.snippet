@@ -19,18 +19,32 @@
     /// [Self::add_peer] — zero disruption to existing peers (independent
     /// CryptoServer entries). Used by the `cloak-rpd` binary so provisioning a
     /// device never restarts the daemon.
+    ///
+    /// `known_peers` maps peer name -> (peer slot index, raw pubkey bytes) for
+    /// every peer this run has registered (preloaded or runtime-added). Entries
+    /// are NEVER removed: a REMOVE only tombstones the slot (nulls `outfile` +
+    /// endpoints), and a later re-ADD of the same name with the SAME pubkey
+    /// REACTIVATES that slot (restores `outfile`) instead of calling
+    /// [Self::add_peer] again.
+    ///
+    /// WHY (2026-07-01, the "tombstone/re-ADD" bug): the previous version
+    /// dropped the name from a `HashSet` on REMOVE, so a re-ADD of the same
+    /// device (revoke + re-provision, e.g. the Android app's automatic
+    /// re-provision recovery) called `add_peer` again and created a SECOND
+    /// CryptoServer entry with the SAME public key. Inbound handshakes resolve
+    /// to the FIRST (tombstoned) entry, whose `outfile` is `None` — so the PQC
+    /// exchange completed on the wire while the daemon silently never wrote
+    /// `psk-<name>`. The client applied its derived PSK, the server's wg peer
+    /// never got one, and the tunnel died on the next WireGuard rekey.
     pub fn event_loop_with_control(
         &mut self,
-        ctrl_rx: std::sync::mpsc::Receiver<(String, std::path::PathBuf)>,
+        ctrl_rx: std::sync::mpsc::Receiver<PeerCtl>,
         psk_dir: std::path::PathBuf,
-        mut known_peers: std::collections::HashSet<String>,
+        mut known_peers: std::collections::HashMap<String, (usize, Vec<u8>)>,
     ) -> anyhow::Result<()> {
         // SPk, ProtocolVersion (from crate::config), and OskDomainSeparator are
         // already in module scope (see app_server.rs top + add_peer signature).
         // We only need the LoadValue trait so `SPk::load` resolves.
-        // `known_peers` is seeded with the preloaded peer names so a repeat ADD
-        // (regionsvc now sends ADD on every provision, even when unchanged) is a
-        // harmless no-op instead of a duplicate CryptoServer peer.
         use rosenpass_util::file::LoadValue;
 
         let (mut rx, mut tx) = (MsgBuf::zero(), MsgBuf::zero());
@@ -54,32 +68,93 @@
             use AppPollResult::*;
             use KeyOutputReason::*;
 
-            // --- NEW: drain runtime peer-add requests before polling ---------
-            while let Ok((name, pubkey_path)) = ctrl_rx.try_recv() {
-                if known_peers.contains(&name) {
-                    // Already registered (preloaded or added earlier). Idempotent
-                    // no-op — regionsvc sends ADD on every provision.
-                    continue;
-                }
-                match SPk::load(&pubkey_path) {
-                    Ok(pk) => {
-                        let out = psk_dir.join(format!("psk-{name}"));
-                        if let Err(e) = self.add_peer(
-                            None,
-                            pk,
-                            Some(out),
-                            None,
-                            None,
-                            ProtocolVersion::V03,
-                            OskDomainSeparator::default(),
-                        ) {
-                            log::warn!("cloak-rpd add_peer {name} failed: {e:?}");
-                        } else {
-                            known_peers.insert(name.clone());
-                            log::info!("cloak-rpd add_peer {name} ok");
+            // --- NEW: drain runtime peer ADD / REMOVE requests before poll ---
+            // PeerCtl is defined alongside this method (see
+            // patches/app_server_remove_peer.md). Both arms are idempotent:
+            // regionsvc sends ADD on every provision and REMOVE on every revoke.
+            while let Ok(cmd) = ctrl_rx.try_recv() {
+                match cmd {
+                    PeerCtl::Add { name, pubkey_path } => {
+                        // Raw pubkey bytes: both the change-detection fingerprint
+                        // and the guard against reactivating a slot whose key no
+                        // longer matches what regionsvc just registered.
+                        let raw = match std::fs::read(&pubkey_path) {
+                            Ok(b) => b,
+                            Err(e) => {
+                                log::warn!("cloak-rpd read {pubkey_path:?} failed: {e:?}");
+                                continue;
+                            }
+                        };
+                        if let Some((idx, key)) = known_peers.get(&name) {
+                            if *key == raw {
+                                // Same device, same key: REACTIVATE the existing
+                                // slot (it may be tombstoned from an earlier
+                                // REMOVE, or still active — either way this is
+                                // idempotent and never duplicates the pubkey).
+                                let out = psk_dir.join(format!("psk-{name}"));
+                                if let Some(p) = self.peers.get_mut(*idx) {
+                                    p.outfile = Some(out);
+                                }
+                                log::info!("cloak-rpd add_peer {name} reactivated");
+                                continue;
+                            }
+                            // Same name, DIFFERENT key (device regenerated its
+                            // Rosenpass identity): tombstone the stale slot so
+                            // its old key stops matching, then fall through to a
+                            // fresh add_peer. No pubkey collision is possible —
+                            // the keys differ.
+                            let idx = *idx;
+                            if let Some(p) = self.peers.get_mut(idx) {
+                                p.outfile = None;
+                                p.broker_peer = None;
+                                p.initial_endpoint = None;
+                                p.current_endpoint = None;
+                            }
+                            log::info!("cloak-rpd add_peer {name}: key changed, re-adding");
+                        }
+                        match SPk::load(&pubkey_path) {
+                            Ok(pk) => {
+                                let out = psk_dir.join(format!("psk-{name}"));
+                                if let Err(e) = self.add_peer(
+                                    None,
+                                    pk,
+                                    Some(out),
+                                    None,
+                                    None,
+                                    ProtocolVersion::V03,
+                                    OskDomainSeparator::default(),
+                                ) {
+                                    log::warn!("cloak-rpd add_peer {name} failed: {e:?}");
+                                } else {
+                                    // add_peer asserts pn == peers.len() then
+                                    // pushes, so the new slot is the last one.
+                                    known_peers
+                                        .insert(name.clone(), (self.peers.len() - 1, raw));
+                                    log::info!("cloak-rpd add_peer {name} ok");
+                                }
+                            }
+                            Err(e) => log::warn!("cloak-rpd load {pubkey_path:?} failed: {e:?}"),
                         }
                     }
-                    Err(e) => log::warn!("cloak-rpd load {pubkey_path:?} failed: {e:?}"),
+                    PeerCtl::Remove { name } => {
+                        // Tombstone the slot (stop emitting keys, stop
+                        // initiating) but KEEP the known_peers entry, so a
+                        // later re-ADD reactivates this slot instead of
+                        // duplicating the pubkey. Idempotent.
+                        let Some((idx, _)) = known_peers.get(&name) else {
+                            continue; // unknown — no-op
+                        };
+                        let idx = *idx;
+                        if let Some(p) = self.peers.get_mut(idx) {
+                            p.outfile = None;
+                            p.broker_peer = None;
+                            p.initial_endpoint = None;
+                            p.current_endpoint = None;
+                        }
+                        let out = psk_dir.join(format!("psk-{name}"));
+                        let _ = std::fs::remove_file(&out);
+                        log::info!("cloak-rpd remove_peer {name} ok");
+                    }
                 }
             }
             // -----------------------------------------------------------------
@@ -161,4 +236,30 @@
                 }
             };
         }
+    }
+
+    /// Disable the peer whose key-output file equals `outfile`: stop emitting
+    /// keys (clear `outfile` + `broker_peer`) and stop initiating to it (clear
+    /// endpoints). Used by `cloak-rpd` to drop a revoked / region-switched peer
+    /// at runtime so it stops re-deriving `psk-<name>` (the orphaned-PSK leak).
+    ///
+    /// We deliberately do NOT remove the entry from `self.peers`: peer indices
+    /// are locked to the CryptoServer's peer indices (`add_peer` asserts
+    /// `pn == self.peers.len()`), so a `Vec` removal would reindex and corrupt
+    /// every later peer's `PeerPtr`. Nulling the `Option` fields is sufficient —
+    /// `output_key` only writes when `outfile` is `Some` (and `set_psk` is a
+    /// no-op/warn when both broker and outfile are `None`), so the tombstoned
+    /// peer produces no key output. The dead slot is reaped on the next daemon
+    /// restart, which preloads only the live peers from the on-disk registry
+    /// (`Revoke` has already pruned this one). No-op-safe and idempotent.
+    pub fn remove_peer_by_outfile(&mut self, outfile: &std::path::Path) -> anyhow::Result<()> {
+        for ap in self.peers.iter_mut() {
+            if ap.outfile.as_deref() == Some(outfile) {
+                ap.outfile = None;
+                ap.broker_peer = None;
+                ap.initial_endpoint = None;
+                ap.current_endpoint = None;
+            }
+        }
+        Ok(())
     }

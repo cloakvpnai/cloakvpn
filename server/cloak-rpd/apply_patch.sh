@@ -57,4 +57,37 @@ else
   echo "event_loop_with_control already present"
 fi
 
+# 4. insert the PeerCtl enum (module level) just before `impl AppPeer` (once).
+#    event_loop_with_control + the cloak-rpd bin both reference it. Inserting
+#    before `impl AppPeer` keeps it after the AppPeer struct's closing brace, so
+#    no preceding doc-comment gets reattached.
+if ! grep -q 'enum PeerCtl' "${APP}"; then
+  python3 - "${APP}" <<'PY'
+import sys
+app_path = sys.argv[1]
+app = open(app_path).read()
+anchor = "\nimpl AppPeer {"
+idx = app.find(anchor)
+if idx == -1:
+    sys.exit("`impl AppPeer` anchor not found in app_server.rs")
+enum = '''
+
+/// Runtime peer-management commands carried from cloak-rpd's control socket
+/// into [AppServer::event_loop_with_control]. Both are idempotent: regionsvc
+/// sends ADD on every provision and REMOVE on every revoke.
+pub enum PeerCtl {
+    /// Register a peer at runtime (zero disruption to existing peers).
+    Add { name: String, pubkey_path: std::path::PathBuf },
+    /// Drop a revoked / region-switched peer so it stops deriving psk-<name>.
+    Remove { name: String },
+}
+'''
+out = app[:idx] + enum + app[idx:]
+open(app_path, "w").write(out)
+print("inserted PeerCtl enum before impl AppPeer")
+PY
+else
+  echo "PeerCtl enum already present"
+fi
+
 echo "patch applied to ${WS}"

@@ -26,13 +26,11 @@ if [ ! -d "${WORK}/rosenpass/.git" ]; then
 fi
 git -C "${WORK}/rosenpass" checkout -q "${RP_REV}"
 
-# 2. Drop in the cloak-rpd binary source and apply the app_server control-loop
-#    patch. (patches/app_server_control.rs is appended as a module + the bin is
-#    registered in Cargo.toml. See patches/README for the exact hunks.)
-cp "${HERE}/src/main.rs" "${WORK}/rosenpass/rosenpass/src/bin/cloak-rpd.rs"
-# NOTE: the app_server `event_loop_with_control` patch must be applied here
-#       (see patches/app_server_control.md). Left as an explicit manual step
-#       until the method is finalized + compiles.
+# 2. Drop in the cloak-rpd binary source and apply the app_server patches via
+#    apply_patch.sh: copies the bin, registers the [[bin]] in Cargo.toml, and
+#    inserts event_loop_with_control + remove_peer_by_outfile + the PeerCtl enum
+#    into app_server.rs. Idempotent, so re-running build.sh is safe.
+"${HERE}/apply_patch.sh" "${WORK}/rosenpass"
 
 # 3. Build linux/amd64 in Docker (emulated on Apple Silicon).
 docker run --rm --platform linux/amd64 \
