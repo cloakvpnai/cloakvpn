@@ -19,6 +19,10 @@ import SwiftUI
 
 struct ConnectionPopoverView: View {
     var showPreferences: () -> Void = {}
+    /// True when hosted as the Connect tab of the Lattice window instead of
+    /// the menu bar popover: the region list uses the available height and
+    /// the Preferences/Quit footer is dropped.
+    var inWindow = false
     @EnvironmentObject private var connection: ConnectionViewModel
     @State private var showingRegionPicker = false
 
@@ -33,14 +37,16 @@ struct ConnectionPopoverView: View {
             regionSection
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-            Spacer(minLength: 0)
-            Divider().padding(.horizontal, -16)
-            footer
+            if !inWindow {
+                Spacer(minLength: 0)
+                Divider().padding(.horizontal, -16)
+                footer
+            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 14)
         .padding(.bottom, 12)
-        .background(Color(NSColor.windowBackgroundColor))
+        .background(inWindow ? Color.clear : Color(NSColor.windowBackgroundColor))
         .alert("Lattice VPN", isPresented: Binding(
             get: { connection.lastError != nil },
             set: { if !$0 { connection.clearError() } }
@@ -182,7 +188,7 @@ struct ConnectionPopoverView: View {
                     }
                 }
             }
-            .frame(maxHeight: 170)
+            .frame(maxHeight: inWindow ? .infinity : 170)
         }
     }
 

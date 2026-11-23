@@ -5,6 +5,7 @@
 //  a customer subscribes or restores, signs in with an account number, and
 //  sees their plan.
 //
+//    - Connect        status, Connect button and the region list
 //    - General        what the app is and how to use it
 //    - Account        account-number sign-in, sign out
 //    - Subscription   current plan, App Store plans, Restore Purchases
@@ -19,6 +20,10 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
+            // Same controls as the menu bar panel: status, Connect, regions.
+            ConnectionPopoverView(inWindow: true)
+                .tabItem { Label("Connect", systemImage: "shield.lefthalf.filled") }
+
             GeneralSettingsView()
                 .tabItem { Label("General", systemImage: "gearshape") }
 
