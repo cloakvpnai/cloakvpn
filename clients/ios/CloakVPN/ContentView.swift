@@ -493,7 +493,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Choose a region")
                         .font(CloakDesign.headline(size: 16, weight: .semibold))
-                    Text("Tap a flag below to provision")
+                    Text(horizontalSizeClass == .regular ? "Pick a region from the list" : "Tap a flag below")
                         .font(CloakDesign.body(size: 12))
                         .foregroundStyle(.secondary)
                 }

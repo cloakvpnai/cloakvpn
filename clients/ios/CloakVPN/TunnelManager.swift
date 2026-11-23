@@ -493,8 +493,10 @@ final class TunnelManager: ObservableObject {
         var cachedConfig = provisionedConfigsByRegionID[region.id]
         // A config cached by a pre-ML-KEM-768 build is a Rosenpass config;
         // reusing it would skip the exchange, so drop it and provision again.
+        var droppedLegacyConfig = false
         if let text = cachedConfig, !text.contains("[mlkem768]") {
             cachedConfig = nil
+            droppedLegacyConfig = true
             provisionedConfigsByRegionID.removeValue(forKey: region.id)
         }
         if let cachedText = cachedConfig {
@@ -527,7 +529,11 @@ final class TunnelManager: ObservableObject {
             // physical interface and always completes. Fresh connects (not
             // currently connected) are unaffected; the cache-hit path above
             // makes no network call so it keeps its in-place bounce.
-            let mustReconnect = wasActivelyConnected && switchingRegions
+            // Every ML-KEM-768 provision installs a NEW preshared key on the
+            // server, so a tunnel still running the previous config (same
+            // region, migrated from a legacy cached config) must be restarted
+            // with the new one or its next handshake fails.
+            let mustReconnect = wasActivelyConnected && (switchingRegions || droppedLegacyConfig)
             if mustReconnect {
                 debugLog("selectRegion: switching while connected — dropping tunnel before provision (out-of-tunnel control plane)")
                 await disconnectAndWait()
@@ -745,6 +751,14 @@ final class TunnelManager: ObservableObject {
             // be ideal but is overkill for now. Default to us-west-1 (covers
             // the largest user demographic for a US-headquartered launch).
             target = CloakRegion.byID("us-west-1") ?? CloakRegion.all[0]
+        }
+
+        // A saved VPN profile already exists: the customer can connect as is.
+        // Provisioning now would install a new preshared key on the server
+        // without updating that profile, and the saved tunnel would stop working.
+        guard config == nil else {
+            debugLog("warmUp: a VPN profile is already saved — skipping")
+            return
         }
 
         // Skip if already cached this install
