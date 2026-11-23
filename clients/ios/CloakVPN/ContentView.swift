@@ -12,6 +12,19 @@ import UniformTypeIdentifiers
 /// and typography choices. Centralized here so we can rev the visual
 /// language in one place rather than chasing magic constants across
 /// the view tree.
+/// Palette for the 2026-11 home screen redesign.
+enum LatticeTheme {
+    static let bg = Color(red: 0.043, green: 0.059, blue: 0.078)
+    static let surface = Color(red: 0.078, green: 0.102, blue: 0.133)
+    static let border = Color(red: 0.137, green: 0.173, blue: 0.220)
+    static let text = Color(red: 0.910, green: 0.933, blue: 0.961)
+    static let muted = Color(red: 0.576, green: 0.631, blue: 0.702)
+    static let mint = Color(red: 0.239, green: 0.863, blue: 0.592)
+    static let mintText = Color(red: 0.749, green: 0.953, blue: 0.863)
+    static let orbFill = Color(red: 0.059, green: 0.122, blue: 0.102)
+    static let amber = Color(red: 1.0, green: 0.72, blue: 0.30)
+}
+
 enum CloakDesign {
     /// Brand green — used for the Connect button, the QUICK CONNECT
     /// section accent, and connected-state status indicators. Sits
@@ -41,7 +54,7 @@ enum CloakDesign {
     /// Linear's web type, Stripe's brand) without bundling a custom
     /// font. Sans-serif body keeps reading speed unaffected.
     static func headline(size: CGFloat, weight: Font.Weight = .semibold) -> Font {
-        .system(size: size, weight: weight, design: .serif)
+        .system(size: size, weight: weight, design: .default)
     }
 
     /// Body font — default SF Pro, refined weight. Avoids the chunky
@@ -108,7 +121,7 @@ struct ContentView: View {
                 // template so foregroundStyle controls the tint. Sits
                 // at low opacity behind everything so it frames the
                 // UI without competing with foreground content.
-                worldMapBackground
+                LatticeTheme.bg
                     .ignoresSafeArea()
 
                 if horizontalSizeClass == .regular {
@@ -117,27 +130,30 @@ struct ContentView: View {
                     compactLayout
                 }
             }
-            .navigationTitle("LATTICE VPN")
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // Custom serif title for premium-tech brand feel.
-                // Replaces SwiftUI's default sans-serif navigation title.
-                ToolbarItem(placement: .principal) {
-                    Text("LATTICE VPN")
-                        .font(CloakDesign.headline(size: 18, weight: .semibold))
-                        .tracking(1.6)
-                }
-                // Hamburger button — opens the PIA-style Settings drawer
-                // with account info, region selection link, settings,
-                // about, etc.
                 ToolbarItem(placement: .navigationBarLeading) {
+                    Text("Lattice")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(LatticeTheme.text)
+                        .fixedSize()
+                        .padding(.leading, 6)
+                }
+                .sharedBackgroundVisibility(.hidden)
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         showingMoreSheet = true
                     } label: {
-                        Image(systemName: "line.3.horizontal")
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(LatticeTheme.text)
                     }
+                    .accessibilityLabel("Settings")
                 }
             }
+            .toolbarBackground(LatticeTheme.bg, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .alert("Error", isPresented: .constant(errorMsg != nil), actions: {
                 Button("OK") { errorMsg = nil }
             }, message: { Text(errorMsg ?? "") })
@@ -205,52 +221,299 @@ struct ContentView: View {
         // QUICK CONNECT box) explicitly set their color and aren't
         // affected by this.
         .tint(CloakDesign.brandGrey)
+        .preferredColorScheme(.dark)
     }
 
     // MARK: - Layouts
 
     /// iPhone, and the closed iPhone Duo outer display: one column.
-    private var compactLayout: some View {
-        VStack(spacing: 18) {
-            statusBadge
-            bigConnectButton
-            currentRegionCard
-            quickConnectStrip
-            pqcStatusLine
-            ipDisplayPanel
+    // MARK: - Home screen (2026-11 redesign, "Signal")
+    //
+    // One large power ring is the whole connect control. Status, the
+    // post-quantum line and the IPs sit under it, then the region list.
+    // Reset and the developer tools live behind the gear (More sheet).
 
-            Spacer(minLength: 8)
+    private enum OrbState { case noRegion, off, working, securing, protected }
 
-            bottomToolbar
+    private var orbState: OrbState {
+        switch tunnel.status {
+        case .connected:
+            // A Rosenpass config (pre-1.1 installs) has no handshake gate.
+            if tunnel.config?.pqEnabled == true { return .protected }
+            return tunnel.handshakeVerified ? .protected : .securing
+        case .connecting, .reasserting, .disconnecting:
+            return .working
+        default:
+            if tunnel.regionSelectionInProgress { return .working }
+            return tunnel.config == nil ? .noRegion : .off
         }
-        .padding()
     }
 
-    /// Open iPhone Duo and iPad: status and controls on the left, every
-    /// region on the right, so no region is hidden behind sideways scrolling.
-    private var wideLayout: some View {
-        VStack(spacing: 18) {
-            HStack(alignment: .top, spacing: 24) {
-                VStack(spacing: 18) {
-                    statusBadge
-                    bigConnectButton
-                    currentRegionCard
-                    pqcStatusLine
-                    ipDisplayPanel
-                    Spacer(minLength: 0)
+    private var orbAccent: Color {
+        switch orbState {
+        case .protected: return LatticeTheme.mint
+        case .securing: return LatticeTheme.amber
+        case .working: return LatticeTheme.mint.opacity(0.7)
+        case .off, .noRegion: return LatticeTheme.muted
+        }
+    }
+
+    private var orbTitle: String {
+        switch orbState {
+        case .protected: return "Protected"
+        case .securing: return "Securing"
+        case .working: return tunnel.status == .disconnecting ? "Disconnecting" : "Connecting"
+        case .off: return "Not connected"
+        case .noRegion: return "Choose a region"
+        }
+    }
+
+    private var orbSubtitle: String {
+        switch orbState {
+        case .protected: return "Tap to disconnect"
+        case .securing: return "Verifying the tunnel"
+        case .working: return "One moment"
+        case .off: return "Tap to connect"
+        case .noRegion: return "Pick one below to get started"
+        }
+    }
+
+    private var signalOrb: some View {
+        let lit = orbState != .off && orbState != .noRegion
+        return VStack(spacing: 22) {
+            Button {
+                Task {
+                    do {
+                        if tunnel.status == .connected { try await tunnel.disconnect() }
+                        else { try await tunnel.connect() }
+                    } catch {
+                        errorMsg = error.localizedDescription
+                    }
                 }
-                .frame(maxWidth: .infinity)
-
-                regionListPane
-                    .frame(maxWidth: .infinity)
+            } label: {
+                ZStack {
+                    Circle().fill(orbAccent.opacity(lit ? 0.05 : 0)).frame(width: 224, height: 224)
+                    Circle().fill(orbAccent.opacity(lit ? 0.10 : 0)).frame(width: 200, height: 200)
+                    Circle()
+                        .fill(lit ? LatticeTheme.orbFill : LatticeTheme.surface)
+                        .frame(width: 176, height: 176)
+                    Circle()
+                        .stroke(orbAccent, lineWidth: 3)
+                        .frame(width: 176, height: 176)
+                    if orbState == .working {
+                        ProgressView()
+                            .controlSize(.large)
+                            .tint(LatticeTheme.mint)
+                    } else {
+                        Image(systemName: "power")
+                            .font(.system(size: 60, weight: .regular))
+                            .foregroundStyle(orbAccent)
+                    }
+                }
+                .frame(width: 224, height: 224)
+                .contentShape(Circle())
             }
+            .buttonStyle(.plain)
+            .disabled(tunnel.config == nil || orbState == .working)
+            .accessibilityLabel(tunnel.status == .connected ? "Disconnect" : "Connect")
 
-            bottomToolbar
+            VStack(spacing: 4) {
+                Text(orbTitle)
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(LatticeTheme.text)
+                Text(orbSubtitle)
+                    .font(.system(size: 14))
+                    .foregroundStyle(LatticeTheme.muted)
+            }
         }
-        .padding()
+        .animation(.easeInOut(duration: 0.25), value: orbState)
     }
 
-    /// Full region list for the wide layout.
+    /// Post-quantum status as a capsule. Same truth table as the old
+    /// one-line readout: ML-KEM-768 is only called active after a
+    /// completed WireGuard handshake.
+    private var signalPQChip: some View {
+        let legacy = tunnel.config?.pqEnabled == true
+        let active = tunnel.status == .connected && (legacy ? true : tunnel.handshakeVerified)
+        let text: String = {
+            if legacy { return tunnel.rosenpass.status.description }
+            if tunnel.status == .connected {
+                return tunnel.handshakeVerified
+                    ? "ML-KEM-768 key exchange active"
+                    : "ML-KEM-768: verifying tunnel"
+            }
+            return "ML-KEM-768 post-quantum key exchange"
+        }()
+        return HStack(spacing: 8) {
+            Image(systemName: active ? "checkmark.shield.fill" : "shield")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(active ? LatticeTheme.mint : LatticeTheme.muted)
+            Text(text)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(active ? LatticeTheme.mintText : LatticeTheme.muted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 34)
+        .background(Capsule().fill(active ? LatticeTheme.orbFill : LatticeTheme.surface))
+        .overlay(Capsule().stroke(active ? LatticeTheme.mint.opacity(0.35) : LatticeTheme.border, lineWidth: 1))
+    }
+
+    private var signalIPCard: some View {
+        let connected = tunnel.status == .connected
+        return Button {
+            Task { await tunnel.refreshPublicIPIfNotConnected() }
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("YOUR IP")
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(0.9)
+                        .foregroundStyle(LatticeTheme.muted)
+                    Text(publicIPDisplayValue)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundStyle(connected ? LatticeTheme.muted : LatticeTheme.text)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(connected ? LatticeTheme.mint : LatticeTheme.muted)
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text("EXIT IP")
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(0.9)
+                        .foregroundStyle(LatticeTheme.muted)
+                    Text(vpnIPDisplayValue)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundStyle(connected ? LatticeTheme.mint : LatticeTheme.muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(RoundedRectangle(cornerRadius: 14).fill(LatticeTheme.surface))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(LatticeTheme.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Refreshes your public IP when disconnected")
+    }
+
+    private var signalRegionHeader: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("REGIONS")
+                .font(.system(size: 12, weight: .semibold))
+                .tracking(1.0)
+                .foregroundStyle(LatticeTheme.muted)
+            Spacer()
+            if tunnel.regionSelectionInProgress {
+                ProgressView().controlSize(.small).tint(LatticeTheme.mint)
+            } else {
+                Text("\(CloakRegion.all.count) available")
+                    .font(.system(size: 12))
+                    .foregroundStyle(LatticeTheme.muted)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func signalRegionRow(_ region: CloakRegion) -> some View {
+        let isSelected = tunnel.selectedRegion?.id == region.id
+        let isLive = isSelected && tunnel.status == .connected
+        Button {
+            Task { await tunnel.selectRegion(region) }
+        } label: {
+            HStack(spacing: 12) {
+                Text(region.countryFlag).font(.system(size: 28))
+                Text(region.displayName)
+                    .font(.system(size: 15, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(LatticeTheme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 8)
+                if isLive {
+                    Text("Connected")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(LatticeTheme.mint)
+                } else if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(LatticeTheme.mint)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(LatticeTheme.muted)
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 52)
+            .background(RoundedRectangle(cornerRadius: 14).fill(LatticeTheme.surface))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(isSelected ? LatticeTheme.mint : LatticeTheme.border, lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(tunnel.regionSelectionInProgress)
+    }
+
+    private var signalRegionList: some View {
+        VStack(spacing: 8) {
+            signalRegionHeader
+            ForEach(CloakRegion.all) { region in
+                signalRegionRow(region)
+            }
+        }
+    }
+
+    /// iPhone, and the closed iPhone Duo: one scrolling column.
+    private var compactLayout: some View {
+        ScrollView {
+            VStack(spacing: 18) {
+                signalOrb
+                    .padding(.top, 8)
+                signalPQChip
+                signalIPCard
+                signalRegionList
+                    .padding(.top, 4)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 24)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    /// iPad and the open iPhone Duo: control on the left, regions on
+    /// the right, so nothing has to scroll to reach Connect.
+    private var wideLayout: some View {
+        HStack(alignment: .top, spacing: 28) {
+            VStack(spacing: 18) {
+                Spacer(minLength: 0)
+                signalOrb
+                signalPQChip
+                signalIPCard
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity)
+
+            ScrollView {
+                signalRegionList
+                    .padding(.vertical, 4)
+            }
+            .scrollIndicators(.hidden)
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 20)
+    }
+
     private var regionListPane: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {

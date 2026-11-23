@@ -1046,6 +1046,14 @@ final class TunnelManager: ObservableObject {
 
     func connect() async throws {
         debugLog("connect() called, current status=\(status)")
+        // An install upgraded from a Rosenpass build still has that config
+        // active. Replace it with an ML-KEM-768 provision for the same
+        // region before connecting. If that fails (offline, for example)
+        // the existing config is left in place and still connects.
+        if config?.pqEnabled == true, status == .disconnected, let region = selectedRegion {
+            debugLog("connect(): active config is Rosenpass; re-provisioning \(region.id) with ML-KEM-768")
+            await selectRegion(region)
+        }
         guard let m = manager else {
             debugLog("connect() FAILING: manager is nil")
             throw TunnelError.noConfig
