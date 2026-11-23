@@ -1,7 +1,8 @@
 #!/bin/sh
 # Builds liblatticetls.so for the Android app: the shared C layer from
 # clients/apple-tls plus its JNI surface, linked statically against OpenSSL 3.5.
-# Run build-openssl.sh first. Output: ../app/src/main/jniLibs/<abi>/liblatticetls.so
+# Run build-openssl.sh first. Output: ../app/src/debug/jniLibs/<abi>/liblatticetls.so
+# (git-ignored, debug builds only; move to src/main when CNSA 2.0 mode ships).
 set -eu
 : "${ANDROID_NDK_ROOT:?set ANDROID_NDK_ROOT to the NDK directory}"
 HERE="$(cd "$(dirname "$0")" && pwd)"; WORK="${WORK:-$HOME/src}"
@@ -10,7 +11,7 @@ HOST_TAG="$(ls "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt" | head -1)"
 BIN="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/$HOST_TAG/bin"
 for pair in arm64-v8a:aarch64-linux-android26 x86_64:x86_64-linux-android26; do
   abi=${pair%%:*}; target=${pair##*:}; SSL="$WORK/openssl-android/$abi"
-  out="$HERE/../app/src/main/jniLibs/$abi"; mkdir -p "$out"
+  out="$HERE/../app/src/debug/jniLibs/$abi"; mkdir -p "$out"
   "$BIN/clang" --target=$target -shared -fPIC -O2 -Wall -Wextra -Wno-unused-parameter \
     -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fvisibility=hidden \
     -I"$SHARED/include" -I"$SSL/include" \
