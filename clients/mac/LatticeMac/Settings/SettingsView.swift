@@ -37,7 +37,7 @@ struct SettingsView: View {
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
         .padding(20)
-        .frame(minWidth: 560, idealWidth: 620, minHeight: 460, idealHeight: 540)
+        .frame(minWidth: 560, idealWidth: 640, minHeight: 520, idealHeight: 680)
     }
 }
 

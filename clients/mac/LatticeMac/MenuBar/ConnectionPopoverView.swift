@@ -173,12 +173,12 @@ struct ConnectionPopoverView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("REGION")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: inWindow ? 12 : 9, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .tracking(0.6)
                 Spacer()
                 Text("\(connection.availableRegions.count) available")
-                    .font(.system(size: 10))
+                    .font(.system(size: inWindow ? 12 : 10))
                     .foregroundStyle(.secondary)
             }
             ScrollView {
@@ -197,22 +197,22 @@ struct ConnectionPopoverView: View {
         return Button {
             Task { await connection.connect(to: region) }
         } label: {
-            HStack(spacing: 10) {
-                Text(region.countryFlag).font(.system(size: 16))
+            HStack(spacing: inWindow ? 14 : 10) {
+                Text(region.countryFlag).font(.system(size: inWindow ? 32 : 20))
                 Text(region.displayName)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: inWindow ? 17 : 13, weight: .medium))
                     .foregroundStyle(.primary)
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.tint)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: inWindow ? 18 : 13, weight: .semibold))
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .padding(.horizontal, inWindow ? 14 : 10)
+            .padding(.vertical, inWindow ? 10 : 7)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: inWindow ? 10 : 6, style: .continuous)
                     .fill(isSelected ? Color.accentColor.opacity(0.10) : Color.clear)
             )
         }
