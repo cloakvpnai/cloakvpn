@@ -2,26 +2,26 @@
 
 Created by Demetris Dangerfield
 
-Status 2026-11-22: code is ready on branch `codex/lattice-mac-build` (commit `f1a729e`). The steps below need the Apple Developer and App Store Connect accounts.
+Status 2026-11-22 22:00 HST: code is on branch `codex/lattice-mac-build` (commit `969e42a`). Provisioning is done, the release archive builds, and a distribution-signed package exists. Remaining: test the signed build (Step 2), App Store Connect setup (Step 3), upload (Step 4).
 
 ## How the Mac app is set up
 
 - Bundle ID `ai.cloakvpn.CloakVPN`, tunnel extension `ai.cloakvpn.CloakVPN.CloakTunnel`: the same IDs as the iOS app. The Mac app is added as a second platform on the existing App Store record (universal purchase), so the four existing subscription products and one purchase cover iPhone and Mac.
 - Team `5HYY2YP2G9` (KryptoKnightz LLC), automatic signing.
-- App Sandbox, packet tunnel as an app extension, minimum macOS 26.0.
+- App Sandbox, packet tunnel as an app extension, minimum macOS 26.0, Apple silicon only (arm64).
+- Shows in the Dock and the menu bar. Clicking the Dock icon opens the Lattice window.
 - Version 1.0, build 1.
 
-## Step 1: provisioning (Apple Developer account)
+## Step 1: provisioning (done 2026-11-22)
 
-The App IDs already exist from iOS and already have Network Extension and the App Group. They only need macOS profiles.
+Xcode automatic signing created the Mac profiles for both existing App IDs:
 
-Easiest: open `clients/mac/LatticeMac.xcodeproj` in Xcode signed in to the KryptoKnightz team, select each target, open Signing & Capabilities, and let "Automatically manage signing" create the profiles. Command-line equivalent: `xcodebuild ... -allowProvisioningUpdates`.
-
-Check after: both targets show a valid "Mac App Development" profile and no red errors.
+- Development: used by the build installed at `/Applications/LatticeMac.app`.
+- Distribution: "Mac Team Store Provisioning Profile" for `ai.cloakvpn.CloakVPN` and `ai.cloakvpn.CloakVPN.CloakTunnel`, cloud-managed Apple Distribution certificate, and a "3rd Party Mac Developer Installer: KryptoKnightz LLC" certificate (expires 2027-11-23).
 
 ## Step 2: test the signed build
 
-1. Run the LatticeMac scheme. Remove the old test VPN configurations in System Settings > VPN first ("LATTICE VPN" from the test build, and "Lattice Normal Test ...").
+1. Open `/Applications/LatticeMac.app`. Remove the old test VPN configurations in System Settings > VPN first ("LATTICE VPN" from the test build, and "Lattice Normal Test ...").
 2. Subscription tab: plans load with prices; Restore Purchases finds an existing Apple subscription and signs in; a sandbox purchase completes.
 3. Menu bar: Connect to at least two regions, confirm Exit IP changes, Disconnect, sleep and wake, reconnect.
 
@@ -40,7 +40,23 @@ Check after: both targets show a valid "Mac App Development" profile and no red 
 
 ## Step 4: archive and upload
 
-Scheme "LatticeMac-AppStore" > Product > Archive > Distribute App > App Store Connect. Then install the processed build from TestFlight on a Mac and repeat the Step 2 checks before submitting for review.
+Archive and export already work from the command line:
+
+```
+cd clients/mac
+xcodebuild archive -scheme LatticeMac-AppStore -destination 'generic/platform=macOS' \
+  -archivePath ~/Library/Developer/Xcode/Archives/2026-11-22/LatticeMac-1.0-1.xcarchive -allowProvisioningUpdates
+xcodebuild -exportArchive -archivePath <that archive> -exportOptionsPlist <method app-store-connect> \
+  -exportPath <folder> -allowProvisioningUpdates
+```
+
+- Archive: `~/Library/Developer/Xcode/Archives/2026-11-22/LatticeMac-1.0-1.xcarchive` (also visible in Xcode > Window > Organizer).
+- Signed package: `Mac App Store Build/LatticeMac-1.0-build1.pkg` in the project folder.
+- Upload after Step 3.1 (the macOS platform must exist on the app record): Organizer > Distribute App > App Store Connect, or the Transporter app with the package.
+- Then install the processed build from TestFlight on a Mac and repeat the Step 2 checks before submitting for review.
+- Any code change after this needs a new archive with a higher build number.
+
+Build notes: scheme names must not contain spaces or parentheses (the WireGuardKitGo Makefile breaks on the archive path), and the archive is arm64 only.
 
 ## App Review notes for the macOS version
 
@@ -62,7 +78,7 @@ Keep the real account number out of git. Paste it into App Store Connect only.
 
 ## Known gaps to decide before submitting
 
-- The app icon is the square iOS artwork scaled down. It is valid, but a Mac-shaped icon would look better in the Dock and Finder.
+- Intel Macs are not supported (arm64 only).
 - No launch-at-login and no auto-connect. Not required for approval.
 - The iOS and Android apps still use Rosenpass. Store text for those platforms must not claim ML-KEM-768 until they are updated.
 - The Mac app requires macOS 26 or later.
