@@ -187,7 +187,6 @@ struct LatticeAccountClient {
         return Self.renderConfigINI(cfg)
     }
 
-    #if os(macOS)
     // MARK: - POST /v1/device (ML-KEM-768)
 
     /// Provision this device with an ML-KEM-768 exchange instead of
@@ -244,7 +243,6 @@ struct LatticeAccountClient {
         }
         return Self.renderConfigINI(cfg, mlkem768PSKB64: psk)
     }
-    #endif
 
     // MARK: - DELETE /v1/device
 

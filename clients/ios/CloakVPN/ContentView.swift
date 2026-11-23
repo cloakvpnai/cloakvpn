@@ -59,6 +59,18 @@ enum CloakDesign {
 
 struct ContentView: View {
     @EnvironmentObject var tunnel: TunnelManager
+    /// Regular width means the open iPhone Duo inner display or an iPad:
+    /// there is room for a second pane. Size classes, not orientation or
+    /// screen size, drive the layout.
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #if DEBUG
+    /// Simulator layout checks only: launching with `-LatticeLayoutPreview YES`
+    /// skips the sign-in cover so the main screen can be inspected without an
+    /// account. Compiled out of release builds.
+    private static let layoutPreview = UserDefaults.standard.bool(forKey: "LatticeLayoutPreview")
+    #else
+    private static let layoutPreview = false
+    #endif
     @State private var configText: String = ""
     @State private var showingImport = false
     @State private var showingFileImporter = false
@@ -99,19 +111,11 @@ struct ContentView: View {
                 worldMapBackground
                     .ignoresSafeArea()
 
-                VStack(spacing: 18) {
-                    statusBadge
-                    bigConnectButton
-                    currentRegionCard
-                    quickConnectStrip
-                    pqcStatusLine
-                    ipDisplayPanel
-
-                    Spacer(minLength: 8)
-
-                    bottomToolbar
+                if horizontalSizeClass == .regular {
+                    wideLayout
+                } else {
+                    compactLayout
                 }
-                .padding()
             }
             .navigationTitle("LATTICE VPN")
             .navigationBarTitleDisplayMode(.inline)
@@ -186,7 +190,7 @@ struct ContentView: View {
             // cannot reach the VPN UI until they enter a valid number.
             // The cover dismisses itself when `isSignedIn` flips true.
             .fullScreenCover(isPresented: Binding(
-                get: { !tunnel.isSignedIn },
+                get: { !tunnel.isSignedIn && !Self.layoutPreview },
                 set: { _ in }
             )) {
                 AccountEntryView()
@@ -201,6 +205,114 @@ struct ContentView: View {
         // QUICK CONNECT box) explicitly set their color and aren't
         // affected by this.
         .tint(CloakDesign.brandGrey)
+    }
+
+    // MARK: - Layouts
+
+    /// iPhone, and the closed iPhone Duo outer display: one column.
+    private var compactLayout: some View {
+        VStack(spacing: 18) {
+            statusBadge
+            bigConnectButton
+            currentRegionCard
+            quickConnectStrip
+            pqcStatusLine
+            ipDisplayPanel
+
+            Spacer(minLength: 8)
+
+            bottomToolbar
+        }
+        .padding()
+    }
+
+    /// Open iPhone Duo and iPad: status and controls on the left, every
+    /// region on the right, so no region is hidden behind sideways scrolling.
+    private var wideLayout: some View {
+        VStack(spacing: 18) {
+            HStack(alignment: .top, spacing: 24) {
+                VStack(spacing: 18) {
+                    statusBadge
+                    bigConnectButton
+                    currentRegionCard
+                    pqcStatusLine
+                    ipDisplayPanel
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity)
+
+                regionListPane
+                    .frame(maxWidth: .infinity)
+            }
+
+            bottomToolbar
+        }
+        .padding()
+    }
+
+    /// Full region list for the wide layout.
+    private var regionListPane: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(CloakDesign.brandGreen)
+                    .frame(width: 6, height: 6)
+                Text("REGIONS")
+                    .font(CloakDesign.sectionLabel())
+                    .tracking(1.4)
+                    .foregroundStyle(CloakDesign.brandGreen)
+                Spacer()
+                Text("\(CloakRegion.all.count) available")
+                    .font(CloakDesign.body(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            ScrollView {
+                VStack(spacing: 6) {
+                    ForEach(CloakRegion.all) { region in
+                        regionRow(region)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(CloakDesign.brandGreen.opacity(0.10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(CloakDesign.brandGreen.opacity(0.35), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    @ViewBuilder
+    private func regionRow(_ region: CloakRegion) -> some View {
+        let isSelected = tunnel.selectedRegion?.id == region.id
+        Button {
+            Task { await tunnel.selectRegion(region) }
+        } label: {
+            HStack(spacing: 14) {
+                Text(region.countryFlag).font(.system(size: 34))
+                Text(region.displayName)
+                    .font(CloakDesign.headline(size: 17, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(.primary)
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(CloakDesign.brandGreen)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isSelected ? CloakDesign.brandGreen.opacity(0.16) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(tunnel.regionSelectionInProgress)
     }
 
     /// Read a peer config file the user picked from Files / iCloud Drive /
@@ -467,16 +579,34 @@ struct ContentView: View {
     /// activity, not the endpoint URL repeated.
     private var pqcStatusLine: some View {
         HStack(spacing: 6) {
-            if case .established = tunnel.rosenpass.status {
+            if tunnel.config?.pqEnabled == true {
+                // Legacy Rosenpass config (only until the next provision).
+                if case .established = tunnel.rosenpass.status {
+                    Image(systemName: "lock.shield.fill").foregroundStyle(.green)
+                } else if case .error = tunnel.rosenpass.status {
+                    Image(systemName: "exclamationmark.shield").foregroundStyle(.orange)
+                } else {
+                    Image(systemName: "lock.shield").foregroundStyle(.secondary)
+                }
+                Text(tunnel.rosenpass.status.description)
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            } else if tunnel.status == .connected && tunnel.handshakeVerified {
                 Image(systemName: "lock.shield.fill").foregroundStyle(.green)
-            } else if case .error = tunnel.rosenpass.status {
-                Image(systemName: "exclamationmark.shield").foregroundStyle(.orange)
+                Text("ML-KEM-768 key exchange active")
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            } else if tunnel.status == .connected {
+                Image(systemName: "lock.shield").foregroundStyle(.orange)
+                Text("ML-KEM-768: verifying tunnel…")
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundStyle(.secondary)
             } else {
                 Image(systemName: "lock.shield").foregroundStyle(.secondary)
+                Text("ML-KEM-768 post-quantum key exchange")
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundStyle(.secondary)
             }
-            Text(tunnel.rosenpass.status.description)
-                .font(.system(.footnote, design: .monospaced))
-                .foregroundStyle(.secondary)
             Spacer()
         }
     }
@@ -805,7 +935,7 @@ struct ContentView: View {
                 LabeledContent("Build", value: appBuildDisplay)
             }
             Section {
-                Text("LATTICE VPN combines WireGuard with the post-quantum Rosenpass key-exchange protocol. Your traffic is protected against both classical and quantum-capable adversaries.")
+                Text("LATTICE VPN combines WireGuard with an ML-KEM-768 post-quantum key exchange (NIST FIPS 203). Your traffic is protected against both classical and quantum-capable adversaries.")
                     .font(.footnote)
             }
         }
@@ -841,7 +971,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 6) {
             if let cfg = tunnel.config {
                 Text("Endpoint: \(cfg.endpoint)").font(.footnote)
-                Text("PQC: Rosenpass \(cfg.pqEnabled ? "ENABLED" : "disabled")").font(.footnote)
+                Text("PQC: \(cfg.pqKEM ?? (cfg.pqEnabled ? "Rosenpass" : "off"))").font(.footnote)
                 Text(tunnel.rosenpass.status.description)
                     .font(.system(.footnote, design: .monospaced))
                     .foregroundStyle(.secondary)

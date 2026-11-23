@@ -50,6 +50,12 @@ final class TunnelManager: ObservableObject {
     /// when an early build's selectRegion swallowed errors).
     @Published var lastRegionError: String?
 
+    /// True once the running tunnel has completed a WireGuard handshake.
+    /// NetworkExtension's "connected" only means the interface exists; this is
+    /// what the UI uses before it claims the post-quantum tunnel is active.
+    @Published private(set) var handshakeVerified = false
+    private var handshakeVerifyTask: Task<Void, Never>?
+
     /// Cache of already-provisioned region configs, keyed by region.id.
     /// Populated on first successful selectRegion call for a given
     /// region; subsequent taps on the same region (e.g. user toggles
@@ -485,14 +491,12 @@ final class TunnelManager: ObservableObject {
         // config text. Empirically takes 200-400ms (config parse +
         // saveToPreferences) vs 3-8s for full provisioning.
         var cachedConfig = provisionedConfigsByRegionID[region.id]
-        #if os(macOS)
-        // macOS requires ML-KEM-768. A config cached by an earlier build is a
-        // Rosenpass config; reusing it would skip the exchange, so drop it.
+        // A config cached by a pre-ML-KEM-768 build is a Rosenpass config;
+        // reusing it would skip the exchange, so drop it and provision again.
         if let text = cachedConfig, !text.contains("[mlkem768]") {
             cachedConfig = nil
             provisionedConfigsByRegionID.removeValue(forKey: region.id)
         }
-        #endif
         if let cachedText = cachedConfig {
             debugLog("selectRegion: \(region.id) — cache hit, instant swap")
             do {
@@ -973,10 +977,9 @@ final class TunnelManager: ObservableObject {
         guard let number = accountNumber, !number.isEmpty else {
             throw TunnelError.parse("Enter your account number to connect.")
         }
-        #if os(macOS)
-        // macOS uses ML-KEM-768: a fresh post-quantum key pair is created
-        // inside provisionDeviceMLKEM768 for every provision, so only the
-        // WireGuard keypair has to exist beforehand. No Rosenpass.
+        // ML-KEM-768 on every platform: a fresh post-quantum key pair is
+        // created inside provisionDeviceMLKEM768 for every provision, so only
+        // the WireGuard keypair has to exist beforehand. No Rosenpass.
         await ensureLocalWGKeypair()
         let wgKeys = try AppGroupKeyStore.loadLocalWGKeypair()
 
@@ -989,27 +992,6 @@ final class TunnelManager: ObservableObject {
                 region: region.id
             )
         }
-        #else
-        // Make sure both keypairs exist locally before talking to the
-        // server. ensureLocalKeypair handles rosenpass; ensureLocalWGKeypair
-        // handles WG. Both are idempotent.
-        await ensureLocalKeypair()
-        await ensureLocalWGKeypair()
-
-        let rpKeys = try AppGroupKeyStore.loadLocalKeypair()
-        let wgKeys = try AppGroupKeyStore.loadLocalWGKeypair()
-
-        debugLog("provisionFromAPIRaw: region=\(region.id) (wg_pub=\(wgKeys.publicB64.prefix(8))…, rp_pub=\(rpKeys.publicB64.prefix(12))…)")
-
-        func provision(_ accountNumber: String) async throws -> String {
-            try await accountClient.provisionDevice(
-                accountNumber: accountNumber,
-                wgPubkeyB64: wgKeys.publicB64,
-                rosenpassPubkeyB64: rpKeys.publicB64,
-                region: region.id
-            )
-        }
-        #endif
 
         let configText: String
         do {
@@ -1391,8 +1373,29 @@ final class TunnelManager: ObservableObject {
         if status == .connected, old != .connected {
             if config?.pqEnabled == true { rosenpass.startStatusPolling() }
             armPQCSelfHeal()
+            startHandshakeVerification()
         } else if status != .connected, old == .connected {
             disarmPQCSelfHeal()
+            handshakeVerifyTask?.cancel()
+            handshakeVerifyTask = nil
+            handshakeVerified = false
+        }
+    }
+
+    /// Poll the provider until it reports a completed handshake. Keeps trying
+    /// while connected, since the first handshake can lag on a weak network.
+    private func startHandshakeVerification() {
+        handshakeVerifyTask?.cancel()
+        handshakeVerified = false
+        handshakeVerifyTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let self, self.status == .connected else { return }
+                if await self.lastHandshakeAge() != nil {
+                    if !Task.isCancelled { self.handshakeVerified = true }
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
         }
     }
 

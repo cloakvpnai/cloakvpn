@@ -15,11 +15,9 @@
 //                           info = "lattice-vpn/mlkem768-wg-psk/v1")
 //
 //  The private key lives only in memory for the duration of one provision.
-//  Compiled for macOS only for now; iOS keeps the Rosenpass path until its
-//  own migration.
+//  Used by both the iOS and macOS apps (CryptoKit ML-KEM, iOS 26 / macOS 26).
 //
 
-#if os(macOS)
 import CryptoKit
 import Foundation
 
@@ -67,4 +65,3 @@ struct MLKEM768Exchange {
         return psk.withUnsafeBytes { Data($0) }.base64EncodedString()
     }
 }
-#endif
