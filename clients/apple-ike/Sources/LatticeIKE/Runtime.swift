@@ -51,6 +51,8 @@ public final class IKETunnelRuntime {
     private let state = NSLock()
     private var running = false
     public var childRekeys: Int { session.childRekeys }
+    /// When the data keys in use were established: the handshake, or the latest re-key.
+    public private(set) var lastKeyTime = Date()
 
     public init(host: String, port: UInt16, config: IKESession.Config, options: Options = Options()) throws {
         session = IKESession(transport: try POSIXUDPTransport(host: host, port: port), config: config)
@@ -58,7 +60,11 @@ public final class IKETunnelRuntime {
     }
 
     /// Blocking handshake. Call off the main thread.
-    public func connect() throws -> IKESession.Established { try session.connect() }
+    public func connect() throws -> IKESession.Established {
+        let e = try session.connect()
+        lastKeyTime = Date()
+        return e
+    }
 
     public func start() {
         state.lock(); running = true; state.unlock()
@@ -80,6 +86,7 @@ public final class IKETunnelRuntime {
                 if Date().timeIntervalSince(lastRekey) >= options.rekeyInterval {
                     try session.rekeyChild()
                     lastRekey = Date()
+                    lastKeyTime = lastRekey
                 }
                 if Date().timeIntervalSince(lastKeepalive) >= options.keepaliveInterval {
                     try session.sendKeepalive()

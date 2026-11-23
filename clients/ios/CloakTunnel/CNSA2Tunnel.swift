@@ -79,14 +79,27 @@ final class CNSA2TunnelController {
         }
     }
 
-    func stop() {
+    /// Tells the gateway the connection is over, then calls `completion`. Waits at most
+    /// 1.5 seconds so a dead network cannot hold up the system's stop request.
+    func stop(completion: @escaping () -> Void) {
         stopping = true
-        runtime?.stop()
+        guard let rt = runtime else { completion(); return }
         runtime = nil
+        let once = NSLock()
+        var done = false
+        let finish = { once.lock(); let first = !done; done = true; once.unlock(); if first { completion() } }
+        rt.onStopped = { _ in finish() }
+        rt.stop()
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1.5, execute: finish)
     }
 
-    /// Status line for the app: "rekeys=N".
-    var statusLine: String { "cnsa2 rekeys=\(runtime?.childRekeys ?? 0)" }
+    /// Answer to the app's status query. `last_handshake_time_sec` is when the keys in use
+    /// were last established (connect or the most recent re-key).
+    var statusReport: String {
+        let rekeys = runtime?.childRekeys ?? 0
+        let t = Int((runtime?.lastKeyTime ?? Date()).timeIntervalSince1970)
+        return "mode=cnsa2\nlast_handshake_time_sec=\(t)\ncnsa2_rekeys=\(rekeys)\n"
+    }
 
     private func pump() {
         provider?.packetFlow.readPackets { [weak self] packets, protocols in

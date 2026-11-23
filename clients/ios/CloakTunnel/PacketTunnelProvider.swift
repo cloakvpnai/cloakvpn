@@ -432,9 +432,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     ) {
         os_log("stopTunnel reason=%d", log: log, type: .info, reason.rawValue)
         if let controller = cnsa2 {
-            controller.stop()
             cnsa2 = nil
-            completionHandler()
+            controller.stop(completion: completionHandler)
             return
         }
         // Stop the health monitor first so its callbacks can't fire
@@ -489,6 +488,14 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         guard let opcode = messageData.first else {
             os_log("handleAppMessage: empty payload", log: log, type: .error)
             completionHandler(Data([0xFF]))
+            return
+        }
+
+        // CNSA 2.0 mode has no WireGuard adapter. The app only needs the
+        // status query: report the mode, the last key replacement, and a
+        // handshake time so its "verified" check works for both modes.
+        if let controller = cnsa2 {
+            completionHandler(opcode == 0x00 ? controller.statusReport.data(using: .utf8) : Data([0xFF]))
             return
         }
 
