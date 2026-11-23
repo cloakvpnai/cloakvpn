@@ -165,7 +165,7 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun connect() {
         viewModelScope.launch {
-            tm.upgradeLegacyConfigIfNeeded()
+            tm.rekeyForConnect()
             tm.connect()
         }
     }

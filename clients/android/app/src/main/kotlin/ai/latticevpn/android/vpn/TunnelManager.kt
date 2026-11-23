@@ -290,6 +290,7 @@ class TunnelManager private constructor(appCtx: Context) {
             // region's cached config is now stale — drop them all.
             clearOtherCachedConfigs(region.id)
             saveCachedConfig(region.id, cfg)
+            pskUnused = true
             // Every ML-KEM-768 provision installs a NEW preshared key on the
             // server, so a tunnel still up on the previous config for this
             // same region must be bounced or its next handshake fails.
@@ -450,21 +451,46 @@ class TunnelManager private constructor(appCtx: Context) {
     // ---- Tunnel control -------------------------------------------------
 
     /** Bring the tunnel up against the imported config. */
-    fun connect() = repository.connect()
+    fun connect() {
+        pskUnused = false
+        repository.connect()
+    }
 
     /**
-     * An install upgraded from a Rosenpass build still has a Rosenpass
-     * config imported. Before connecting, replace it with an ML-KEM-768
-     * provision for the same region. If that fails (offline, for example)
-     * the existing config is left in place and still connects.
+     * True while the imported config holds a preshared key that has not
+     * carried a session yet (set by a provision, cleared by connect).
      */
-    suspend fun upgradeLegacyConfigIfNeeded() {
-        val cfg = repository.config.value ?: return
-        if (!cfg.pqEnabled) return
+    @Volatile
+    private var pskUnused = false
+
+    /**
+     * A fresh ML-KEM-768 key for every connection: run the exchange again
+     * before the tunnel starts, so no post-quantum key outlives one
+     * session. This also replaces a Rosenpass config left by an older
+     * build. Any failure (offline, API error) is logged and the saved key
+     * is used instead, so Connect still works.
+     */
+    suspend fun rekeyForConnect() {
+        if (accountStore.accountNumber() == null) return
         val region = _selectedRegion.value ?: return
         if (repository.state.value != TunnelState.DISCONNECTED) return
-        Log.i(TAG, "active config is Rosenpass; re-provisioning ${region.id} with ML-KEM-768")
-        selectRegion(region)
+        if (pskUnused) {
+            pskUnused = false
+            return
+        }
+        if (_regionSelectionInProgress.value) return
+        _regionSelectionInProgress.value = true
+        try {
+            val cfg = provisionConfig(region.id)
+            importConfig(cfg)
+            clearOtherCachedConfigs(region.id)
+            saveCachedConfig(region.id, cfg)
+            Log.i(TAG, "connect: fresh ML-KEM-768 key installed for ${region.id}")
+        } catch (e: Exception) {
+            Log.w(TAG, "connect: fresh ML-KEM-768 key failed (${e.message}); using the saved key")
+        } finally {
+            _regionSelectionInProgress.value = false
+        }
     }
 
     /** Tear the tunnel down. The Rosenpass rotator stops with it. */

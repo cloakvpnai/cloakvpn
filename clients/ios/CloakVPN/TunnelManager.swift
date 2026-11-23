@@ -549,6 +549,7 @@ final class TunnelManager: ObservableObject {
             provisionedConfigsByRegionID = [region.id: configText]
             persistProvisionedConfigsCache()
             debugLog("selectRegion: \(region.id) configured + cached successfully")
+            presharedKeyIsUnused = true
             if mustReconnect {
                 try await connect()
             }
@@ -1044,16 +1045,41 @@ final class TunnelManager: ObservableObject {
         return configText
     }
 
+    /// True while the imported config holds a preshared key that has not
+    /// carried a session yet (set by a provision, cleared by connect).
+    private var presharedKeyIsUnused = false
+
+    /// Run a new ML-KEM-768 exchange for the selected region and import the
+    /// result. Any failure (offline, API error) is logged and the saved key
+    /// is used instead, so Connect still works.
+    private func rekeyForConnect() async {
+        guard status == .disconnected, isSignedIn, let region = selectedRegion,
+              !regionSelectionInProgress else { return }
+        if presharedKeyIsUnused {
+            presharedKeyIsUnused = false
+            return
+        }
+        regionSelectionInProgress = true
+        defer { regionSelectionInProgress = false }
+        do {
+            let text = try await provisionFromAPIRaw(region: region)
+            try await importConfig(text)
+            provisionedConfigsByRegionID = [region.id: text]
+            persistProvisionedConfigsCache()
+            debugLog("connect(): fresh ML-KEM-768 key installed for \(region.id)")
+        } catch {
+            debugLog("connect(): fresh ML-KEM-768 key failed (\(error)); using the saved key")
+        }
+        presharedKeyIsUnused = false
+    }
+
     func connect() async throws {
         debugLog("connect() called, current status=\(status)")
-        // An install upgraded from a Rosenpass build still has that config
-        // active. Replace it with an ML-KEM-768 provision for the same
-        // region before connecting. If that fails (offline, for example)
-        // the existing config is left in place and still connects.
-        if config?.pqEnabled == true, status == .disconnected, let region = selectedRegion {
-            debugLog("connect(): active config is Rosenpass; re-provisioning \(region.id) with ML-KEM-768")
-            await selectRegion(region)
-        }
+        // A fresh ML-KEM-768 key for every connection: run the exchange
+        // again before the tunnel starts, so no post-quantum key outlives
+        // one session. This also replaces a Rosenpass config left by an
+        // older build.
+        await rekeyForConnect()
         guard let m = manager else {
             debugLog("connect() FAILING: manager is nil")
             throw TunnelError.noConfig
