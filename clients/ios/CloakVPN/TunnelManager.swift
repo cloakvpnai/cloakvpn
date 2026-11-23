@@ -1282,6 +1282,39 @@ final class TunnelManager: ObservableObject {
 
     // MARK: - Status observation
 
+    #if DEBUG
+    /// Lab only (debug builds): point the tunnel at a CNSA 2.0 IKEv2 gateway
+    /// described by a base64 JSON blob (see CNSA2TunnelController) and start it.
+    /// Replaces the saved VPN configuration until a region is selected again.
+    func startCNSA2Lab(_ base64JSON: String) async {
+        guard let data = Data(base64Encoded: base64JSON),
+              let cfg = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            debugLog("cnsa2 lab: unreadable configuration")
+            return
+        }
+        do {
+            let existing = try await NETunnelProviderManager.loadAllFromPreferences()
+            let m = existing.first ?? NETunnelProviderManager()
+            let proto = NETunnelProviderProtocol()
+            proto.providerBundleIdentifier = Self.providerBundleIdentifier
+            proto.serverAddress = (cfg["host"] as? String) ?? "cnsa2-lab"
+            proto.providerConfiguration = ["cnsa2": cfg]
+            proto.includeAllNetworks = false
+            m.protocolConfiguration = proto
+            m.localizedDescription = "LATTICE VPN"
+            m.isEnabled = true
+            try await m.saveToPreferences()
+            try await m.loadFromPreferences()
+            manager = m
+            observeStatus(m.connection)
+            try m.connection.startVPNTunnel()
+            debugLog("cnsa2 lab: tunnel start requested")
+        } catch {
+            debugLog("cnsa2 lab: failed: \(error)")
+        }
+    }
+    #endif
+
     private func observeStatus(_ conn: NEVPNConnection) {
         if let o = statusObserver { NotificationCenter.default.removeObserver(o) }
         statusObserver = NotificationCenter.default.addObserver(

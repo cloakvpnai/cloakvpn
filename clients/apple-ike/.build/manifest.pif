@@ -5,11 +5,11 @@
       "name" : "LatticeIKE",
       "path" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike",
       "projects" : [
-        "529aff68091f2d45b4e587acfa19663382829efdfaf9ca66c832fe62b7faea2d",
+        "d5d4798168c127ed95451f8d188f64603ceeaf9b914882db2fd2c4cc06d81952",
         "011e268288a7332c7f9938b01896803aa90682ae8bfbf310c478a38827913b83"
       ]
     },
-    "signature" : "2f59051eb0e1c3c5c268ec2182566ace66439ed7ed89ce368cf361424c7dd7aa",
+    "signature" : "307c55b10d54f96b2e85a0162a1e1b543932712c20fbf12a8fc49f75e1aa487e",
     "type" : "workspace"
   },
   {
@@ -248,6 +248,14 @@
               {
                 "fileType" : "sourcecode.swift",
                 "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_3",
+                "name" : "Runtime.swift",
+                "path" : "Runtime.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_4",
                 "name" : "Session.swift",
                 "path" : "Session.swift",
                 "sourceTree" : "<group>",
@@ -255,7 +263,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_4",
+                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_5",
                 "name" : "Wire.swift",
                 "path" : "Wire.swift",
                 "sourceTree" : "<group>",
@@ -263,7 +271,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_5",
+                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_6",
                 "name" : "X509.swift",
                 "path" : "X509.swift",
                 "sourceTree" : "<group>",
@@ -305,6 +313,14 @@
               {
                 "fileType" : "sourcecode.swift",
                 "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_3",
+                "name" : "Runtime.swift",
+                "path" : "Runtime.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_4",
                 "name" : "Session.swift",
                 "path" : "Session.swift",
                 "sourceTree" : "<group>",
@@ -312,7 +328,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_4",
+                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_5",
                 "name" : "Wire.swift",
                 "path" : "Wire.swift",
                 "sourceTree" : "<group>",
@@ -320,7 +336,7 @@
               },
               {
                 "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_5",
+                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_6",
                 "name" : "X509.swift",
                 "path" : "X509.swift",
                 "sourceTree" : "<group>",
@@ -366,13 +382,13 @@
         "3237e44373b5a38a314f3008999ae7e73d662d83b459368e532a9f1bc4f07d62",
         "824f1ba617a80c0b6745c5f5c0111ad53347b8efe2dd5241ea7b72a292b84808",
         "c3266ba5313680bf15aecdd23785fe4dafb706def022edf65227c4c1bd57026d",
-        "e4e40ba50b159b8a82b8d2b618e96189e08f80966cf160082ee80cae6a7f19ad",
-        "bcdacc5d8c264d89906ce7f3f53480265b6b150ab1343840e8aaf6748b6a1d14",
+        "dd7ba51e2bac3251e6bdd07f99817ca5b27d94f999d917a6855e63eacb582ac3",
+        "d3b7c1b50effed895d3f91e667298ca5b3f805d419f224c7d3ecef8fe6051123",
         "be9a27d7aa078a460559d644c9ffe3a288b921f8702657b83e3116880285ff4a",
         "77c975e74f6920b950a4315b65de925d3dcf29d282e088c311fc06c1f81b0cf4"
       ]
     },
-    "signature" : "529aff68091f2d45b4e587acfa19663382829efdfaf9ca66c832fe62b7faea2d",
+    "signature" : "d5d4798168c127ed95451f8d188f64603ceeaf9b914882db2fd2c4cc06d81952",
     "type" : "project"
   },
   {
@@ -796,6 +812,15 @@
 
               ],
               "removeHeadersOnCopy" : "false"
+            },
+            {
+              "codeSignOnCopy" : "false",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_6",
+              "guid" : "PACKAGE-TARGET:LatticeIKE::BUILDPHASE_0::6",
+              "platformFilters" : [
+
+              ],
+              "removeHeadersOnCopy" : "false"
             }
           ],
           "guid" : "PACKAGE-TARGET:LatticeIKE::BUILDPHASE_0",
@@ -822,7 +847,7 @@
       "productTypeIdentifier" : "org.swift.product-type.library.static",
       "type" : "standard"
     },
-    "signature" : "e4e40ba50b159b8a82b8d2b618e96189e08f80966cf160082ee80cae6a7f19ad",
+    "signature" : "dd7ba51e2bac3251e6bdd07f99817ca5b27d94f999d917a6855e63eacb582ac3",
     "type" : "target"
   },
   {
@@ -1308,6 +1333,15 @@
 
               ],
               "removeHeadersOnCopy" : "false"
+            },
+            {
+              "codeSignOnCopy" : "false",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_6",
+              "guid" : "PACKAGE-TARGET:LatticeIKE-4A754CDC4CE648A9-dynamic::BUILDPHASE_0::6",
+              "platformFilters" : [
+
+              ],
+              "removeHeadersOnCopy" : "false"
             }
           ],
           "guid" : "PACKAGE-TARGET:LatticeIKE-4A754CDC4CE648A9-dynamic::BUILDPHASE_0",
@@ -1333,7 +1367,7 @@
       "productTypeIdentifier" : "com.apple.product-type.library.dynamic",
       "type" : "standard"
     },
-    "signature" : "bcdacc5d8c264d89906ce7f3f53480265b6b150ab1343840e8aaf6748b6a1d14",
+    "signature" : "d3b7c1b50effed895d3f91e667298ca5b3f805d419f224c7d3ecef8fe6051123",
     "type" : "target"
   },
   {

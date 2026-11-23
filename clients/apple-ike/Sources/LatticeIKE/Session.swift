@@ -66,6 +66,11 @@ public final class IKESession {
     private var ivCounter: UInt64 = 0
     private var nextMessageID: UInt32 = 0
     public private(set) var esp: ESPTunnel?
+    /// Guards `esp` and `retiringESP`: packets are sent from a different thread than the one that
+    /// reads the socket and performs re-keys.
+    private let lock = NSLock()
+    /// ESP packets that arrived while an IKE exchange was waiting for its response.
+    private var inbound: [Data] = []
     /// The Child SA being replaced; still accepted inbound until the gateway confirms its deletion.
     private var retiringESP: ESPTunnel?
     /// False once either side has deleted the IKE SA.
@@ -137,10 +142,18 @@ public final class IKESession {
             let deadline = Date().addingTimeInterval(attempt == 0 ? 2 : 4)
             while Date() < deadline {
                 guard let d = try transport.receive(timeout: max(0.05, deadline.timeIntervalSinceNow)) else { break }
-                guard d.count >= 32, d.prefix(4) == Self.marker else { continue }
+                guard d.count >= 32, d.prefix(4) == Self.marker else {
+                    // Data keeps flowing during a re-key: hold the packet for the next receivePacket call.
+                    if let p = try? openESP(d) { inbound.append(p) }
+                    continue
+                }
                 let msg = Data(d.dropFirst(4))
-                guard try msg.slice(0, 8) == spiI, try msg.rU8(19) & Wire.flagResponse != 0, try msg.rU32(20) == messageID,
-                      Int(try msg.rU32(24)) == msg.count else { continue }
+                guard try msg.slice(0, 8) == spiI, Int(try msg.rU32(24)) == msg.count else { continue }
+                if try msg.rU8(19) & Wire.flagResponse == 0 {
+                    if keys != nil { try? answer(request: msg) }
+                    continue
+                }
+                guard try msg.rU32(20) == messageID else { continue }
                 if try handle(msg) { return }
             }
         }
@@ -333,13 +346,19 @@ public final class IKESession {
         }
         let ss = try kem.decapsulate(Data(rke.body.dropFirst(4))).withUnsafeBytes { Data($0) }
         let fresh = ESPTunnel(outSPI: chosen.spi, inSPI: newIn, keymat: PRF.plus(key: keys.d, seed: ss + nonce + n.body, length: 72))
-        retiringESP = old
-        esp = fresh
+        lock.lock(); retiringESP = old; esp = fresh; lock.unlock()
         childRekeys += 1
         // Retire the old SA pair.
         var del = Data([3, 4]); del.u16(1); del.append(old.inSPI)
         _ = try encryptedExchange(exchange: Wire.informational, first: Wire.pDelete, inner: Payload.encode([Payload(type: Wire.pDelete, body: del)]))
-        retiringESP = nil
+        lock.lock(); retiringESP = nil; lock.unlock()
+    }
+
+    private func openESP(_ datagram: Data) throws -> Data? {
+        lock.lock(); let current = esp, retiring = retiringESP; lock.unlock()
+        if let current, let p = try current.open(datagram) { return p }
+        if let retiring, let p = try retiring.open(datagram) { return p }
+        return nil
     }
 
     /// Answers a request the gateway started (liveness checks and deletes). Anything that would add or
@@ -351,7 +370,7 @@ public final class IKESession {
         var reply: [Payload] = []
         if exchange == Wire.informational {
             for p in try Payload.decode(first: r.first, r.plain) where p.type == Wire.pDelete {
-                if try p.body.rU8(0) == 1 { isOpen = false; esp = nil }
+                if try p.body.rU8(0) == 1 { isOpen = false; lock.lock(); esp = nil; lock.unlock() }
             }
         } else {
             reply = [Payload.notify(35)]   // NO_ADDITIONAL_SAS
@@ -366,12 +385,22 @@ public final class IKESession {
     // MARK: - Data and teardown
 
     public func sendPacket(_ ipPacket: Data) throws {
-        guard let esp else { throw IKEError.transport("tunnel is not established") }
-        try transport.send(try esp.seal(ipPacket))
+        lock.lock()
+        guard let esp else { lock.unlock(); throw IKEError.transport("tunnel is not established") }
+        let sealed: Data
+        do { sealed = try esp.seal(ipPacket) } catch { lock.unlock(); throw error }
+        lock.unlock()
+        try transport.send(sealed)
+    }
+
+    /// One-byte NAT keepalive (RFC 3948) so idle connections keep their NAT mapping.
+    public func sendKeepalive() throws {
+        try transport.send(Data([0xff]))
     }
 
     /// Returns the next decrypted IP packet from the gateway, or nil on timeout.
     public func receivePacket(timeout: TimeInterval) throws -> Data? {
+        if !inbound.isEmpty { return inbound.removeFirst() }
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             guard let d = try transport.receive(timeout: max(0.05, deadline.timeIntervalSinceNow)) else { return nil }
@@ -380,8 +409,7 @@ public final class IKESession {
                 if try msg.slice(0, 8) == spiI, try msg.rU8(19) & Wire.flagResponse == 0 { try answer(request: msg) }
                 continue
             }
-            if let esp, let packet = try esp.open(d) { return packet }
-            if let retiringESP, let packet = try retiringESP.open(d) { return packet }
+            if let packet = try openESP(d) { return packet }
         }
         return nil
     }
@@ -390,7 +418,7 @@ public final class IKESession {
     public func close() throws {
         let inner = Payload.encode([Payload(type: Wire.pDelete, body: Data([1, 0, 0, 0]))])
         _ = try encryptedExchange(exchange: Wire.informational, first: Wire.pDelete, inner: inner)
-        esp = nil
+        lock.lock(); esp = nil; lock.unlock()
         isOpen = false
     }
 

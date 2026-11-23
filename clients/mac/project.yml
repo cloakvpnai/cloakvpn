@@ -191,6 +191,8 @@ targets:
       # Shared PTP logic from iOS (target-membership cross-cut)
       - path: ../ios/CloakTunnel/PacketTunnelProvider.swift
       - path: ../ios/CloakTunnel/RosenpassDriver.swift
+      - path: ../ios/CloakTunnel/CNSA2Tunnel.swift
+      - path: ../apple-ike/Sources/LatticeIKE
       # PTP also depends on these shared helpers.
       # NOTE: RosenpassBridge.swift is NOT included here even though the
       # host app uses it — that file declares `extension FfiError:

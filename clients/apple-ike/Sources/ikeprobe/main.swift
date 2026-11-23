@@ -6,29 +6,6 @@ import LatticeIKE
 // ikeprobe: connects to a gateway with the CNSA 2.0 profile, pings through the
 // tunnel, and reports what was negotiated. Development tool for the lab.
 
-final class UDPSocket: DatagramTransport {
-    private let fd: Int32
-    init(host: String, port: UInt16) throws {
-        fd = socket(AF_INET, SOCK_DGRAM, 0)
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET); addr.sin_port = port.bigEndian
-        guard inet_pton(AF_INET, host, &addr.sin_addr) == 1 else { throw IKEError.transport("bad address \(host)") }
-        let rc = withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } }
-        guard rc == 0 else { throw IKEError.transport("connect failed") }
-    }
-    func send(_ datagram: Data) throws {
-        let n = datagram.withUnsafeBytes { Darwin.send(fd, $0.baseAddress, datagram.count, 0) }
-        guard n == datagram.count else { throw IKEError.transport("send failed") }
-    }
-    func receive(timeout: TimeInterval) throws -> Data? {
-        var tv = timeval(tv_sec: Int(timeout), tv_usec: Int32((timeout - floor(timeout)) * 1_000_000))
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-        var buf = [UInt8](repeating: 0, count: 65535)
-        let n = recv(fd, &buf, buf.count, 0)
-        return n > 0 ? Data(buf.prefix(n)) : nil
-    }
-}
-
 func checksum(_ d: Data) -> UInt16 {
     var sum: UInt32 = 0, i = 0
     let b = [UInt8](d)
@@ -56,7 +33,7 @@ do {
     let ca = try MLDSACertificate(der: try Data(contentsOf: URL(fileURLWithPath: a[3])))
     let seed = try mldsa87Seed(fromPKCS8: try Data(contentsOf: URL(fileURLWithPath: a[5])))
     let key = try MLDSA87.PrivateKey(seedRepresentation: seed, publicKey: nil)
-    let session = IKESession(transport: try UDPSocket(host: a[1], port: UInt16(a[2])!),
+    let session = IKESession(transport: try POSIXUDPTransport(host: a[1], port: UInt16(a[2])!),
                              config: .init(gatewayID: a[7], clientID: a[6], ca: ca,
                                            clientCertificateDER: try Data(contentsOf: URL(fileURLWithPath: a[4])), clientKey: key))
     let t0 = Date()

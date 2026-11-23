@@ -7,12 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		04942F8391035C5C29EF4BB1 /* Bytes.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF4DD01398B74231017C1518 /* Bytes.swift */; };
+		0620D4982D1206118A37B4BE /* Wire.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4CFD1CD1B998DBB3C5E24A /* Wire.swift */; };
 		06A8D73A5E1017556ACBD1A5 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CF941E9EA2FA5B0FE324BFE /* MenuBarController.swift */; };
 		1310D17ECFB9880B7225AF99 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A891D2E5644988BC3B2347F3 /* PacketTunnelProvider.swift */; };
 		193371A69A8F22F5FE2D22C3 /* StatusItemIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF5A9BE1ACE81A2DD9B0E53C /* StatusItemIcon.swift */; };
 		19BF97C9AC9B5B02D7D6D054 /* AppGroupKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2B61018460812E8825BC010 /* AppGroupKeyStore.swift */; };
 		20AA99BB72332FFD78A8B74A /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4900BA82D6EBAED828485DDA /* AppDelegate.swift */; };
 		2491166337B2E2C24951B1B1 /* rosenpassffi.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC9FBB5322F6F153C7A6F6CC /* rosenpassffi.swift */; };
+		2847D9658D387C706E177A62 /* Primitives.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0F9FD7EB180EBCB92F7F041 /* Primitives.swift */; };
+		2965380F6AE61E75E3F1E93C /* ESP.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE7AE8EBDF61426FC44B70D9 /* ESP.swift */; };
 		433B84630E4A032D06A48F4A /* rosenpassffiFFI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BDDC416DE1D696A237620B9C /* rosenpassffiFFI.framework */; };
 		4574E08ADCC960CE3490CFD8 /* Region.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53012357CF1AF36AA615A567 /* Region.swift */; };
 		576FC7D6A3A28C3D10D10605 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0DE105A1B7C2E33A3BC85485 /* PrivacyInfo.xcprivacy */; };
@@ -28,11 +32,14 @@
 		9976D68EC55F77F6CA200753 /* rosenpassffiFFI.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = BDDC416DE1D696A237620B9C /* rosenpassffiFFI.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		9BE11121E6CC838F25E0F4D1 /* MLKEM768Exchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85D3071AF77DC39693600E08 /* MLKEM768Exchange.swift */; };
 		A848AFC600E98731ECADE270 /* ConnectionViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 588EB77FE56779DD2E458442 /* ConnectionViewModel.swift */; };
+		AE747688038053EF78A75F9E /* X509.swift in Sources */ = {isa = PBXBuildFile; fileRef = 472564A02C231BC9E15064B3 /* X509.swift */; };
 		AF099372ED2C6A41B4CD3A5D /* LatticeMacTunnel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C70211E508CDEF32A95D730E /* LatticeMacTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B1AB44BC2480110F46EC8765 /* WireGuardKit in Frameworks */ = {isa = PBXBuildFile; productRef = AE77F3F852E2699E6B1ECF04 /* WireGuardKit */; };
 		B98EA2B1AFF3B0E29256B127 /* LatticeMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8127F371BCD2324A33A6E3F /* LatticeMacApp.swift */; };
 		BD7E11B34B2390845C974194 /* LatticeAccountClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A76637DAF36D4A08A21FEB /* LatticeAccountClient.swift */; };
+		C144CA2DECB55B4EADBFFE35 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8454B48E287919431F7C6E31 /* Session.swift */; };
 		C37A889191C3205FB7469E68 /* AppGroupKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2B61018460812E8825BC010 /* AppGroupKeyStore.swift */; };
+		C6BFD28B72372E2B251C638E /* CNSA2Tunnel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7289A77B75DD3546663850F /* CNSA2Tunnel.swift */; };
 		CA56723BB3DCB0085A2F5EC8 /* ConnectionPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F16C55A4580D4F594F8FC03 /* ConnectionPopoverView.swift */; };
 		CBC890E0A4F62154200B3DCD /* Region.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53012357CF1AF36AA615A567 /* Region.swift */; };
 		D198FCCAF2CBFB76EB563E2F /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3C0F849BCC964CB369C2C52 /* SettingsView.swift */; };
@@ -40,6 +47,7 @@
 		D94517150145F45AE2CE1766 /* rosenpassffiFFI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BDDC416DE1D696A237620B9C /* rosenpassffiFFI.framework */; };
 		DC0C893A230AC7B789DAFFE9 /* RosenpassDriver.swift in Sources */ = {isa = PBXBuildFile; fileRef = B88AC785AFB580AC798C734C /* RosenpassDriver.swift */; };
 		EAFFFD6133D38C2D7A905A0D /* LatticeAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AAC0F6409163575246BDDF9 /* LatticeAPI.swift */; };
+		F4B2048803A21D6F5301EC70 /* Runtime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CAF55E71C89467EE0DA8DF7 /* Runtime.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -85,22 +93,30 @@
 		248EA2AACC0AF36FA694C8FE /* SubscriptionInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionInfo.swift; sourceTree = "<group>"; };
 		2AAC0F6409163575246BDDF9 /* LatticeAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticeAPI.swift; sourceTree = "<group>"; };
 		2CE382357D5C5383A99245BC /* StoreManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreManager.swift; sourceTree = "<group>"; };
+		472564A02C231BC9E15064B3 /* X509.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = X509.swift; sourceTree = "<group>"; };
 		4900BA82D6EBAED828485DDA /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		53012357CF1AF36AA615A567 /* Region.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Region.swift; sourceTree = "<group>"; };
 		588EB77FE56779DD2E458442 /* ConnectionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionViewModel.swift; sourceTree = "<group>"; };
 		5F5AC903F93485FEF3A202DC /* RosenpassBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosenpassBridge.swift; sourceTree = "<group>"; };
+		6A4CFD1CD1B998DBB3C5E24A /* Wire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Wire.swift; sourceTree = "<group>"; };
+		8454B48E287919431F7C6E31 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
 		85D3071AF77DC39693600E08 /* MLKEM768Exchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLKEM768Exchange.swift; sourceTree = "<group>"; };
 		8927E4ACEA21E973CD56CE9E /* LatticeMacTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticeMacTunnelProvider.swift; sourceTree = "<group>"; };
 		9718F30ACF02DE97C1304779 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		9CAF55E71C89467EE0DA8DF7 /* Runtime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Runtime.swift; sourceTree = "<group>"; };
 		A104B36A4CB5B6AAB224E961 /* ConfigParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigParser.swift; sourceTree = "<group>"; };
+		A7289A77B75DD3546663850F /* CNSA2Tunnel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CNSA2Tunnel.swift; sourceTree = "<group>"; };
 		A891D2E5644988BC3B2347F3 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
+		AE7AE8EBDF61426FC44B70D9 /* ESP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESP.swift; sourceTree = "<group>"; };
 		B8127F371BCD2324A33A6E3F /* LatticeMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticeMacApp.swift; sourceTree = "<group>"; };
 		B88AC785AFB580AC798C734C /* RosenpassDriver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosenpassDriver.swift; sourceTree = "<group>"; };
 		BDDC416DE1D696A237620B9C /* rosenpassffiFFI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = rosenpassffiFFI.framework; path = Frameworks/rosenpassffiFFI.framework; sourceTree = "<group>"; };
+		BF4DD01398B74231017C1518 /* Bytes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bytes.swift; sourceTree = "<group>"; };
 		BF5A9BE1ACE81A2DD9B0E53C /* StatusItemIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemIcon.swift; sourceTree = "<group>"; };
 		C70211E508CDEF32A95D730E /* LatticeMacTunnel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LatticeMacTunnel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC9FBB5322F6F153C7A6F6CC /* rosenpassffi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = rosenpassffi.swift; sourceTree = "<group>"; };
 		CCA0020F0B2A8EB30F0B7E29 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		D0F9FD7EB180EBCB92F7F041 /* Primitives.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Primitives.swift; sourceTree = "<group>"; };
 		D644E46B01404B2CEB8C71A7 /* TunnelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelManager.swift; sourceTree = "<group>"; };
 		E9B7BFEB82A2EC83CE1EB469 /* LatticeMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LatticeMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F2B61018460812E8825BC010 /* AppGroupKeyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroupKeyStore.swift; sourceTree = "<group>"; };
@@ -142,6 +158,7 @@
 		0DDD3B773BAEB8FABA849078 /* clients */ = {
 			isa = PBXGroup;
 			children = (
+				B95D83EEAFA012CBB48E9D19 /* apple-ike */,
 				36E2037101C17AAB780174EB /* ios */,
 			);
 			name = clients;
@@ -151,6 +168,7 @@
 		140FABB3A8119FA224DF5D61 /* CloakTunnel */ = {
 			isa = PBXGroup;
 			children = (
+				A7289A77B75DD3546663850F /* CNSA2Tunnel.swift */,
 				A891D2E5644988BC3B2347F3 /* PacketTunnelProvider.swift */,
 				B88AC785AFB580AC798C734C /* RosenpassDriver.swift */,
 			);
@@ -240,6 +258,14 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		B95D83EEAFA012CBB48E9D19 /* apple-ike */ = {
+			isa = PBXGroup;
+			children = (
+				D22268A2C5572D8DA6CA969C /* Sources */,
+			);
+			path = "apple-ike";
+			sourceTree = "<group>";
+		};
 		C0E77D45707AD1BDCDF36E2A /* MenuBar */ = {
 			isa = PBXGroup;
 			children = (
@@ -248,6 +274,28 @@
 				BF5A9BE1ACE81A2DD9B0E53C /* StatusItemIcon.swift */,
 			);
 			path = MenuBar;
+			sourceTree = "<group>";
+		};
+		D22268A2C5572D8DA6CA969C /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				E3D52ADF214C59A193AB4BC9 /* LatticeIKE */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		E3D52ADF214C59A193AB4BC9 /* LatticeIKE */ = {
+			isa = PBXGroup;
+			children = (
+				BF4DD01398B74231017C1518 /* Bytes.swift */,
+				AE7AE8EBDF61426FC44B70D9 /* ESP.swift */,
+				D0F9FD7EB180EBCB92F7F041 /* Primitives.swift */,
+				9CAF55E71C89467EE0DA8DF7 /* Runtime.swift */,
+				8454B48E287919431F7C6E31 /* Session.swift */,
+				6A4CFD1CD1B998DBB3C5E24A /* Wire.swift */,
+				472564A02C231BC9E15064B3 /* X509.swift */,
+			);
+			path = LatticeIKE;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -411,11 +459,19 @@
 			buildActionMask = 2147483647;
 			files = (
 				C37A889191C3205FB7469E68 /* AppGroupKeyStore.swift in Sources */,
+				04942F8391035C5C29EF4BB1 /* Bytes.swift in Sources */,
+				C6BFD28B72372E2B251C638E /* CNSA2Tunnel.swift in Sources */,
 				84700939DE8F4738607EA2DA /* ConfigParser.swift in Sources */,
+				2965380F6AE61E75E3F1E93C /* ESP.swift in Sources */,
 				59E4D3CD18A7AEABF5D20141 /* LatticeMacTunnelProvider.swift in Sources */,
 				1310D17ECFB9880B7225AF99 /* PacketTunnelProvider.swift in Sources */,
+				2847D9658D387C706E177A62 /* Primitives.swift in Sources */,
 				CBC890E0A4F62154200B3DCD /* Region.swift in Sources */,
 				DC0C893A230AC7B789DAFFE9 /* RosenpassDriver.swift in Sources */,
+				F4B2048803A21D6F5301EC70 /* Runtime.swift in Sources */,
+				C144CA2DECB55B4EADBFFE35 /* Session.swift in Sources */,
+				0620D4982D1206118A37B4BE /* Wire.swift in Sources */,
+				AE747688038053EF78A75F9E /* X509.swift in Sources */,
 				8F5AF229D25A1F22ADA73A6B /* rosenpassffi.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -438,7 +494,7 @@
 				CODE_SIGN_ENTITLEMENTS = LatticeMac/Resources/LatticeMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -524,7 +580,7 @@
 				CODE_SIGN_ENTITLEMENTS = LatticeMacTunnel/LatticeMacTunnel.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -619,7 +675,7 @@
 				CODE_SIGN_ENTITLEMENTS = LatticeMac/Resources/LatticeMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -704,7 +760,7 @@
 				CODE_SIGN_ENTITLEMENTS = LatticeMacTunnel/LatticeMacTunnel.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -791,7 +847,7 @@
 				CODE_SIGN_ENTITLEMENTS = LatticeMac/Resources/LatticeMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -818,7 +874,7 @@
 				CODE_SIGN_ENTITLEMENTS = LatticeMac/Resources/LatticeMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -843,7 +899,7 @@
 				CODE_SIGN_ENTITLEMENTS = LatticeMacTunnel/LatticeMacTunnel.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -870,7 +926,7 @@
 				CODE_SIGN_ENTITLEMENTS = LatticeMacTunnel/LatticeMacTunnel.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",

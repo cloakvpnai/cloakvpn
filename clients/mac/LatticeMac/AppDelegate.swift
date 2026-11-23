@@ -37,6 +37,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showLatticeSettings(nil)
         }
 
+        #if DEBUG
+        // Lab only: `-LatticeCNSA2Lab <base64 JSON>` starts the CNSA 2.0
+        // (IKEv2/IPsec) tunnel against a development gateway.
+        if let blob = UserDefaults.standard.string(forKey: "LatticeCNSA2Lab") {
+            Task { @MainActor in await self.connection.startCNSA2Lab(blob) }
+        }
+        #endif
+
         // Mirror the connection state into the menu bar icon. Changing
         // the icon based on state (idle / connecting / connected /
         // error) is the most important always-visible feedback the user

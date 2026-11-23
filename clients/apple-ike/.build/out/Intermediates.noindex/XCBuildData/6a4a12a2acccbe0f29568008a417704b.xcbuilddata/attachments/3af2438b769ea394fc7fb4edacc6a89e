@@ -1,0 +1,4 @@
+module LatticeIKE {
+header "LatticeIKE-Swift.h"
+export *
+}

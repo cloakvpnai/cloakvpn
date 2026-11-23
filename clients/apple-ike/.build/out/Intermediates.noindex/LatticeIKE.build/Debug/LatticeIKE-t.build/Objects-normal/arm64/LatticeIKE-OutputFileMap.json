@@ -36,6 +36,16 @@
     "swift-dependencies" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/.build/out/Intermediates.noindex/LatticeIKE.build/Debug/LatticeIKE-t.build/Objects-normal/arm64/Primitives.swiftdeps",
     "swiftmodule" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/.build/out/Intermediates.noindex/LatticeIKE.build/Debug/LatticeIKE-t.build/Objects-normal/arm64/Primitives~partial.swiftmodule"
   },
+  "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/Sources/LatticeIKE/Runtime.swift" : {
+    "const-values" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/.build/out/Intermediates.noindex/LatticeIKE.build/Debug/LatticeIKE-t.build/Objects-normal/arm64/Runtime.swiftconstvalues",
+    "dependencies" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/.build/out/Intermediates.noindex/LatticeIKE.build/Debug/LatticeIKE-t.build/Objects-normal/arm64/Runtime.d",
+    "diagnostics" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/.build/out/Intermediates.noindex/LatticeIKE.build/Debug/LatticeIKE-t.build/Objects-normal/arm64/Runtime.dia",
+    "index-unit-output-path" : "/LatticeIKE.build/Debug/LatticeIKE-t.build/Objects-normal/arm64/Runtime.o",
+    "llvm-bc" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/.build/out/Intermediates.noindex/LatticeIKE.build/Debug/LatticeIKE-t.build/Objects-normal/arm64/Runtime.bc",
+    "object" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/.build/out/Intermediates.noindex/LatticeIKE.build/Debug/LatticeIKE-t.build/Objects-normal/arm64/Runtime.o",
+    "swift-dependencies" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/.build/out/Intermediates.noindex/LatticeIKE.build/Debug/LatticeIKE-t.build/Objects-normal/arm64/Runtime.swiftdeps",
+    "swiftmodule" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/.build/out/Intermediates.noindex/LatticeIKE.build/Debug/LatticeIKE-t.build/Objects-normal/arm64/Runtime~partial.swiftmodule"
+  },
   "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/Sources/LatticeIKE/Session.swift" : {
     "const-values" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/.build/out/Intermediates.noindex/LatticeIKE.build/Debug/LatticeIKE-t.build/Objects-normal/arm64/Session.swiftconstvalues",
     "dependencies" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/.build/out/Intermediates.noindex/LatticeIKE.build/Debug/LatticeIKE-t.build/Objects-normal/arm64/Session.d",

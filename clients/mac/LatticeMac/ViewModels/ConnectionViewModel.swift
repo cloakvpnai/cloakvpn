@@ -65,6 +65,11 @@ final class ConnectionViewModel: ObservableObject {
     static let isUISmokeTest = CommandLine.arguments.contains("--ui-smoke-test")
     private let tunnel: TunnelManager?
 
+    #if DEBUG
+    /// Lab only: start the CNSA 2.0 tunnel against a development gateway.
+    func startCNSA2Lab(_ blob: String) async { await tunnel?.startCNSA2Lab(blob) }
+    #endif
+
     @Published private(set) var isSignedIn = false
     @Published private(set) var accountStatus: AccountStatus?
     @Published private(set) var accountStatusError: String?

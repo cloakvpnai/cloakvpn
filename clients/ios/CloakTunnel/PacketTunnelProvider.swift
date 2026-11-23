@@ -66,6 +66,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     /// but a fresh preshared key, then call adapter.update().
     private var currentConfig: TunnelConfiguration?
 
+    /// Set while the tunnel is running in CNSA 2.0 (IKEv2/IPsec) mode.
+    private var cnsa2: CNSA2TunnelController?
+
     /// PSK from a SET_PSK message that arrived before adapter.start
     /// finished. WireGuardKit's adapter rejects update() calls with
     /// `.invalidState` until start completes — so a fast rosenpass
@@ -259,6 +262,17 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
+        // CNSA 2.0 mode: an IKEv2/IPsec tunnel run by LatticeIKE instead of
+        // WireGuard. Selected only by an explicit "cnsa2" configuration and
+        // never used as a fallback in either direction.
+        if let cnsa2Config = dict["cnsa2"] as? [String: Any] {
+            os_log("startTunnel: CNSA 2.0 mode", log: log, type: .info)
+            let controller = CNSA2TunnelController(provider: self)
+            cnsa2 = controller
+            controller.start(cnsa2Config, completion: completionHandler)
+            return
+        }
+
         let cloakCfg: CloakConfig
         do {
             cloakCfg = try CloakConfig(dict: dict)
@@ -417,6 +431,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler: @escaping () -> Void
     ) {
         os_log("stopTunnel reason=%d", log: log, type: .info, reason.rawValue)
+        if let controller = cnsa2 {
+            controller.stop()
+            cnsa2 = nil
+            completionHandler()
+            return
+        }
         // Stop the health monitor first so its callbacks can't fire
         // mid-teardown and try to inspect a stopped adapter.
         stopHealthMonitoring()
