@@ -11,6 +11,7 @@
  */
 package org.strongswan.android.logic
 
+import ai.latticevpn.android.vpn.cnsa2.Cnsa2IdentityStore
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -38,8 +39,9 @@ class CharonVpnService : VpnService() {
         val gatewayId: String = json.getString("gatewayID")
         val clientId: String = json.getString("clientID")
         val caDer: ByteArray = Base64.decode(json.getString("caDER"), Base64.DEFAULT)
-        val clientCertDer: ByteArray = Base64.decode(json.getString("clientCertDER"), Base64.DEFAULT)
-        val clientKeyPkcs8: ByteArray = Base64.decode(json.getString("clientKeyPKCS8"), Base64.DEFAULT)
+        /** Absent when the phone uses its own enrolled identity. */
+        val clientCertDer: ByteArray? = json.optString("clientCertDER").takeIf { it.isNotEmpty() }?.let { Base64.decode(it, Base64.DEFAULT) }
+        val clientKeyPkcs8: ByteArray? = json.optString("clientKeyPKCS8").takeIf { it.isNotEmpty() }?.let { Base64.decode(it, Base64.DEFAULT) }
         val rekeySeconds: Int = json.optInt("rekeySeconds", 300)
     }
 
@@ -248,13 +250,20 @@ class CharonVpnService : VpnService() {
     private fun getTrustedCertificates(): Array<ByteArray> =
         profile?.let { arrayOf(it.caDer) } ?: emptyArray()
 
-    private fun getUserCertificate(): Array<ByteArray> =
-        profile?.let { arrayOf(it.clientCertDer) } ?: emptyArray()
+    private fun getUserCertificate(): Array<ByteArray> {
+        val der = profile?.clientCertDer ?: Cnsa2IdentityStore(this).certificate()
+        return if (der != null) arrayOf(der) else emptyArray()
+    }
 
     /** The platform keystore has no ML-DSA, so the key is used natively. */
     private fun getUserKey(): PrivateKey? = null
 
-    private fun getUserKeyEncoded(): ByteArray? = profile?.clientKeyPkcs8
+    private fun getUserKeyEncoded(): ByteArray? = try {
+        profile?.clientKeyPkcs8 ?: Cnsa2IdentityStore(this).takeIf { it.hasIdentity() }?.privateKeyPkcs8()
+    } catch (e: Exception) {
+        Log.e(TAG, "identity key unavailable", e)
+        null
+    }
 
     external fun initializeCharon(builder: BuilderAdapter, logfile: String, appdir: String, byod: Boolean, ipv6: Boolean): Boolean
     external fun deinitializeCharon()
