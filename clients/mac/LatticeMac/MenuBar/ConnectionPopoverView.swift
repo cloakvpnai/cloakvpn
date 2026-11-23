@@ -25,6 +25,8 @@ struct ConnectionPopoverView: View {
     var inWindow = false
     @EnvironmentObject private var connection: ConnectionViewModel
     @State private var showingRegionPicker = false
+    /// False while more regions are hidden below the visible part of the list.
+    @State private var regionListAtBottom = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -188,6 +190,31 @@ struct ConnectionPopoverView: View {
                     }
                 }
             }
+            .scrollIndicators(.visible)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 4
+            } action: { _, atBottom in
+                regionListAtBottom = atBottom
+            }
+            .overlay(alignment: .bottom) {
+                // Tells people the list continues; goes away at the end of the list.
+                if !regionListAtBottom {
+                    HStack(spacing: 5) {
+                        Image(systemName: "chevron.down")
+                        Text("More regions below")
+                    }
+                    .font(.system(size: inWindow ? 12 : 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(Color.primary.opacity(0.12), lineWidth: 1))
+                    .padding(.bottom, 6)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: regionListAtBottom)
             .frame(maxHeight: inWindow ? .infinity : 170)
         }
     }
