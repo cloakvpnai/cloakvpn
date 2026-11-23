@@ -3,7 +3,7 @@
 not UDP, so IKE and ESP datagrams are carried as length-prefixed frames.
 
   in a sidecar container:         relay.py gateway 14500 cnsa2-devgw:4500
-  on the Mac:                    relay.py host 127.0.0.1:14500 4500
+  on the Mac:                    relay.py host 127.0.0.1:14500 4500 [bind address, 0.0.0.0 to serve the LAN]
 """
 import socket, struct, sys, threading
 
@@ -47,15 +47,17 @@ def gateway(tcp_port, target):
                 pass
         threading.Thread(target=back, daemon=True).start()
 
-def host(tcp_addr, udp_port):
+def host(tcp_addr, udp_port, bind="127.0.0.1"):
     h, p = tcp_addr.split(":")
     conn = socket.create_connection((h, int(p)))
     udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    udp.bind(("127.0.0.1", udp_port))
+    udp.bind((bind, udp_port))
     peer = [None]
     threading.Thread(target=pump_tcp_to_udp, args=(conn, udp, lambda: peer[0]), daemon=True).start()
     while True:
         data, addr = udp.recvfrom(65535)
+        if addr != peer[0]:
+            print("client", addr, flush=True)
         peer[0] = addr
         conn.sendall(struct.pack("!H", len(data)) + data)
 
@@ -63,4 +65,4 @@ if __name__ == "__main__":
     if sys.argv[1] == "gateway":
         gateway(int(sys.argv[2]), sys.argv[3])
     else:
-        host(sys.argv[2], int(sys.argv[3]))
+        host(sys.argv[2], int(sys.argv[3]), sys.argv[4] if len(sys.argv) > 4 else "127.0.0.1")
