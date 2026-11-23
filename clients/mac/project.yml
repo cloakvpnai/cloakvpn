@@ -230,6 +230,11 @@ targets:
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
+        # wireguard-go binds its own UDP socket. Under App Sandbox a bind
+        # needs the server entitlement; without it the tunnel comes up with
+        # no socket ("Unable to update bind: ... operation not permitted")
+        # and never sends a handshake.
+        com.apple.security.network.server: true
         com.apple.developer.networking.networkextension:
           - packet-tunnel-provider
         com.apple.security.application-groups:

@@ -292,7 +292,15 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         // lookup goes out over Wi-Fi/cellular and is reliable. The excluded
         // /32(s) then survive a region switch that revokes the current peer
         // mid-request. Falls back to a known-good origin IP if DNS fails.
+        #if os(macOS)
+        // On macOS the lookup never completes while the tunnel is coming up
+        // (includeAllNetworks holds traffic until the tunnel is established),
+        // so an unbounded getaddrinfo cost a 30 s wait on every connect before
+        // falling back anyway. Give it a short budget instead.
+        self.controlPlaneIPs = Self.resolveIPs(host: Self.controlPlaneHost, timeout: 1.5)
+        #else
         self.controlPlaneIPs = Self.resolveIPs(host: Self.controlPlaneHost)
+        #endif
         if self.controlPlaneIPs.isEmpty {
             self.controlPlaneIPs = [Self.controlPlaneFallbackIPv4]
             os_log("startTunnel: control-plane DNS resolve failed; using fallback %{public}s",
@@ -1390,6 +1398,27 @@ extension PacketTunnelProvider {
     /// and brief — getaddrinfo against an already-cached A record returns
     /// in microseconds; first-time lookups are bounded by the system
     /// resolver timeout.
+    /// `resolveIPs(host:)` with a deadline. Returns an empty array if the
+    /// lookup has not finished in `timeout` seconds; the abandoned lookup
+    /// finishes on its own later and its result is discarded.
+    static func resolveIPs(host: String, timeout: TimeInterval) -> [String] {
+        let done = DispatchSemaphore(value: 0)
+        let box = ResolvedIPsBox()
+        DispatchQueue.global(qos: .userInitiated).async {
+            box.set(resolveIPs(host: host))
+            done.signal()
+        }
+        guard done.wait(timeout: .now() + timeout) == .success else { return [] }
+        return box.get()
+    }
+
+    private final class ResolvedIPsBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var ips: [String] = []
+        func set(_ value: [String]) { lock.lock(); ips = value; lock.unlock() }
+        func get() -> [String] { lock.lock(); defer { lock.unlock() }; return ips }
+    }
+
     static func resolveIPs(host: String) -> [String] {
         var hints = addrinfo(ai_flags: 0,
                              ai_family: AF_UNSPEC,
