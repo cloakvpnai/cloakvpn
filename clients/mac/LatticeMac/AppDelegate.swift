@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The status bar item we manage from app launch -> app quit.
     /// Held strongly here so it isn't deallocated when the popover dismisses.
     private var menuBar: MenuBarController?
+    private var settingsWindow: NSWindow?
 
     /// Shared view model. Created here so MenuBarController and the
     /// SwiftUI App body both reference the same instance via
@@ -32,7 +33,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // NSStatusItem and NSPopover; we hand it our shared model so the
         // popover content can read/mutate the same state the Settings
         // scene sees.
-        menuBar = MenuBarController(connection: connection)
+        menuBar = MenuBarController(connection: connection) { [weak self] in
+            self?.showLatticeSettings(nil)
+        }
 
         // Mirror the connection state into the menu bar icon. Changing
         // the icon based on state (idle / connecting / connected /
@@ -50,6 +53,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // restore the saved tunnel preference from NEVPNManager, fetch
         // current public IP for the popover's "your IP" label.
         Task { await connection.bootstrap() }
+        DispatchQueue.main.async { [weak self] in self?.showLatticeSettings(nil) }
+    }
+
+    /// Own one predictable window: opening the app must never appear to do nothing.
+    @objc func showLatticeSettings(_ sender: Any?) {
+        if settingsWindow == nil {
+            let controller = NSHostingController(rootView:
+                SettingsView().environmentObject(connection))
+            let window = NSWindow(contentViewController: controller)
+            window.title = "Lattice VPN — Test Build"
+            window.setContentSize(NSSize(width: 620, height: 480))
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.isReleasedWhenClosed = false
+            window.center()
+            settingsWindow = window
+        }
+        settingsWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showLatticeSettings(nil)
+        return true
     }
 
     /// We never want the app to terminate just because the (non-existent)

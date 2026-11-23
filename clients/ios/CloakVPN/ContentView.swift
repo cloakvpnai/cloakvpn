@@ -718,6 +718,7 @@ struct ContentView: View {
 
     /// One-line subscription summary for the Settings drawer header.
     private var accountPlanLine: String {
+        if tunnel.accountStatusError != nil { return "Subscription could not be verified" }
         guard let s = tunnel.accountStatus else { return "Checking subscription…" }
         guard s.isActive else { return "No active subscription" }
         let tier = SubscriptionTier.from(tierString: s.tier).displayName
@@ -730,7 +731,10 @@ struct ContentView: View {
     private var accountDetailView: some View {
         Form {
             Section("Subscription") {
-                if let s = tunnel.accountStatus {
+                if let error = tunnel.accountStatusError {
+                    Text("Subscription could not be verified").font(.headline)
+                    Text(error).foregroundStyle(.red)
+                } else if let s = tunnel.accountStatus {
                     LabeledContent("Plan",
                                    value: SubscriptionTier.from(tierString: s.tier).displayName)
                     LabeledContent("Devices",
@@ -743,6 +747,8 @@ struct ContentView: View {
                     Text("Checking subscription…")
                         .foregroundStyle(.secondary)
                 }
+                Button("Refresh subscription") { Task { await tunnel.refreshAccountStatus() } }
+                    .disabled(tunnel.accountRefreshBusy)
             }
 
             Section {

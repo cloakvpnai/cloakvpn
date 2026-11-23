@@ -41,33 +41,14 @@ struct SettingsView: View {
 // MARK: - General
 
 struct GeneralSettingsView: View {
-    @AppStorage("launchAtLogin")        private var launchAtLogin = false
-    @AppStorage("autoConnectUntrusted") private var autoConnectUntrusted = true
-    @AppStorage("showInDock")           private var showInDock = false
-    @AppStorage("notifyOnConnect")      private var notifyOnConnect = true
-
     var body: some View {
         Form {
+            Section("Lattice VPN") {
+                Text("Lattice lives in your menu bar. Sign in on the Account tab, choose a region, then connect from the menu bar.")
+            }
             Section("Startup") {
-                Toggle("Launch Lattice VPN at login", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { _, newValue in
-                        // TODO[Phase 4]: wire to SMAppService.mainApp.register()
-                        // / .unregister() so the macOS Login Items service tracks us.
-                        _ = newValue
-                    }
-                Toggle("Show in Dock (in addition to menu bar)", isOn: $showInDock)
-                    .help("Requires app restart.")
-            }
-            Section("Auto-connect") {
-                Toggle("Connect automatically on untrusted Wi-Fi", isOn: $autoConnectUntrusted)
-                    .help("Untrusted = any network not in your saved list. Manage in Network → Trusted Wi-Fi.")
-                NavigationLink("Manage trusted Wi-Fi networks…") {
-                    Text("Trusted networks list — Phase 4")
-                        .padding()
-                }
-            }
-            Section("Notifications") {
-                Toggle("Notify when connected / disconnected", isOn: $notifyOnConnect)
+                Text("Launch at login and automatic connection are not available in this build.")
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -77,104 +58,130 @@ struct GeneralSettingsView: View {
 // MARK: - Account
 
 struct AccountSettingsView: View {
-    @State private var email: String = ""
-    @State private var isSignedIn = false
+    @EnvironmentObject private var connection: ConnectionViewModel
+    @State private var accountNumber = ""
+    @State private var signInError: String?
+    @State private var confirmSignOut = false
 
     var body: some View {
         Form {
-            Section {
-                if isSignedIn {
-                    LabeledContent("Signed in as", value: email.isEmpty ? "—" : email)
-                    LabeledContent("Subscription", value: "Loading…")
-                    Button("Sign out") { isSignedIn = false; email = "" }
+            Section("Apple subscription support") {
+                Text("This development build cannot yet restore your existing Apple subscription. Apple Account sign-in and purchase restoration are not implemented here.")
+                Text("Do not enter your Apple password or purchase another plan. The account-number field below is for existing direct Lattice accounts only.")
+                    .foregroundStyle(.secondary)
+            }
+            Section("Direct Lattice account (optional)") {
+                if connection.isSignedIn {
+                    Label("Signed in", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    SubscriptionStatusContent()
+                    Button("Sign out") { confirmSignOut = true }
                         .foregroundStyle(.red)
+                        .disabled(connection.status.isBusy)
                 } else {
+                    Text("Enter the account number from your Lattice subscription.")
+                        .foregroundStyle(.secondary)
+                    SecureField("Account number", text: $accountNumber)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { signIn() }
+                        .accessibilityIdentifier("lattice-account-number")
                     HStack {
-                        Image(systemName: "person.crop.circle.badge.questionmark")
-                            .font(.system(size: 32))
-                            .foregroundStyle(.secondary)
-                        VStack(alignment: .leading) {
-                            Text("Not signed in")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text("Sign in to manage your subscription and sync settings across devices.")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                        }
+                        Button("Sign in") { signIn() }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(connection.signInBusy || accountNumber.isEmpty)
+                        if connection.signInBusy { ProgressView().controlSize(.small) }
                     }
-                    .padding(.vertical, 4)
-                    Button("Sign in with Apple") {
-                        // TODO[Phase 4]: wire ASAuthorizationController + AppleIDProvider
-                        // and exchange the credential for a Cloak API JWT (matches the
-                        // iOS flow in CloakAuthClient.swift).
+                    if let signInError {
+                        Text(signInError).foregroundStyle(.red)
                     }
-                    .buttonStyle(.borderedProminent)
                 }
             }
         }
         .formStyle(.grouped)
+        .confirmationDialog("Sign out of Lattice? This disconnects the VPN.", isPresented: $confirmSignOut) {
+            Button("Sign out", role: .destructive) { Task { await connection.signOut() } }
+        }
+    }
+
+    private func signIn() {
+        guard !connection.signInBusy else { return }
+        signInError = nil
+        Task {
+            signInError = await connection.signIn(accountNumber)
+            if signInError == nil { accountNumber = "" }
+        }
     }
 }
 
 // MARK: - Subscription
 
 struct SubscriptionSettingsView: View {
+    @EnvironmentObject private var connection: ConnectionViewModel
+
     var body: some View {
         Form {
+            Section("Test build limitation") {
+                Text("Existing Apple subscriptions are not linked in this build. Subscription status below applies only to a signed-in direct Lattice account.")
+            }
             Section("Current plan") {
-                LabeledContent("Plan",          value: "Lattice Pro")
-                LabeledContent("Renews",        value: "—")
-                LabeledContent("Devices",       value: "—")
+                SubscriptionStatusContent()
             }
             Section {
-                // We branch UX based on distribution channel — App Store
-                // builds open the iOS-style manage-subscription sheet;
-                // Direct Download builds open the customer portal.
-                #if APPSTORE_BUILD
-                Button("Manage subscription") {
-                    // TODO[Phase 4]: AppStore.showManageSubscriptions(in:)
-                }
-                #else
-                Button("Enter license key…") {
-                    // TODO[Phase 4]: license-key entry sheet, validates against
-                    // cloak-api-server /v1/license/redeem
-                }
-                Button("Buy a license") {
-                    // TODO[Phase 4]: opens https://latticevpn.ai/pricing in default browser
-                }
-                #endif
+                Link("Manage subscription at latticevpn.ai", destination: URL(string: "https://latticevpn.ai")!)
             }
         }
         .formStyle(.grouped)
     }
 }
 
+/// Only validated metadata is displayed. A failed refresh never looks like an
+/// inactive plan, and the account credential is never included in this view.
+private struct SubscriptionStatusContent: View {
+    @EnvironmentObject private var connection: ConnectionViewModel
+
+    var body: some View {
+        if !connection.isSignedIn {
+            Text("Sign in on the Account tab to see your subscription.")
+                .foregroundStyle(.secondary)
+        } else {
+            if let error = connection.accountStatusError {
+                Text("Subscription could not be verified").font(.headline)
+                Text(error).foregroundStyle(.red)
+            } else if let status = connection.accountStatus, connection.accountStatusVerifiedAt != nil {
+                Text(status.isActive ? "Active subscription" : "No active subscription reported by Lattice")
+                    .font(.headline)
+                LabeledContent("Plan", value: status.tier.isEmpty ? "None" : status.tier.capitalized)
+                LabeledContent("Devices", value: "\(status.deviceCount) of \(status.deviceLimit)")
+                if let expiry = status.activeUntilDate, expiry > Date(timeIntervalSince1970: 0) {
+                    LabeledContent("Paid through", value: expiry.formatted(date: .abbreviated, time: .shortened))
+                }
+                if let checked = connection.accountStatusVerifiedAt {
+                    LabeledContent("Verified", value: checked.formatted(date: .abbreviated, time: .standard))
+                }
+            } else {
+                Text("Subscription has not been verified.").foregroundStyle(.secondary)
+            }
+            HStack {
+                Button("Refresh subscription") { Task { await connection.refreshAccountStatus() } }
+                    .disabled(connection.accountRefreshBusy)
+                if connection.accountRefreshBusy { ProgressView().controlSize(.small) }
+            }
+        }
+    }
+}
+
 // MARK: - Advanced
 
 struct AdvancedSettingsView: View {
-    @AppStorage("killSwitch")     private var killSwitch = true
-    @AppStorage("blockLAN")       private var blockLAN = false
-    @AppStorage("dnsLeakProtect") private var dnsLeakProtect = true
-
     var body: some View {
         Form {
             Section("Network protection") {
-                Toggle("Kill switch (block traffic if VPN drops)", isOn: $killSwitch)
-                    .help("Uses includeAllNetworks=true on the NEPacketTunnelProvider — prevents IP leaks during reconnects.")
-                Toggle("Block LAN access while connected", isOn: $blockLAN)
-                Toggle("DNS leak protection", isOn: $dnsLeakProtect)
-            }
-            Section("Diagnostics") {
-                Button("Export diagnostic log…") {
-                    // TODO[Phase 4]: collect provider log, redact private keys, save bundle
-                }
-                Button("Reset stored credentials") {
-                    // TODO[Phase 4]: clears App Group keychain + JWT, prompts confirm
-                }
-                .foregroundStyle(.red)
+                Text("Custom network protection settings are not available in this build.")
+                    .foregroundStyle(.secondary)
             }
             Section("Build") {
                 LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
-                LabeledContent("Build",   value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")
+                LabeledContent("Build", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")
             }
         }
         .formStyle(.grouped)

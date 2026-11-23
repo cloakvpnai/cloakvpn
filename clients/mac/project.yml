@@ -40,30 +40,18 @@ options:
 
 # ---- Project-wide build configurations -----------------------------
 #
-# All four configurations base on Secrets.xcconfig so the
-# CLOAK_BOOTSTRAP_KEY (used by CloakAuthClient when calling the
-# cloak-api-server /auth/exchange endpoint) is injected at build time.
-# The xcconfig is gitignored and lives next to the iOS one — single
-# source of truth for the bootstrap key across iOS and Mac.
+# Account-number authentication uses LatticeAPI; no bootstrap secret is needed.
 configs:
   Debug: debug
   Release: release
   Release-AppStore: release
   Release-DirectDownload: release
 
-configFiles:
-  Debug: ../ios/CloakVPN/Secrets.xcconfig
-  Release: ../ios/CloakVPN/Secrets.xcconfig
-  Release-AppStore: ../ios/CloakVPN/Secrets.xcconfig
-  Release-DirectDownload: ../ios/CloakVPN/Secrets.xcconfig
-
 # ---- Project-wide build settings -----------------------------------
 settings:
   base:
-    # Personal team for local dev. Swap to the LLC team ID once the
-    # Apple Developer migration completes — and re-register bundle IDs
-    # under that team in the dev portal.
-    DEVELOPMENT_TEAM: S6MWM954AD
+    # Existing KryptoKnightz LLC development team.
+    DEVELOPMENT_TEAM: 5HYY2YP2G9
     SWIFT_VERSION: '5.0'
     SWIFT_STRICT_CONCURRENCY: minimal
     ENABLE_USER_SCRIPT_SANDBOXING: 'NO'
@@ -87,7 +75,9 @@ targets:
       # Shared from iOS (target-membership cross-cut, no file copying)
       - path: ../ios/CloakVPN/TunnelManager.swift
       - path: ../ios/CloakVPN/AppGroupKeyStore.swift
-      - path: ../ios/CloakVPN/CloakAuthClient.swift
+      - path: ../ios/CloakVPN/LatticeAPI.swift
+      - path: ../ios/CloakVPN/LatticeAccountClient.swift
+      - path: ../ios/CloakVPN/StoreManager.swift
       - path: ../ios/CloakVPN/ConfigParser.swift
       - path: ../ios/CloakVPN/Region.swift
       - path: ../ios/CloakVPN/RosenpassBridge.swift
@@ -161,6 +151,10 @@ targets:
           - $(inherited)
           - "@executable_path/../Frameworks"
       configs:
+        Debug:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Development
+          PROVISIONING_PROFILE_SPECIFIER: Lattice Mac Development
         Release-AppStore:
           OTHER_SWIFT_FLAGS: "$(inherited) -DAPPSTORE_BUILD"
         Release-DirectDownload:
@@ -262,6 +256,10 @@ targets:
           - $(inherited)
           - "@executable_path/../../../../Frameworks"
       configs:
+        Debug:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Development
+          PROVISIONING_PROFILE_SPECIFIER: Lattice Mac Tunnel Development
         Release-AppStore:
           OTHER_SWIFT_FLAGS: "$(inherited) -DAPPSTORE_BUILD"
         Release-DirectDownload:

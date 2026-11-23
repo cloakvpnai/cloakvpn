@@ -61,7 +61,16 @@ final class ConnectionViewModel: ObservableObject {
     /// auto-recovering from wedges. We just feed it region selections
     /// and reflect its published state back into our own published
     /// surface.
-    private let tunnel = TunnelManager()
+    /// UI validation must not load credentials, generate device keys, or touch VPN preferences.
+    static let isUISmokeTest = CommandLine.arguments.contains("--ui-smoke-test")
+    private let tunnel: TunnelManager?
+
+    @Published private(set) var isSignedIn = false
+    @Published private(set) var accountStatus: AccountStatus?
+    @Published private(set) var accountStatusError: String?
+    @Published private(set) var accountRefreshBusy = false
+    @Published private(set) var accountStatusVerifiedAt: Date?
+    @Published private(set) var signInBusy = false
 
     /// Combine subscriptions kept alive for the lifetime of the VM.
     private var cancellables = Set<AnyCancellable>()
@@ -69,6 +78,7 @@ final class ConnectionViewModel: ObservableObject {
     // MARK: - Init
 
     init() {
+        tunnel = Self.isUISmokeTest ? nil : TunnelManager()
         // Seed the region list from the shared CloakRegion catalog.
         availableRegions = CloakRegion.all.map(RegionSummary.init(_:))
 
@@ -80,6 +90,20 @@ final class ConnectionViewModel: ObservableObject {
     }
 
     private func bindToTunnel() {
+        guard let tunnel else { return }
+        tunnel.$accountNumber
+            .map { !($0 ?? "").isEmpty }
+            .assign(to: \.isSignedIn, on: self)
+            .store(in: &cancellables)
+        tunnel.$accountStatus
+            .assign(to: \.accountStatus, on: self)
+            .store(in: &cancellables)
+        tunnel.$accountStatusError.assign(to: \.accountStatusError, on: self).store(in: &cancellables)
+        tunnel.$accountRefreshBusy.assign(to: \.accountRefreshBusy, on: self).store(in: &cancellables)
+        tunnel.$accountStatusVerifiedAt.assign(to: \.accountStatusVerifiedAt, on: self).store(in: &cancellables)
+        tunnel.$signInBusy
+            .assign(to: \.signInBusy, on: self)
+            .store(in: &cancellables)
         // Status: iOS Status -> Mac ConnectionStatus
         tunnel.$status
             .receive(on: DispatchQueue.main)
@@ -118,13 +142,50 @@ final class ConnectionViewModel: ObservableObject {
     /// preference + restore the user's last-used region, then fetch the
     /// current public IP for the popover's "Your IP" label.
     func bootstrap() async {
+        guard let tunnel else { return }
         await tunnel.load()
         await tunnel.refreshPublicIPIfNotConnected()
-        // Pre-generate the rosenpass keypair on a big-stack thread, BEFORE
-        // any selectRegion call has a chance to invoke TunnelManager's
-        // Task.detached path (which spinlocks on macOS — see comment in
-        // generateRosenpassKeypairOnBigStackThread).
-        await ensureRosenpassKeypairMacWorkaround()
+        await tunnel.refreshAccountStatus(allowRecovery: false)
+        // Generate device keys only when the user requests a connection.
+    }
+
+    func signIn(_ number: String) async -> String? {
+        guard LatticeAPI.isComplete(number) else {
+            return "Enter the complete 25-character account number."
+        }
+        guard let tunnel else { return "Account sign-in is disabled during UI validation." }
+        return await tunnel.signIn(number)
+    }
+
+    func refreshAccountStatus() async {
+        guard let tunnel else { return }
+        await tunnel.refreshAccountStatus(allowRecovery: false)
+    }
+
+    private func verifySubscriptionForConnection() async -> Bool {
+        await refreshAccountStatus()
+        if let error = accountStatusError {
+            lastError = error
+            return false
+        }
+        guard !accountRefreshBusy, accountStatusVerifiedAt != nil, let account = accountStatus else {
+            lastError = "Couldn't verify your subscription. Refresh it in Preferences → Subscription."
+            return false
+        }
+        guard account.isActive else {
+            lastError = "Lattice reports no active subscription for this account. Check the Subscription tab before connecting."
+            return false
+        }
+        return true
+    }
+
+    func signOut() async {
+        guard let tunnel else { return }
+        await tunnel.signOut()
+    }
+
+    func clearError() {
+        lastError = nil
     }
 
     // MARK: - Mac-specific rosenpass keypair workaround
@@ -196,6 +257,12 @@ final class ConnectionViewModel: ObservableObject {
     /// simple version.)
     func connect() async {
         guard !status.isBusy, !status.isConnected else { return }
+        guard isSignedIn else {
+            lastError = "Sign in with your Lattice account number in Preferences → Account."
+            return
+        }
+        guard let tunnel, await verifySubscriptionForConnection() else { return }
+        await ensureRosenpassKeypairMacWorkaround()
         let region: CloakRegion
         if let summary = selectedRegion, let cloak = CloakRegion.byID(summary.id) {
             region = cloak
@@ -226,9 +293,10 @@ final class ConnectionViewModel: ObservableObject {
         // even when we don't actually trigger a connect.
         selectedRegion = region
 
-        guard switchingRegion else { return }
+        guard switchingRegion, let tunnel else { return }
 
         if wasConnected {
+            guard await verifySubscriptionForConnection() else { return }
             // TunnelManager.selectRegion is idempotent + handles the
             // disconnect+reconnect itself when the region changes (it
             // detects the diff against its own currently-active region).
@@ -243,6 +311,7 @@ final class ConnectionViewModel: ObservableObject {
     /// if the underlying NEVPNManager call rejects (e.g. session already
     /// in mid-teardown), but we treat that as success from the UI's POV.
     func disconnect() async {
+        guard let tunnel else { return }
         guard status.isConnected || status.isBusy else { return }
         do {
             try await tunnel.disconnect()
@@ -260,6 +329,7 @@ final class ConnectionViewModel: ObservableObject {
     /// popover header. No-ops while connected (we'd just get the
     /// tunnel endpoint back).
     func refreshPublicIP() async {
+        guard let tunnel else { return }
         await tunnel.refreshPublicIPIfNotConnected()
     }
 }

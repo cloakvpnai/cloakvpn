@@ -108,6 +108,9 @@ final class TunnelManager: ObservableObject {
     /// device limit/count, paid-through date. nil until the first
     /// fetchAccount lands.
     @Published private(set) var accountStatus: AccountStatus?
+    @Published private(set) var accountStatusError: String?
+    @Published private(set) var accountRefreshBusy = false
+    @Published private(set) var accountStatusVerifiedAt: Date?
 
     /// True while a sign-in (account-number validation) is in flight.
     @Published private(set) var signInBusy: Bool = false
@@ -182,6 +185,13 @@ final class TunnelManager: ObservableObject {
     private static let ne_wedgeRecoveryErrorDomain = "ai.cloakvpn.CloakTunnel"
     private static let ne_wedgeRecoveryErrorCode = -1001
 
+    // Each host must select its own embedded extension when saving VPN preferences.
+    #if os(macOS)
+    private static let providerBundleIdentifier = "ai.latticevpn.macos.tunnel"
+    #else
+    private static let providerBundleIdentifier = "ai.cloakvpn.CloakVPN.CloakTunnel"
+    #endif
+
     init() {
         // Forward derived PSKs into the NE.
         rosenpass.onPSKDerived = { [weak self] psk in
@@ -253,6 +263,8 @@ final class TunnelManager: ObservableObject {
             try? AppGroupKeyStore.saveAccountNumber(formatted)
             accountNumber = formatted
             accountStatus = status
+            accountStatusError = nil
+            accountStatusVerifiedAt = Date()
             accountNeedsReentry = false
             SubscriptionInfo.recordTier(status.tier)
             return nil
@@ -263,24 +275,34 @@ final class TunnelManager: ObservableObject {
         }
     }
 
-    /// Re-fetch subscription state for the stored account number. Silent
-    /// — failures just leave the previous `accountStatus` in place.
-    func refreshAccountStatus() async {
-        guard let number = accountNumber, !number.isEmpty else { return }
+    /// Re-fetch status without presenting stale data as a verified result.
+    /// Mac validation disables recovery so this GET cannot mint a new credential.
+    func refreshAccountStatus(allowRecovery: Bool = true) async {
+        guard let number = accountNumber, !number.isEmpty, !accountRefreshBusy else { return }
+        accountRefreshBusy = true
+        accountStatusError = nil
+        defer { accountRefreshBusy = false }
         do {
             let status = try await accountClient.fetchAccount(accountNumber: number)
+            guard accountNumber == number else { return }
             accountStatus = status
+            accountStatusVerifiedAt = Date()
             SubscriptionInfo.recordTier(status.tier)
         } catch AccountError.unauthorized(let serverKeepsPreviousNumbers) {
-            // The stored number is dead (e.g. replaced by a restore on another
-            // device under the old server behavior). Heal it now, before the
-            // customer taps a region and hits the error. recover… refreshes
-            // accountStatus itself on success. A concurrent recovery may have
-            // already swapped the number: then there is nothing to do.
-            guard serverKeepsPreviousNumbers, accountNumber == number else { return }
-            _ = await recoverAccountNumberFromAppStore()
+            guard accountNumber == number else { return }
+            accountStatusVerifiedAt = nil
+            accountStatusError = AccountError.unauthorized(serverKeepsPreviousNumbers: serverKeepsPreviousNumbers).userMessage
+            if allowRecovery && serverKeepsPreviousNumbers {
+                _ = await recoverAccountNumberFromAppStore()
+            }
+        } catch let error as AccountError {
+            guard accountNumber == number else { return }
+            accountStatusVerifiedAt = nil
+            accountStatusError = error.userMessage
         } catch {
-            // Network etc.: keep the previous accountStatus.
+            guard accountNumber == number else { return }
+            accountStatusVerifiedAt = nil
+            accountStatusError = "Couldn't verify your subscription. Please refresh and try again."
         }
     }
 
@@ -345,9 +367,18 @@ final class TunnelManager: ObservableObject {
         accountNumber = formatted
         accountNeedsReentry = false
         debugLog("accountRecovery: adopted a recovered account number")
-        if let status = try? await accountClient.fetchAccount(accountNumber: formatted) {
+        do {
+            let status = try await accountClient.fetchAccount(accountNumber: formatted)
             accountStatus = status
+            accountStatusError = nil
+            accountStatusVerifiedAt = Date()
             SubscriptionInfo.recordTier(status.tier)
+        } catch let error as AccountError {
+            accountStatusVerifiedAt = nil
+            accountStatusError = error.userMessage
+        } catch {
+            accountStatusVerifiedAt = nil
+            accountStatusError = "Couldn't verify your subscription. Please refresh and try again."
         }
         return formatted
     }
@@ -362,6 +393,8 @@ final class TunnelManager: ObservableObject {
         AppGroupKeyStore.clearAccountNumber()
         accountNumber = nil
         accountStatus = nil
+        accountStatusError = nil
+        accountStatusVerifiedAt = nil
         accountNeedsReentry = false
         // Per-region provisioned configs were tied to the old account —
         // clear them so a future sign-in re-provisions cleanly.
@@ -650,7 +683,9 @@ final class TunnelManager: ObservableObject {
     func load() async {
         do {
             let managers = try await NETunnelProviderManager.loadAllFromPreferences()
-            manager = managers.first
+            manager = managers.first {
+                ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == Self.providerBundleIdentifier
+            }
             if let m = manager {
                 // Restore config BEFORE updateStatus so the .connected handler
                 // can start the PQC status poller. Without this ordering, a cold
@@ -761,7 +796,7 @@ final class TunnelManager: ObservableObject {
         // Bundle ID must match the real CloakTunnel target — wrong here
         // and iOS would later need to revoke + re-prompt when we update
         // to the correct one.
-        proto.providerBundleIdentifier = "ai.cloakvpn.CloakVPN.CloakTunnel"
+        proto.providerBundleIdentifier = Self.providerBundleIdentifier
         // Placeholder server address. Real value gets set in importConfig
         // when user picks a region. iOS doesn't validate this until
         // startVPNTunnel() is called, which we never do on the placeholder
@@ -856,7 +891,7 @@ final class TunnelManager: ObservableObject {
         // transitioning to Connecting then snapping back to Disconnected
         // with no logs), which is one of the most painful failure modes
         // in NE-land — there's no error surfaced to the host app.
-        proto.providerBundleIdentifier = "ai.cloakvpn.CloakVPN.CloakTunnel"
+        proto.providerBundleIdentifier = Self.providerBundleIdentifier
         proto.serverAddress = parsed.endpoint
         // .asDictionary deliberately excludes the three big Rosenpass keys
         // — see ConfigParser.swift. They're already on disk in the App
@@ -1098,7 +1133,7 @@ final class TunnelManager: ObservableObject {
         // since we already have a CloakConfig in self.config.
         let manager = NETunnelProviderManager()
         let proto = NETunnelProviderProtocol()
-        proto.providerBundleIdentifier = "ai.cloakvpn.CloakVPN.CloakTunnel"
+        proto.providerBundleIdentifier = Self.providerBundleIdentifier
         proto.serverAddress = cfg.endpoint
         proto.providerConfiguration = cfg.asDictionary
         proto.passwordReference = nil

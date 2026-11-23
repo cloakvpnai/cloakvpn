@@ -18,6 +18,7 @@
 		58F5AD73B8542CC0D18FEC8E /* TunnelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D644E46B01404B2CEB8C71A7 /* TunnelManager.swift */; };
 		59E4D3CD18A7AEABF5D20141 /* LatticeMacTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8927E4ACEA21E973CD56CE9E /* LatticeMacTunnelProvider.swift */; };
 		63DECF939F2C8716FFF1465E /* RosenpassBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F5AC903F93485FEF3A202DC /* RosenpassBridge.swift */; };
+		7CAF4DEC3DDD1D5CC6821B63 /* StoreManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE382357D5C5383A99245BC /* StoreManager.swift */; };
 		80D10B1850912C76A48B0F1E /* SubscriptionInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 248EA2AACC0AF36FA694C8FE /* SubscriptionInfo.swift */; };
 		84700939DE8F4738607EA2DA /* ConfigParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A104B36A4CB5B6AAB224E961 /* ConfigParser.swift */; };
 		8F5AF229D25A1F22ADA73A6B /* rosenpassffi.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC9FBB5322F6F153C7A6F6CC /* rosenpassffi.swift */; };
@@ -25,8 +26,8 @@
 		A848AFC600E98731ECADE270 /* ConnectionViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 588EB77FE56779DD2E458442 /* ConnectionViewModel.swift */; };
 		AF099372ED2C6A41B4CD3A5D /* LatticeMacTunnel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C70211E508CDEF32A95D730E /* LatticeMacTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B1AB44BC2480110F46EC8765 /* WireGuardKit in Frameworks */ = {isa = PBXBuildFile; productRef = AE77F3F852E2699E6B1ECF04 /* WireGuardKit */; };
-		B50EE3D9484F6E28794BA345 /* CloakAuthClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D66B6AF4D4684063FE674FA /* CloakAuthClient.swift */; };
 		B98EA2B1AFF3B0E29256B127 /* LatticeMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8127F371BCD2324A33A6E3F /* LatticeMacApp.swift */; };
+		BD7E11B34B2390845C974194 /* LatticeAccountClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A76637DAF36D4A08A21FEB /* LatticeAccountClient.swift */; };
 		C37A889191C3205FB7469E68 /* AppGroupKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2B61018460812E8825BC010 /* AppGroupKeyStore.swift */; };
 		CA56723BB3DCB0085A2F5EC8 /* ConnectionPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F16C55A4580D4F594F8FC03 /* ConnectionPopoverView.swift */; };
 		CBC890E0A4F62154200B3DCD /* Region.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53012357CF1AF36AA615A567 /* Region.swift */; };
@@ -34,6 +35,7 @@
 		D34EFC80DEA3A7E7D79B3B8D /* ConfigParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A104B36A4CB5B6AAB224E961 /* ConfigParser.swift */; };
 		D94517150145F45AE2CE1766 /* rosenpassffiFFI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BDDC416DE1D696A237620B9C /* rosenpassffiFFI.framework */; };
 		DC0C893A230AC7B789DAFFE9 /* RosenpassDriver.swift in Sources */ = {isa = PBXBuildFile; fileRef = B88AC785AFB580AC798C734C /* RosenpassDriver.swift */; };
+		EAFFFD6133D38C2D7A905A0D /* LatticeAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AAC0F6409163575246BDDF9 /* LatticeAPI.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -74,12 +76,14 @@
 /* Begin PBXFileReference section */
 		0CF941E9EA2FA5B0FE324BFE /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		1F16C55A4580D4F594F8FC03 /* ConnectionPopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionPopoverView.swift; sourceTree = "<group>"; };
+		23A76637DAF36D4A08A21FEB /* LatticeAccountClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticeAccountClient.swift; sourceTree = "<group>"; };
 		248EA2AACC0AF36FA694C8FE /* SubscriptionInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionInfo.swift; sourceTree = "<group>"; };
+		2AAC0F6409163575246BDDF9 /* LatticeAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticeAPI.swift; sourceTree = "<group>"; };
+		2CE382357D5C5383A99245BC /* StoreManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreManager.swift; sourceTree = "<group>"; };
 		4900BA82D6EBAED828485DDA /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		53012357CF1AF36AA615A567 /* Region.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Region.swift; sourceTree = "<group>"; };
 		588EB77FE56779DD2E458442 /* ConnectionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionViewModel.swift; sourceTree = "<group>"; };
 		5F5AC903F93485FEF3A202DC /* RosenpassBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosenpassBridge.swift; sourceTree = "<group>"; };
-		6D66B6AF4D4684063FE674FA /* CloakAuthClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloakAuthClient.swift; sourceTree = "<group>"; };
 		8927E4ACEA21E973CD56CE9E /* LatticeMacTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticeMacTunnelProvider.swift; sourceTree = "<group>"; };
 		A104B36A4CB5B6AAB224E961 /* ConfigParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigParser.swift; sourceTree = "<group>"; };
 		A891D2E5644988BC3B2347F3 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
@@ -90,7 +94,6 @@
 		C70211E508CDEF32A95D730E /* LatticeMacTunnel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LatticeMacTunnel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC9FBB5322F6F153C7A6F6CC /* rosenpassffi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = rosenpassffi.swift; sourceTree = "<group>"; };
 		D644E46B01404B2CEB8C71A7 /* TunnelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelManager.swift; sourceTree = "<group>"; };
-		E4EC78ABF23F8C1F80FE35EB /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
 		E9B7BFEB82A2EC83CE1EB469 /* LatticeMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LatticeMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F2B61018460812E8825BC010 /* AppGroupKeyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroupKeyStore.swift; sourceTree = "<group>"; };
 		F3C0F849BCC964CB369C2C52 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -203,12 +206,13 @@
 			isa = PBXGroup;
 			children = (
 				F2B61018460812E8825BC010 /* AppGroupKeyStore.swift */,
-				6D66B6AF4D4684063FE674FA /* CloakAuthClient.swift */,
 				A104B36A4CB5B6AAB224E961 /* ConfigParser.swift */,
+				23A76637DAF36D4A08A21FEB /* LatticeAccountClient.swift */,
+				2AAC0F6409163575246BDDF9 /* LatticeAPI.swift */,
 				53012357CF1AF36AA615A567 /* Region.swift */,
 				5F5AC903F93485FEF3A202DC /* RosenpassBridge.swift */,
 				CC9FBB5322F6F153C7A6F6CC /* rosenpassffi.swift */,
-				E4EC78ABF23F8C1F80FE35EB /* Secrets.xcconfig */,
+				2CE382357D5C5383A99245BC /* StoreManager.swift */,
 				248EA2AACC0AF36FA694C8FE /* SubscriptionInfo.swift */,
 				D644E46B01404B2CEB8C71A7 /* TunnelManager.swift */,
 			);
@@ -288,10 +292,10 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					399998A5F0AD1F59A9639B1B = {
-						ProvisioningStyle = Automatic;
+						DevelopmentTeam = 5HYY2YP2G9;
 					};
 					EFFB998CEE24A0FEF371E615 = {
-						ProvisioningStyle = Automatic;
+						DevelopmentTeam = 5HYY2YP2G9;
 					};
 				};
 			};
@@ -347,16 +351,18 @@
 			files = (
 				20AA99BB72332FFD78A8B74A /* AppDelegate.swift in Sources */,
 				19BF97C9AC9B5B02D7D6D054 /* AppGroupKeyStore.swift in Sources */,
-				B50EE3D9484F6E28794BA345 /* CloakAuthClient.swift in Sources */,
 				D34EFC80DEA3A7E7D79B3B8D /* ConfigParser.swift in Sources */,
 				CA56723BB3DCB0085A2F5EC8 /* ConnectionPopoverView.swift in Sources */,
 				A848AFC600E98731ECADE270 /* ConnectionViewModel.swift in Sources */,
+				EAFFFD6133D38C2D7A905A0D /* LatticeAPI.swift in Sources */,
+				BD7E11B34B2390845C974194 /* LatticeAccountClient.swift in Sources */,
 				B98EA2B1AFF3B0E29256B127 /* LatticeMacApp.swift in Sources */,
 				06A8D73A5E1017556ACBD1A5 /* MenuBarController.swift in Sources */,
 				4574E08ADCC960CE3490CFD8 /* Region.swift in Sources */,
 				63DECF939F2C8716FFF1465E /* RosenpassBridge.swift in Sources */,
 				D198FCCAF2CBFB76EB563E2F /* SettingsView.swift in Sources */,
 				193371A69A8F22F5FE2D22C3 /* StatusItemIcon.swift in Sources */,
+				7CAF4DEC3DDD1D5CC6821B63 /* StoreManager.swift in Sources */,
 				80D10B1850912C76A48B0F1E /* SubscriptionInfo.swift in Sources */,
 				58F5AD73B8542CC0D18FEC8E /* TunnelManager.swift in Sources */,
 				2491166337B2E2C24951B1B1 /* rosenpassffi.swift in Sources */,
@@ -396,7 +402,6 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -418,7 +423,6 @@
 		};
 		1F119A203A66828AFBDE358D /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = E4EC78ABF23F8C1F80FE35EB /* Secrets.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -452,7 +456,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = S6MWM954AD;
+				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -483,7 +487,6 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -506,7 +509,6 @@
 		};
 		5E0AE23E9225D8CBAEAB66D3 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = E4EC78ABF23F8C1F80FE35EB /* Secrets.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -540,7 +542,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = S6MWM954AD;
+				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -576,10 +578,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = LatticeMac/Resources/LatticeMac.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -594,13 +596,13 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos;
 				PRODUCT_NAME = LatticeMac;
+				PROVISIONING_PROFILE_SPECIFIER = "Lattice Mac Development";
 				SDKROOT = macosx;
 			};
 			name = Debug;
 		};
 		A4F49EF768621E441A1D1FB4 /* Release-DirectDownload */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = E4EC78ABF23F8C1F80FE35EB /* Secrets.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -634,7 +636,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = S6MWM954AD;
+				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -665,7 +667,6 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -687,7 +688,6 @@
 		};
 		BFEF8CA99F2770588044E572 /* Release-AppStore */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = E4EC78ABF23F8C1F80FE35EB /* Secrets.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -721,7 +721,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = S6MWM954AD;
+				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -753,7 +753,6 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -781,7 +780,6 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -807,7 +805,6 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -832,10 +829,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = LatticeMacTunnel/LatticeMacTunnel.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 5HYY2YP2G9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -851,6 +848,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos.tunnel;
 				PRODUCT_NAME = LatticeMacTunnel;
 				PRODUCT_TYPE = "com.apple.product-type.app-extension";
+				PROVISIONING_PROFILE_SPECIFIER = "Lattice Mac Tunnel Development";
 				SDKROOT = macosx;
 			};
 			name = Debug;

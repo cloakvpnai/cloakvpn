@@ -18,6 +18,7 @@
 import SwiftUI
 
 struct ConnectionPopoverView: View {
+    var showPreferences: () -> Void = {}
     @EnvironmentObject private var connection: ConnectionViewModel
     @State private var showingRegionPicker = false
 
@@ -40,24 +41,25 @@ struct ConnectionPopoverView: View {
         .padding(.top, 14)
         .padding(.bottom, 12)
         .background(Color(NSColor.windowBackgroundColor))
+        .alert("Lattice VPN", isPresented: Binding(
+            get: { connection.lastError != nil },
+            set: { if !$0 { connection.clearError() } }
+        )) {
+            Button("OK") { connection.clearError() }
+        } message: {
+            Text(connection.lastError ?? "")
+        }
     }
 
     // MARK: - Sections
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image("MenuBarLogo")    // small Lattice logo in Assets.xcassets, falls back to symbol below
+            Image(systemName: "shield.lefthalf.filled")
                 .resizable()
                 .renderingMode(.template)
                 .foregroundStyle(.tint)
                 .frame(width: 22, height: 22)
-                .background(
-                    // Fallback rendering when the asset isn't present yet
-                    Image(systemName: "shield.lefthalf.filled")
-                        .resizable()
-                        .scaledToFit()
-                        .foregroundStyle(.tint)
-                )
             VStack(alignment: .leading, spacing: 0) {
                 Text("Lattice VPN")
                     .font(.system(size: 14, weight: .semibold))
@@ -173,9 +175,14 @@ struct ConnectionPopoverView: View {
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }
-            ForEach(connection.availableRegions) { region in
-                regionRow(region)
+            ScrollView {
+                VStack(spacing: 6) {
+                    ForEach(connection.availableRegions) { region in
+                        regionRow(region)
+                    }
+                }
             }
+            .frame(maxHeight: 170)
         }
     }
 
@@ -256,11 +263,7 @@ struct ConnectionPopoverView: View {
     }
 
     private func openPreferences() {
-        if #available(macOS 14.0, *) {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        } else {
-            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
-        }
+        showPreferences()
         NSApp.activate(ignoringOtherApps: true)
     }
 }

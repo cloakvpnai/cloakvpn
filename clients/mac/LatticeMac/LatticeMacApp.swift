@@ -24,18 +24,20 @@ struct LatticeMacApp: App {
     // item — the `Settings` scene below covers the windowed UI surface.
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    // App-wide connection state. Lives at the App level so the popover
-    // and the Settings window share the same source of truth.
-    @StateObject private var connection = ConnectionViewModel()
-
     var body: some Scene {
         // The Settings scene is what users open via the popover's
         // "Preferences…" button (or ⌘,). SwiftUI auto-creates the window
         // chrome, title bar, and toolbar; we just provide the content.
         Settings {
             SettingsView()
-                .environmentObject(connection)
+                .environmentObject(appDelegate.connection)
                 .frame(minWidth: 560, minHeight: 420)
+        }
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Preferences…") { appDelegate.showLatticeSettings(nil) }
+                    .keyboardShortcut(",", modifiers: .command)
+            }
         }
     }
 }

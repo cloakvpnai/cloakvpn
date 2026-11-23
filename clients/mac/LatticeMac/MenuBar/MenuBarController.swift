@@ -23,13 +23,15 @@ final class MenuBarController: NSObject {
     private let statusItem: NSStatusItem
     private let popover: NSPopover
     private let connection: ConnectionViewModel
+    private let showPreferences: () -> Void
 
     /// Used to detect taps outside the popover so we can dismiss it,
     /// the same way a real Mac menu bar app behaves. Without this, the
     /// popover sticks around when the user clicks elsewhere.
     private var eventMonitor: Any?
 
-    init(connection: ConnectionViewModel) {
+    init(connection: ConnectionViewModel, openPreferences: @escaping () -> Void) {
+        self.showPreferences = openPreferences
         self.connection = connection
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.popover = NSPopover()
@@ -76,7 +78,7 @@ final class MenuBarController: NSObject {
         popover.animates = true
         popover.contentSize = NSSize(width: 360, height: 480)
         popover.contentViewController = NSHostingController(
-            rootView: ConnectionPopoverView()
+            rootView: ConnectionPopoverView(showPreferences: showPreferences)
                 .environmentObject(connection)
                 .frame(width: 360, height: 480)
         )
@@ -144,11 +146,7 @@ final class MenuBarController: NSObject {
     }
 
     @objc private func openPreferences() {
-        if #available(macOS 14.0, *) {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        } else {
-            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
-        }
+        showPreferences()
         NSApp.activate(ignoringOtherApps: true)
     }
 

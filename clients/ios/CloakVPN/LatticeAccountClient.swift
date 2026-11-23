@@ -67,15 +67,52 @@ enum AccountError: LocalizedError {
 
 /// The server's view of a subscription — backs the Account screen and the
 /// sign-in validation.
-struct AccountStatus: Equatable {
+struct AccountStatus: Equatable, Decodable {
     let tier: String
     let deviceLimit: Int
     let deviceCount: Int
     /// RFC3339 instant the subscription is paid through.
     let activeUntil: String
 
-    /// True when the subscription currently entitles the customer.
-    var isActive: Bool { !tier.isEmpty }
+    private enum CodingKeys: String, CodingKey {
+        case tier
+        case deviceLimit = "device_limit"
+        case deviceCount = "device_count"
+        case activeUntil = "active_until"
+    }
+
+    init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: CodingKeys.self)
+        tier = try fields.decode(String.self, forKey: .tier)
+        deviceLimit = try fields.decode(Int.self, forKey: .deviceLimit)
+        deviceCount = try fields.decode(Int.self, forKey: .deviceCount)
+        activeUntil = try fields.decode(String.self, forKey: .activeUntil)
+        guard tier == tier.trimmingCharacters(in: .whitespacesAndNewlines),
+              deviceLimit >= 0, deviceCount >= 0,
+              Self.parseExpiry(activeUntil) != nil,
+              tier.isEmpty ? deviceLimit == 0 : deviceLimit > 0 else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                debugDescription: "Invalid subscription status fields."))
+        }
+    }
+
+    private static func parseExpiry(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: value) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
+    }
+
+    var activeUntilDate: Date? { Self.parseExpiry(activeUntil) }
+
+    func isActive(at date: Date) -> Bool {
+        guard !tier.isEmpty, deviceLimit > 0, let expiry = activeUntilDate else { return false }
+        return expiry > date
+    }
+
+    /// Eligibility requires a complete response and an unexpired entitlement.
+    var isActive: Bool { isActive(at: Date()) }
 }
 
 /// Talks to the central Lattice account API (LatticeAPI.baseURL).
@@ -104,15 +141,13 @@ struct LatticeAccountClient {
         req.setValue(bearer(accountNumber), forHTTPHeaderField: "Authorization")
 
         let body = try await execute(req)
-        guard let obj = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
-            throw AccountError.other("The server sent a response we couldn't read.")
+        do {
+            return try JSONDecoder().decode(AccountStatus.self, from: body)
+        } catch {
+            // Never log response bodies or credentials. Missing/type-invalid fields
+            // are an API error, not evidence of an inactive subscription.
+            throw AccountError.other("Lattice returned incomplete or invalid subscription information. Please refresh and try again.")
         }
-        return AccountStatus(
-            tier: obj["tier"] as? String ?? "",
-            deviceLimit: (obj["device_limit"] as? NSNumber)?.intValue ?? 0,
-            deviceCount: (obj["device_count"] as? NSNumber)?.intValue ?? 0,
-            activeUntil: obj["active_until"] as? String ?? ""
-        )
     }
 
     // MARK: - POST /v1/device
