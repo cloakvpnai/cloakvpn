@@ -115,7 +115,7 @@ fun SettingsScreen(vm: LatticeViewModel) {
             // ---- Security ---------------------------------------------------
             SectionHeader("Security")
             SettingsCard {
-                InfoItem(label = "Encryption", value = "Rosenpass (post-quantum)")
+                InfoItem(label = "Encryption", value = "WireGuard + ML-KEM-768")
                 RowDivider()
                 InfoItem(label = "Key exchange status", value = rosenpassLabel(rosenpass))
                 RowDivider()

@@ -354,6 +354,29 @@ class TunnelRepository private constructor(private val appCtx: Context) {
      * root cause #2). The per-server persistence above is only valid for
      * the LIFETIME OF ONE REGISTRATION; a re-provision invalidates it.
      */
+    /**
+     * Record the preshared key that a fresh ML-KEM-768 provision just
+     * installed on [serverPublicKey]. It replaces whatever was persisted for
+     * that server, and becomes the live key if the active config points
+     * there, so the next connect presents exactly what the server holds.
+     */
+    fun storeProvisionedPsk(serverPublicKey: String, psk: ByteArray) {
+        require(psk.size == 32) { "PresharedKey must be 32 bytes, got ${psk.size}" }
+        persistPsk(serverPublicKey, psk)
+        if (_config.value?.peerPublicKey == serverPublicKey) {
+            currentPsk = psk
+        }
+    }
+
+    /**
+     * True once the live tunnel has completed at least one WireGuard
+     * handshake. The backend reporting UP only means the interface exists.
+     */
+    fun hasCompletedHandshake(): Boolean = runCatching {
+        val stats = backend.getStatistics(tunnel)
+        stats.peers().any { (stats.peer(it)?.latestHandshakeEpochMillis() ?: 0L) > 0L }
+    }.getOrDefault(false)
+
     fun clearPersistedPsk(serverPublicKey: String) {
         appCtx.getSharedPreferences("lattice", Context.MODE_PRIVATE)
             .edit()

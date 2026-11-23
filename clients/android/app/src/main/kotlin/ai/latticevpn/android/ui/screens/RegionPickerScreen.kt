@@ -63,7 +63,7 @@ fun RegionPickerScreen(vm: LatticeViewModel) {
         ) {
             item {
                 Text(
-                    text = "All locations run the same post-quantum (Rosenpass) " +
+                    text = "All locations run the same post-quantum (ML-KEM-768) " +
                         "key exchange. Pick the one closest to you for the best speed.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,

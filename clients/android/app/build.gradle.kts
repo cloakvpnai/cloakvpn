@@ -32,8 +32,8 @@ android {
         applicationId = "ai.latticevpn.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.0.4"
+        versionCode = 7
+        versionName = "1.1.0"
 
         ndk {
             // Restrict to the ABIs we actually ship rosenpass .so for.
@@ -98,6 +98,11 @@ android {
 dependencies {
     // WireGuard — the official Android library from the wireguard-android repo.
     implementation("com.wireguard.android:tunnel:1.0.20230706")
+
+    // ML-KEM-768 (FIPS 203) for the post-quantum WireGuard preshared key.
+    // Only the lightweight API is used (no JCA provider is registered); R8
+    // strips the rest of the library from release builds.
+    implementation("org.bouncycastle:bcprov-jdk18on:1.80")
 
     // Material Components — provides the XML application theme referenced
     // by AndroidManifest.xml (Theme.Material3.*). The Compose UI uses

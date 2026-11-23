@@ -71,6 +71,7 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     val regionSelectionInProgress: StateFlow<Boolean> get() = tm.regionSelectionInProgress
     val lastRegionError: StateFlow<String?> get() = tm.lastRegionError
     val rosenpassStatus: StateFlow<RosenpassStatus> get() = tm.rosenpassStatus
+    val handshakeVerified: StateFlow<Boolean> get() = tm.handshakeVerified
     val localRosenpassPublicKeyB64: StateFlow<String?> get() = tm.localRosenpassPublicKeyB64
 
     // ---- Public IP -------------------------------------------------------
@@ -162,7 +163,12 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun connect() = tm.connect()
+    fun connect() {
+        viewModelScope.launch {
+            tm.upgradeLegacyConfigIfNeeded()
+            tm.connect()
+        }
+    }
 
     fun disconnect() = tm.disconnect()
 

@@ -47,6 +47,7 @@ fun HomeScreen(
     val config by vm.tunnelConfig.collectAsState()
     val region by vm.selectedRegion.collectAsState()
     val rosenpass by vm.rosenpassStatus.collectAsState()
+    val handshakeVerified by vm.handshakeVerified.collectAsState()
     val ipState by vm.publicIp.collectAsState()
     val realIp by vm.realIp.collectAsState()
 
@@ -116,7 +117,7 @@ fun HomeScreen(
                 )
 
                 Spacer(Modifier.height(14.dp))
-                PqcChip(state = state, rosenpass = rosenpass)
+                PqcChip(state = state, rosenpass = rosenpass, handshakeVerified = handshakeVerified)
 
                 Spacer(Modifier.height(22.dp))
 
@@ -140,8 +141,9 @@ fun HomeScreen(
 
 /** The post-quantum status pill shown beneath the connect control. */
 @Composable
-private fun PqcChip(state: TunnelState, rosenpass: RosenpassStatus) {
-    val active = state == TunnelState.CONNECTED && rosenpass is RosenpassStatus.Established
+private fun PqcChip(state: TunnelState, rosenpass: RosenpassStatus, handshakeVerified: Boolean) {
+    val active = state == TunnelState.CONNECTED &&
+        (rosenpass is RosenpassStatus.Established || (rosenpass is RosenpassStatus.Idle && handshakeVerified))
     val dotColor =
         if (active) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.onSurfaceVariant
@@ -158,7 +160,7 @@ private fun PqcChip(state: TunnelState, rosenpass: RosenpassStatus) {
             Box(Modifier.size(8.dp).background(dotColor, CircleShape))
             Spacer(Modifier.width(8.dp))
             Text(
-                text = pqcLine(state, rosenpass),
+                text = pqcLine(state, rosenpass, handshakeVerified),
                 color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 13.sp,
             )
@@ -374,8 +376,15 @@ private fun statusSubtitle(
         if (!hasConfig) "Choose a location to get started" else "Tap the shield to connect"
 }
 
-private fun pqcLine(state: TunnelState, rosenpass: RosenpassStatus): String = when {
-    state != TunnelState.CONNECTED -> "Post-quantum encryption ready"
+private fun pqcLine(
+    state: TunnelState,
+    rosenpass: RosenpassStatus,
+    handshakeVerified: Boolean,
+): String = when {
+    state != TunnelState.CONNECTED -> "ML-KEM-768 post-quantum key exchange"
+    // Rosenpass idle while connected means the ML-KEM-768 path (no rotator).
+    rosenpass is RosenpassStatus.Idle && handshakeVerified -> "ML-KEM-768 key exchange active"
+    rosenpass is RosenpassStatus.Idle -> "ML-KEM-768: verifying tunnel…"
     rosenpass is RosenpassStatus.Established ->
         "Post-quantum active · ${rosenpass.rotations} key rotations"
     rosenpass is RosenpassStatus.Handshaking -> "Post-quantum handshake…"

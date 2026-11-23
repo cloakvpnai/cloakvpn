@@ -82,6 +82,10 @@ data class ProvisionedConfig(
     val rosenpassListen: String,
     val rosenpassClientPK: String,
     val assignedIP: String,
+    /** "ML-KEM-768" when the region derived the PSK from an ML-KEM-768 exchange. */
+    val pqKem: String = "",
+    /** Base64 ML-KEM-768 ciphertext for the device to decapsulate. */
+    val mlkem768Ciphertext: String = "",
 )
 
 /** Result of a successful POST /v1/device. */
@@ -214,6 +218,31 @@ class AccountClient(private val context: Context) {
     }
 
     /**
+     * POST /v1/device with an ML-KEM-768 encapsulation key instead of a
+     * Rosenpass key. The region encapsulates against [mlkem768PubkeyB64],
+     * installs the derived key as the WireGuard preshared key, and returns
+     * the ciphertext in [ProvisionedConfig.mlkem768Ciphertext].
+     */
+    suspend fun provisionDeviceMlKem768(
+        accountNumber: String,
+        wgPubkeyB64: String,
+        mlkem768PubkeyB64: String,
+        region: String,
+    ): DeviceProvision = withContext(Dispatchers.IO) {
+        val payload = JSONObject()
+            .put("wg_pubkey", wgPubkeyB64)
+            .put("mlkem768_pubkey", mlkem768PubkeyB64)
+            .put("region", region)
+            .toString()
+        val request = Request.Builder()
+            .url("${LatticeApi.BASE_URL}/v1/device")
+            .header("Authorization", bearer(accountNumber))
+            .post(payload.toRequestBody(JSON))
+            .build()
+        parseProvision(execute(request))
+    }
+
+    /**
      * DELETE /v1/device?id=… — release a device slot, so a customer at
      * their device limit can free one from the Account screen.
      */
@@ -309,6 +338,8 @@ class AccountClient(private val context: Context) {
                 rosenpassListen = c.optString("RosenpassListen"),
                 rosenpassClientPK = c.optString("RosenpassClientPK"),
                 assignedIP = c.optString("AssignedIP"),
+                pqKem = c.optString("PQKEM"),
+                mlkem768Ciphertext = c.optString("MLKEM768Ciphertext"),
             ),
             tier = j.optString("tier"),
             deviceId = device?.optLong("ID") ?: 0L,

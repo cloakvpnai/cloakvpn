@@ -59,7 +59,7 @@ fun LicensesScreen(vm: LatticeViewModel) {
                 Log.e("LicensesScreen", "Failed to load ThirdPartyNotices.txt: ${it.message}")
             }.getOrDefault(
                 "Lattice VPN is built on open-source software including " +
-                    "WireGuard, Rosenpass, and liboqs (Open Quantum Safe). " +
+                    "WireGuard, Bouncy Castle (ML-KEM-768), Rosenpass, and liboqs. " +
                     "Full license texts could not be loaded; see latticevpn.ai.",
             )
         }

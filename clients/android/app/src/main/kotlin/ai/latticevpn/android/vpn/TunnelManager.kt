@@ -143,12 +143,50 @@ class TunnelManager private constructor(appCtx: Context) {
         scope.launch {
             repository.state.collect { state ->
                 when (state) {
-                    TunnelState.CONNECTED -> startRotatorIfNeeded()
-                    TunnelState.DISCONNECTED, TunnelState.ERROR -> stopRotator()
+                    TunnelState.CONNECTED -> {
+                        startRotatorIfNeeded()
+                        startHandshakeWatch()
+                    }
+                    TunnelState.DISCONNECTED, TunnelState.ERROR -> {
+                        stopRotator()
+                        stopHandshakeWatch()
+                    }
                     TunnelState.CONNECTING, TunnelState.DISCONNECTING -> { /* transient */ }
                 }
             }
         }
+    }
+
+    // ---- Handshake verification -----------------------------------------
+
+    private val _handshakeVerified = MutableStateFlow(false)
+    /**
+     * True once the live tunnel has completed a WireGuard handshake. With an
+     * ML-KEM-768 preshared key, a completed handshake is the proof that both
+     * ends derived the same key.
+     */
+    val handshakeVerified: StateFlow<Boolean> = _handshakeVerified.asStateFlow()
+    private var handshakeJob: Job? = null
+
+    private fun startHandshakeWatch() {
+        handshakeJob?.cancel()
+        _handshakeVerified.value = false
+        handshakeJob = scope.launch {
+            while (repository.state.value == TunnelState.CONNECTED) {
+                val done = withContext(Dispatchers.IO) { repository.hasCompletedHandshake() }
+                if (done) {
+                    _handshakeVerified.value = true
+                    return@launch
+                }
+                delay(1_000)
+            }
+        }
+    }
+
+    private fun stopHandshakeWatch() {
+        handshakeJob?.cancel()
+        handshakeJob = null
+        _handshakeVerified.value = false
     }
 
     // ---- Identity -------------------------------------------------------
@@ -219,8 +257,16 @@ class TunnelManager private constructor(appCtx: Context) {
             }
             val switching = _selectedRegion.value?.id != region.id
 
-            // Fast path — region already provisioned this install.
-            val cached = loadCachedConfig(region.id)
+            // Fast path — region already provisioned this install. A config
+            // cached by a pre-ML-KEM-768 build is a Rosenpass config; reusing
+            // it would skip the exchange, so drop it and provision again.
+            var cached = loadCachedConfig(region.id)
+            var migratedLegacy = false
+            if (cached != null && cached.pqEnabled) {
+                clearCachedConfig(region.id)
+                cached = null
+                migratedLegacy = true
+            }
             if (cached != null) {
                 try {
                     importConfig(cached)
@@ -244,7 +290,10 @@ class TunnelManager private constructor(appCtx: Context) {
             // region's cached config is now stale — drop them all.
             clearOtherCachedConfigs(region.id)
             saveCachedConfig(region.id, cfg)
-            reconnectIfWasActive(wasActive, switching)
+            // Every ML-KEM-768 provision installs a NEW preshared key on the
+            // server, so a tunnel still up on the previous config for this
+            // same region must be bounced or its next handshake fails.
+            reconnectIfWasActive(wasActive, switching || migratedLegacy)
         } catch (e: Exception) {
             val msg = e.message ?: e.javaClass.simpleName
             Log.e(TAG, "selectRegion(${region.id}) failed: $msg")
@@ -267,6 +316,10 @@ class TunnelManager private constructor(appCtx: Context) {
             ?: LatticeRegion.byId("us-west-1")
             ?: LatticeRegion.all.firstOrNull()
             ?: return
+        // A config is already imported: the customer can connect as is.
+        // Provisioning now would install a new preshared key on the server
+        // underneath that config.
+        if (repository.config.value != null) return
         if (loadCachedConfig(target.id) != null) return
         try {
             val cfg = provisionConfig(target.id)
@@ -288,26 +341,45 @@ class TunnelManager private constructor(appCtx: Context) {
     private suspend fun provisionConfig(regionId: String): LatticeConfig {
         val accountNumber = accountStore.accountNumber()
             ?: throw IllegalStateException("Sign in with your account number first.")
-        ensureLocalKeypair()
         ensureLocalWgKeypair()
-        val keys = withContext(Dispatchers.IO) {
-            keyStore.loadLocalKeypair() to keyStore.loadLocalWgKeypair()
-        }
-        val provision = accountClient.provisionDevice(
+        val wgKeys = withContext(Dispatchers.IO) { keyStore.loadLocalWgKeypair() }
+
+        // ML-KEM-768: a fresh post-quantum key pair for every provision. The
+        // region derives the WireGuard preshared key from it and returns the
+        // ciphertext; no Rosenpass key is sent.
+        val exchange = withContext(Dispatchers.Default) { MlKem768Exchange() }
+        val provision = accountClient.provisionDeviceMlKem768(
             accountNumber = accountNumber,
-            wgPubkeyB64 = keys.second.publicB64,
-            rosenpassPubkeyB64 = keys.first.publicB64,
+            wgPubkeyB64 = wgKeys.publicB64,
+            mlkem768PubkeyB64 = exchange.publicKeyB64,
             region = regionId,
         )
-        val cfg = latticeConfigFrom(provision.config)
-        // A fresh registration means the server-side peer is brand new and
-        // holds NO preshared key — any PSK persisted from an earlier
-        // registration against this server is now poison: baking it into
-        // the tunnel makes the WireGuard handshake permanently fail
-        // (2026-07-01 root cause #2). Clear it here, at provision time, so
-        // the invalidation also covers configs that are cached now and
-        // imported later (prefetch, region switch back).
-        repository.clearPersistedPsk(cfg.peerPublicKey)
+        // Never fall back to a tunnel without the post-quantum key.
+        if (provision.config.pqKem != MlKem768Exchange.PQ_KEM_NAME ||
+            provision.config.mlkem768Ciphertext.isEmpty()
+        ) {
+            throw IllegalStateException(
+                "This region does not support ML-KEM-768 yet. Please choose another region."
+            )
+        }
+        val psk = try {
+            exchange.presharedKey(
+                ciphertextB64 = provision.config.mlkem768Ciphertext,
+                clientWgPublicKeyB64 = wgKeys.publicB64,
+                serverWgPublicKeyB64 = provision.config.peerPublicKey,
+            )
+        } catch (e: Exception) {
+            throw IllegalStateException(
+                "The post-quantum key exchange with Lattice failed. Please try again."
+            )
+        }
+        // pqEnabled marks a Rosenpass config (it starts the PSK rotator). An
+        // ML-KEM-768 config carries its key from the exchange above instead.
+        val cfg = latticeConfigFrom(provision.config).copy(pqEnabled = false)
+        // The server now holds exactly this key for our peer. Persist it at
+        // provision time (replacing any key from an earlier registration) so
+        // it also covers configs cached now and imported later.
+        repository.storeProvisionedPsk(cfg.peerPublicKey, psk)
         return cfg
     }
 
@@ -379,6 +451,21 @@ class TunnelManager private constructor(appCtx: Context) {
 
     /** Bring the tunnel up against the imported config. */
     fun connect() = repository.connect()
+
+    /**
+     * An install upgraded from a Rosenpass build still has a Rosenpass
+     * config imported. Before connecting, replace it with an ML-KEM-768
+     * provision for the same region. If that fails (offline, for example)
+     * the existing config is left in place and still connects.
+     */
+    suspend fun upgradeLegacyConfigIfNeeded() {
+        val cfg = repository.config.value ?: return
+        if (!cfg.pqEnabled) return
+        val region = _selectedRegion.value ?: return
+        if (repository.state.value != TunnelState.DISCONNECTED) return
+        Log.i(TAG, "active config is Rosenpass; re-provisioning ${region.id} with ML-KEM-768")
+        selectRegion(region)
+    }
 
     /** Tear the tunnel down. The Rosenpass rotator stops with it. */
     fun disconnect() = repository.disconnect()
