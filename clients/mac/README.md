@@ -133,7 +133,7 @@ the new team).
 
 ### Mac App Store
 
-1. Product → Archive (with scheme "LatticeMac (App Store)")
+1. Product → Archive (with scheme "LatticeMac-AppStore")
 2. Window → Organizer → archive → Distribute App → App Store Connect
 
 ### Direct Download (Developer ID + notarized DMG)

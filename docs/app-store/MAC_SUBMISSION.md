@@ -40,7 +40,7 @@ Check after: both targets show a valid "Mac App Development" profile and no red 
 
 ## Step 4: archive and upload
 
-Scheme "LatticeMac (App Store)" > Product > Archive > Distribute App > App Store Connect. Then install the processed build from TestFlight on a Mac and repeat the Step 2 checks before submitting for review.
+Scheme "LatticeMac-AppStore" > Product > Archive > Distribute App > App Store Connect. Then install the processed build from TestFlight on a Mac and repeat the Step 2 checks before submitting for review.
 
 ## App Review notes for the macOS version
 

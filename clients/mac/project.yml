@@ -52,6 +52,10 @@ settings:
   base:
     # Existing KryptoKnightz LLC development team.
     DEVELOPMENT_TEAM: 5HYY2YP2G9
+    # Apple silicon only. The bundled Rust framework is arm64-only and the
+    # local Rust toolchain has no x86_64 standard library, so a universal
+    # archive cannot be built. Intel Macs are not supported.
+    ARCHS: arm64
     SWIFT_VERSION: '5.0'
     SWIFT_STRICT_CONCURRENCY: minimal
     ENABLE_USER_SCRIPT_SANDBOXING: 'NO'
@@ -325,7 +329,9 @@ schemes:
     archive:
       config: Release
 
-  LatticeMac (App Store):
+  # No spaces or parentheses in scheme names: the scheme name becomes part of
+  # the archive build path, and the WireGuardKitGo Makefile breaks on both.
+  LatticeMac-AppStore:
     build:
       targets:
         LatticeMac: all
@@ -335,7 +341,7 @@ schemes:
     run:
       config: Release-AppStore
 
-  LatticeMac (Direct Download):
+  LatticeMac-DirectDownload:
     build:
       targets:
         LatticeMac: all
