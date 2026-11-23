@@ -254,15 +254,11 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if known != nil {
-		// Hand the device row to whichever account just authenticated — the
-		// same phone may have switched account numbers.
+		// A public key is not proof of ownership. Cross-account transfers
+		// require a separate authenticated workflow, never implicit reassignment.
 		if known.AccountID != acct.ID {
-			if err := h.db.ReassignDevice(known.ID, acct.ID); err != nil {
-				log.Printf("device reassign: %v", err)
-				http.Error(w, "server", http.StatusInternalServerError)
-				return
-			}
-			known.AccountID = acct.ID
+			http.Error(w, "device ownership conflict", http.StatusConflict)
+			return
 		}
 
 		// Mark the device active so the self-cleaning limit never picks an
