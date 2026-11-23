@@ -15,9 +15,12 @@
 		2491166337B2E2C24951B1B1 /* rosenpassffi.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC9FBB5322F6F153C7A6F6CC /* rosenpassffi.swift */; };
 		433B84630E4A032D06A48F4A /* rosenpassffiFFI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BDDC416DE1D696A237620B9C /* rosenpassffiFFI.framework */; };
 		4574E08ADCC960CE3490CFD8 /* Region.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53012357CF1AF36AA615A567 /* Region.swift */; };
+		576FC7D6A3A28C3D10D10605 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0DE105A1B7C2E33A3BC85485 /* PrivacyInfo.xcprivacy */; };
 		58F5AD73B8542CC0D18FEC8E /* TunnelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D644E46B01404B2CEB8C71A7 /* TunnelManager.swift */; };
 		59E4D3CD18A7AEABF5D20141 /* LatticeMacTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8927E4ACEA21E973CD56CE9E /* LatticeMacTunnelProvider.swift */; };
+		5BBB5A5836B21CED710AC400 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = CCA0020F0B2A8EB30F0B7E29 /* PrivacyInfo.xcprivacy */; };
 		63DECF939F2C8716FFF1465E /* RosenpassBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F5AC903F93485FEF3A202DC /* RosenpassBridge.swift */; };
+		7C15BFD12E672C91FF0F9930 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9718F30ACF02DE97C1304779 /* Assets.xcassets */; };
 		7CAF4DEC3DDD1D5CC6821B63 /* StoreManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE382357D5C5383A99245BC /* StoreManager.swift */; };
 		80D10B1850912C76A48B0F1E /* SubscriptionInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 248EA2AACC0AF36FA694C8FE /* SubscriptionInfo.swift */; };
 		84700939DE8F4738607EA2DA /* ConfigParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A104B36A4CB5B6AAB224E961 /* ConfigParser.swift */; };
@@ -76,6 +79,7 @@
 
 /* Begin PBXFileReference section */
 		0CF941E9EA2FA5B0FE324BFE /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
+		0DE105A1B7C2E33A3BC85485 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		1F16C55A4580D4F594F8FC03 /* ConnectionPopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionPopoverView.swift; sourceTree = "<group>"; };
 		23A76637DAF36D4A08A21FEB /* LatticeAccountClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticeAccountClient.swift; sourceTree = "<group>"; };
 		248EA2AACC0AF36FA694C8FE /* SubscriptionInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionInfo.swift; sourceTree = "<group>"; };
@@ -87,6 +91,7 @@
 		5F5AC903F93485FEF3A202DC /* RosenpassBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosenpassBridge.swift; sourceTree = "<group>"; };
 		85D3071AF77DC39693600E08 /* MLKEM768Exchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLKEM768Exchange.swift; sourceTree = "<group>"; };
 		8927E4ACEA21E973CD56CE9E /* LatticeMacTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticeMacTunnelProvider.swift; sourceTree = "<group>"; };
+		9718F30ACF02DE97C1304779 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A104B36A4CB5B6AAB224E961 /* ConfigParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigParser.swift; sourceTree = "<group>"; };
 		A891D2E5644988BC3B2347F3 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
 		B8127F371BCD2324A33A6E3F /* LatticeMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticeMacApp.swift; sourceTree = "<group>"; };
@@ -95,6 +100,7 @@
 		BF5A9BE1ACE81A2DD9B0E53C /* StatusItemIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemIcon.swift; sourceTree = "<group>"; };
 		C70211E508CDEF32A95D730E /* LatticeMacTunnel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LatticeMacTunnel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC9FBB5322F6F153C7A6F6CC /* rosenpassffi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = rosenpassffi.swift; sourceTree = "<group>"; };
+		CCA0020F0B2A8EB30F0B7E29 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		D644E46B01404B2CEB8C71A7 /* TunnelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelManager.swift; sourceTree = "<group>"; };
 		E9B7BFEB82A2EC83CE1EB469 /* LatticeMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LatticeMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F2B61018460812E8825BC010 /* AppGroupKeyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroupKeyStore.swift; sourceTree = "<group>"; };
@@ -155,6 +161,7 @@
 			isa = PBXGroup;
 			children = (
 				8927E4ACEA21E973CD56CE9E /* LatticeMacTunnelProvider.swift */,
+				CCA0020F0B2A8EB30F0B7E29 /* PrivacyInfo.xcprivacy */,
 			);
 			path = LatticeMacTunnel;
 			sourceTree = "<group>";
@@ -175,7 +182,9 @@
 				67563D01E4EA3F9ACF02F26F /* Settings */,
 				66A1FB1C8FA8E7C5E81FA2FD /* ViewModels */,
 				4900BA82D6EBAED828485DDA /* AppDelegate.swift */,
+				9718F30ACF02DE97C1304779 /* Assets.xcassets */,
 				B8127F371BCD2324A33A6E3F /* LatticeMacApp.swift */,
+				0DE105A1B7C2E33A3BC85485 /* PrivacyInfo.xcprivacy */,
 			);
 			path = LatticeMac;
 			sourceTree = "<group>";
@@ -249,6 +258,7 @@
 			buildConfigurationList = DA4C3A59F7EEA52B55A39820 /* Build configuration list for PBXNativeTarget "LatticeMac" */;
 			buildPhases = (
 				379E518E1268366463A8BE4F /* Sources */,
+				B22D4C7DC5F7848AACE563C4 /* Resources */,
 				DC35961BE665352F491F9F9B /* Frameworks */,
 				CBDDAD6BC21432C7C777E0E0 /* Embed Foundation Extensions */,
 				B74E77A27E0A93BE919CFB70 /* Embed Frameworks */,
@@ -271,6 +281,7 @@
 			buildPhases = (
 				2A0EEC929B7AD5E4E778BFAA /* Build WireGuardKitGo */,
 				8D93AD1090FF82FDA824E181 /* Sources */,
+				D6BB3D60C3A0AF0FF1F90997 /* Resources */,
 				1407012359496427AB60C83C /* Frameworks */,
 			);
 			buildRules = (
@@ -296,9 +307,11 @@
 				TargetAttributes = {
 					399998A5F0AD1F59A9639B1B = {
 						DevelopmentTeam = 5HYY2YP2G9;
+						ProvisioningStyle = Automatic;
 					};
 					EFFB998CEE24A0FEF371E615 = {
 						DevelopmentTeam = 5HYY2YP2G9;
+						ProvisioningStyle = Automatic;
 					};
 				};
 			};
@@ -324,6 +337,26 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		B22D4C7DC5F7848AACE563C4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7C15BFD12E672C91FF0F9930 /* Assets.xcassets in Resources */,
+				576FC7D6A3A28C3D10D10605 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D6BB3D60C3A0AF0FF1F90997 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5BBB5A5836B21CED710AC400 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
 		2A0EEC929B7AD5E4E778BFAA /* Build WireGuardKitGo */ = {
@@ -419,7 +452,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) -DDIRECT_DOWNLOAD_BUILD";
-				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.cloakvpn.CloakVPN;
 				PRODUCT_NAME = LatticeMac;
 				SDKROOT = macosx;
 			};
@@ -504,7 +537,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) -DAPPSTORE_BUILD";
-				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos.tunnel;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.cloakvpn.CloakVPN.CloakTunnel;
 				PRODUCT_NAME = LatticeMacTunnel;
 				PRODUCT_TYPE = "com.apple.product-type.app-extension";
 				SDKROOT = macosx;
@@ -582,8 +615,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = LatticeMac/Resources/LatticeMac.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -598,9 +630,8 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.cloakvpn.CloakVPN;
 				PRODUCT_NAME = LatticeMac;
-				PROVISIONING_PROFILE_SPECIFIER = "Lattice Mac Development";
 				SDKROOT = macosx;
 			};
 			name = Debug;
@@ -683,7 +714,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos.tunnel;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.cloakvpn.CloakVPN.CloakTunnel;
 				PRODUCT_NAME = LatticeMacTunnel;
 				PRODUCT_TYPE = "com.apple.product-type.app-extension";
 				SDKROOT = macosx;
@@ -770,7 +801,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) -DAPPSTORE_BUILD";
-				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.cloakvpn.CloakVPN;
 				PRODUCT_NAME = LatticeMac;
 				SDKROOT = macosx;
 			};
@@ -796,7 +827,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.cloakvpn.CloakVPN;
 				PRODUCT_NAME = LatticeMac;
 				SDKROOT = macosx;
 			};
@@ -822,7 +853,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) -DDIRECT_DOWNLOAD_BUILD";
-				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos.tunnel;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.cloakvpn.CloakVPN.CloakTunnel;
 				PRODUCT_NAME = LatticeMacTunnel;
 				PRODUCT_TYPE = "com.apple.product-type.app-extension";
 				SDKROOT = macosx;
@@ -833,8 +864,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = LatticeMacTunnel/LatticeMacTunnel.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -849,10 +879,9 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos.tunnel;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.cloakvpn.CloakVPN.CloakTunnel;
 				PRODUCT_NAME = LatticeMacTunnel;
 				PRODUCT_TYPE = "com.apple.product-type.app-extension";
-				PROVISIONING_PROFILE_SPECIFIER = "Lattice Mac Tunnel Development";
 				SDKROOT = macosx;
 			};
 			name = Debug;

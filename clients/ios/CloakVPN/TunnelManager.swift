@@ -185,12 +185,8 @@ final class TunnelManager: ObservableObject {
     private static let ne_wedgeRecoveryErrorDomain = "ai.cloakvpn.CloakTunnel"
     private static let ne_wedgeRecoveryErrorCode = -1001
 
-    // Each host must select its own embedded extension when saving VPN preferences.
-    #if os(macOS)
-    private static let providerBundleIdentifier = "ai.latticevpn.macos.tunnel"
-    #else
+    // The packet tunnel extension has the same bundle ID on iOS and macOS.
     private static let providerBundleIdentifier = "ai.cloakvpn.CloakVPN.CloakTunnel"
-    #endif
 
     init() {
         // Forward derived PSKs into the NE.

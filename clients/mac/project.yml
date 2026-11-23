@@ -107,11 +107,6 @@ targets:
         NSHighResolutionCapable: true
         NSNetworkUsageDescription: "Lattice VPN routes your internet traffic through a post-quantum encrypted tunnel."
         NSLocalNetworkUsageDescription: "Lattice VPN may need to detect your local network to apply LAN-bypass rules."
-        # Injected from clients/ios/CloakVPN/Secrets.xcconfig at build
-        # time via the configFiles base. Read at runtime by
-        # CloakRegion.bootstrapKey to authenticate the initial
-        # /auth/exchange call to cloak-api-server before we have a JWT.
-        CLOAK_BOOTSTRAP_KEY: "$(CLOAK_BOOTSTRAP_KEY)"
 
     # ---- Entitlements (FULL contents declared inline) ----------
     entitlements:
@@ -142,7 +137,10 @@ targets:
 
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ai.latticevpn.macos
+        # Same bundle ID as the iOS app: the Mac app is a second platform on the
+        # same App Store record (universal purchase), so one subscription and
+        # the same in-app purchase products cover iPhone and Mac.
+        PRODUCT_BUNDLE_IDENTIFIER: ai.cloakvpn.CloakVPN
         PRODUCT_NAME: LatticeMac
         MARKETING_VERSION: '1.0'
         CURRENT_PROJECT_VERSION: '1'
@@ -153,10 +151,6 @@ targets:
           - $(inherited)
           - "@executable_path/../Frameworks"
       configs:
-        Debug:
-          CODE_SIGN_STYLE: Manual
-          CODE_SIGN_IDENTITY: Apple Development
-          PROVISIONING_PROFILE_SPECIFIER: Lattice Mac Development
         Release-AppStore:
           OTHER_SWIFT_FLAGS: "$(inherited) -DAPPSTORE_BUILD"
         Release-DirectDownload:
@@ -252,7 +246,8 @@ targets:
 
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ai.latticevpn.macos.tunnel
+        # Same extension App ID as iOS (already has Network Extension + App Group).
+        PRODUCT_BUNDLE_IDENTIFIER: ai.cloakvpn.CloakVPN.CloakTunnel
         PRODUCT_NAME: LatticeMacTunnel
         MARKETING_VERSION: '1.0'
         CURRENT_PROJECT_VERSION: '1'
@@ -263,10 +258,6 @@ targets:
           - $(inherited)
           - "@executable_path/../../../../Frameworks"
       configs:
-        Debug:
-          CODE_SIGN_STYLE: Manual
-          CODE_SIGN_IDENTITY: Apple Development
-          PROVISIONING_PROFILE_SPECIFIER: Lattice Mac Tunnel Development
         Release-AppStore:
           OTHER_SWIFT_FLAGS: "$(inherited) -DAPPSTORE_BUILD"
         Release-DirectDownload:
