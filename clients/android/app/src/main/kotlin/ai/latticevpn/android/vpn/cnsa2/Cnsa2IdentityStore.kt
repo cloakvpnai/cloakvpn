@@ -1,13 +1,16 @@
 package ai.latticevpn.android.vpn.cnsa2
 
 import android.content.Context
+import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
 import java.io.File
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
+import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
 
 /**
@@ -72,6 +75,24 @@ class Cnsa2IdentityStore(context: Context) {
         seedFile.delete()
         certificateFile.delete()
         KeyStore.getInstance(PROVIDER).apply { load(null) }.deleteEntry(ALIAS)
+    }
+
+    /** Where the wrapping key lives: "strongbox", "tee", "software" or "unknown". */
+    fun wrappingKeyProtection(): String = try {
+        val key = wrappingKey()
+        val info = SecretKeyFactory.getInstance(key.algorithm, PROVIDER).getKeySpec(key, KeyInfo::class.java) as KeyInfo
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            when (info.securityLevel) {
+                KeyProperties.SECURITY_LEVEL_STRONGBOX -> "strongbox"
+                KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT -> "tee"
+                KeyProperties.SECURITY_LEVEL_SOFTWARE -> "software"
+                else -> "unknown"
+            }
+        } else {
+            @Suppress("DEPRECATION") if (info.isInsideSecureHardware) "tee" else "software"
+        }
+    } catch (_: Exception) {
+        "unknown"
     }
 
     private fun wrappingKey(): SecretKey {

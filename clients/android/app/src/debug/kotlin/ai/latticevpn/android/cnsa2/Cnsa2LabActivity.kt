@@ -32,6 +32,7 @@ class Cnsa2LabActivity : Activity() {
         intent.getStringExtra("enroll")?.let { name ->
             val store = Cnsa2IdentityStore(this)
             File(filesDir, "cnsa2/request.der").writeBytes(store.certificateRequest(name))
+            File(filesDir, "cnsa2/protection.txt").writeText(store.wrappingKeyProtection())
             finish()
             return
         }
