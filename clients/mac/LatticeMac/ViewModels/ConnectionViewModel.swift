@@ -108,7 +108,7 @@ final class ConnectionViewModel: ObservableObject {
         tunnel.$status
             .receive(on: DispatchQueue.main)
             .sink { [weak self] iosStatus in
-                self?.status = ConnectionStatus(iosStatus)
+                self?.handleTunnelStatus(iosStatus)
             }
             .store(in: &cancellables)
 
@@ -133,6 +133,64 @@ final class ConnectionViewModel: ObservableObject {
                 self?.lastError = errMsg
             }
             .store(in: &cancellables)
+    }
+
+    // MARK: - Verified connection state
+
+    /// In-flight handshake verification for the current connection attempt.
+    private var verifyTask: Task<Void, Never>?
+
+    /// NetworkExtension reports "connected" as soon as the tunnel interface
+    /// exists. Because all traffic is forced into the tunnel, a tunnel with no
+    /// handshake means no connectivity and no protection, so "Protected" is
+    /// only shown once a WireGuard handshake has completed.
+    private func handleTunnelStatus(_ iosStatus: TunnelManager.Status) {
+        let mapped = ConnectionStatus(iosStatus)
+        guard mapped == .connected else {
+            verifyTask?.cancel()
+            verifyTask = nil
+            status = mapped
+            if mapped == .disconnected { tunnelIP = nil }
+            return
+        }
+        if status == .connected || verifyTask != nil { return }
+        status = .connecting
+        verifyTask = Task { [weak self] in await self?.verifyTunnelThenReport() }
+    }
+
+    private func verifyTunnelThenReport() async {
+        guard let tunnel else { return }
+        let deadline = Date().addingTimeInterval(15)
+        while Date() < deadline, !Task.isCancelled {
+            if await tunnel.lastHandshakeAge() != nil {
+                guard !Task.isCancelled else { return }
+                verifyTask = nil
+                status = .connected
+                await refreshExitIP()
+                return
+            }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        guard !Task.isCancelled else { return }
+        verifyTask = nil
+        // No handshake: take the tunnel down rather than leave the Mac
+        // offline behind a tunnel that claims to be connected.
+        try? await tunnel.disconnect()
+        let name = selectedRegion?.displayName ?? "this region"
+        lastError = "Couldn't establish a secure connection to \(name), so the VPN was turned off. You are not protected. Try again or choose another region."
+    }
+
+    /// The address the internet sees while the tunnel is up.
+    private func refreshExitIP() async {
+        guard let url = URL(string: "https://api.ipify.org") else { return }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 6
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let ip = String(data: data, encoding: .utf8)?
+                  .trimmingCharacters(in: .whitespacesAndNewlines),
+              !ip.isEmpty, status == .connected else { return }
+        tunnelIP = ip
     }
 
     // MARK: - Boot

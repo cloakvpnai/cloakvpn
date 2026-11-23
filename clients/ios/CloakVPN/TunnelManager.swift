@@ -1072,6 +1072,22 @@ final class TunnelManager: ObservableObject {
         rosenpass.startStatusPolling()
     }
 
+    /// Seconds since the running tunnel last completed a WireGuard handshake,
+    /// or nil if it has not completed one (or the provider can't be asked).
+    /// "Connected" from NetworkExtension only means the interface is up; this
+    /// is the signal that the tunnel can actually carry traffic.
+    func lastHandshakeAge() async -> TimeInterval? {
+        guard let data = try? await Self.sendProviderMessageAsync(Data([0x00]), manager: manager),
+              let text = String(data: data, encoding: .utf8) else { return nil }
+        let key = "last_handshake_time_sec="
+        for line in text.split(separator: "\n") where line.hasPrefix(key) {
+            if let sec = TimeInterval(line.dropFirst(key.count)), sec > 0 {
+                return max(0, Date().timeIntervalSince1970 - sec)
+            }
+        }
+        return nil
+    }
+
     /// Async wrapper around NETunnelProviderSession.sendProviderMessage.
     /// Hops to the MainActor to make the call (NE session methods are
     /// MainActor-bound) and bridges the completion-handler API to async/
