@@ -82,6 +82,12 @@
 			path = CloakTunnel;
 			sourceTree = "<group>";
 		};
+		80C5A20001F0C0DE00A1B2C3 /* LatticeIKE */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			name = LatticeIKE;
+			path = "../apple-ike/Sources/LatticeIKE";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -119,6 +125,7 @@
 			children = (
 				80B604C82F9C898E007EE8C3 /* CloakVPN */,
 				80F31E1E2F9C911500E4B598 /* CloakTunnel */,
+				80C5A20001F0C0DE00A1B2C3 /* LatticeIKE */,
 				80F31E1B2F9C911500E4B598 /* Frameworks */,
 				80B604C72F9C898E007EE8C3 /* Products */,
 				808981FD2FA88B59004F6E9C /* Recovered References */,
@@ -185,6 +192,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				80F31E1E2F9C911500E4B598 /* CloakTunnel */,
+				80C5A20001F0C0DE00A1B2C3 /* LatticeIKE */,
 			);
 			name = CloakTunnel;
 			packageProductDependencies = (
