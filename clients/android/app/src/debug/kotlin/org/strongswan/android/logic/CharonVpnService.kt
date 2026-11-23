@@ -11,14 +11,23 @@
  */
 package org.strongswan.android.logic
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
+import android.os.ParcelFileDescriptor
 import android.util.Base64
 import android.util.Log
 import org.json.JSONObject
 import java.io.File
+import java.io.FileInputStream
 import java.security.PrivateKey
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
 class CharonVpnService : VpnService() {
 
@@ -36,16 +45,24 @@ class CharonVpnService : VpnService() {
 
     private val builderAdapter = BuilderAdapter()
     private var profile: Profile? = null
-    private var worker: Thread? = null
+
+    /** All engine start, stop and retry steps run here, never on an engine thread. */
+    private val control = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "cnsa2-control") }
     @Volatile private var running = false
+    private var engineUp = false
+    private var retryDelay = RETRY_FIRST_MS
+    private var retryPending: ScheduledFuture<*>? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> stopConnection()
+            ACTION_STOP -> control.execute { stopConnection() }
             ACTION_START -> {
+                // must be called promptly after startForegroundService()
+                showNotification("Connecting")
                 val config = intent.getStringExtra(EXTRA_CONFIG)
                 if (config != null) {
-                    startConnection(Profile(JSONObject(config)))
+                    val p = Profile(JSONObject(config))
+                    control.execute { startConnection(p) }
                 }
             }
         }
@@ -53,45 +70,105 @@ class CharonVpnService : VpnService() {
     }
 
     override fun onRevoke() {
-        stopConnection()
+        control.execute { stopConnection() }
     }
 
     override fun onDestroy() {
-        stopConnection()
+        control.execute { stopConnection() }
+        control.shutdown()
         super.onDestroy()
     }
 
     private fun startConnection(p: Profile) {
-        synchronized(this) {
-            if (running) return
-            running = true
-            profile = p
+        if (running) return
+        running = true
+        profile = p
+        retryDelay = RETRY_FIRST_MS
+        File(filesDir, LOG_FILE).delete()
+        report("starting")
+        startEngine()
+    }
+
+    private fun startEngine() {
+        val p = profile ?: return
+        if (!running) return
+        val log = File(filesDir, LOG_FILE)
+        if (!initializeCharon(builderAdapter, log.absolutePath, filesDir.absolutePath, false, false)) {
+            report("error: engine failed to start")
+            stopConnection()
+            return
         }
-        worker = Thread({
-            val log = File(filesDir, LOG_FILE)
-            log.delete()
-            report("starting")
-            if (!initializeCharon(builderAdapter, log.absolutePath, filesDir.absolutePath, false, false)) {
-                report("error: engine failed to start")
-                running = false
-                stopSelf()
-                return@Thread
-            }
-            initiate(settings(p))
-        }, "cnsa2-charon").also { it.start() }
+        engineUp = true
+        initiate(settings(p))
+    }
+
+    /**
+     * The connection attempt failed for a reason that may pass (network gone,
+     * gateway unreachable). Traffic stays blocked while we wait and try again.
+     */
+    private fun retryConnection() {
+        if (!running || retryPending != null) return
+        builderAdapter.establishBlocking()
+        stopEngine()
+        val delay = retryDelay
+        retryDelay = minOf(retryDelay * 2, RETRY_MAX_MS)
+        report("retrying in ${delay / 1000}s")
+        showNotification("Reconnecting. Traffic is blocked until the tunnel is back.")
+        retryPending = control.schedule({
+            retryPending = null
+            startEngine()
+        }, delay, TimeUnit.MILLISECONDS)
+    }
+
+    private fun stopEngine() {
+        if (engineUp) {
+            engineUp = false
+            deinitializeCharon()
+        }
     }
 
     private fun stopConnection() {
-        synchronized(this) {
-            if (!running) return
-            running = false
+        if (!running) return
+        running = false
+        retryPending?.cancel(false)
+        retryPending = null
+        stopEngine()
+        builderAdapter.close()
+        report("stopped")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION") stopForeground(true)
         }
-        Thread({
-            deinitializeCharon()
-            builderAdapter.close()
-            report("stopped")
-            stopSelf()
-        }, "cnsa2-stop").start()
+        stopSelf()
+    }
+
+    private fun showNotification(text: String) {
+        val manager = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL, "VPN connection", NotificationManager.IMPORTANCE_LOW))
+        }
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL)
+        } else {
+            @Suppress("DEPRECATION") Notification.Builder(this)
+        }
+        val notification = builder
+            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setContentTitle("Lattice VPN: CNSA 2.0 mode")
+            .setContentText(text)
+            .setOngoing(true)
+            .build()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "foreground notification failed", e)
+        }
     }
 
     /** strongSwan settings format: key="value" lines inside named sections. */
@@ -132,16 +209,36 @@ class CharonVpnService : VpnService() {
     // ---- called by libandroidbridge over JNI -------------------------------
 
     fun updateStatus(status: Int) {
-        report(when (status) {
-            1 -> "child_sa_up"
-            2 -> "child_sa_down"
-            3 -> "error: authentication failed"
-            4 -> "error: gateway authentication failed"
-            5 -> "error: gateway address lookup failed"
-            6 -> "error: gateway unreachable"
-            7 -> "error: client certificate unavailable"
-            else -> "error: generic ($status)"
-        })
+        when (status) {
+            STATE_CHILD_SA_UP -> {
+                report("child_sa_up")
+                control.execute {
+                    retryDelay = RETRY_FIRST_MS
+                    builderAdapter.closeBlocking()
+                    if (running) showNotification("Connected with the CNSA 2.0 suite")
+                }
+            }
+            // the engine re-establishes a lost tunnel itself and tells us if that fails
+            STATE_CHILD_SA_DOWN -> report("child_sa_down")
+            STATE_LOOKUP_ERROR, STATE_UNREACHABLE_ERROR, STATE_GENERIC_ERROR -> {
+                report(when (status) {
+                    STATE_LOOKUP_ERROR -> "error: gateway address lookup failed"
+                    STATE_UNREACHABLE_ERROR -> "error: gateway unreachable"
+                    else -> "error: generic"
+                })
+                control.execute { retryConnection() }
+            }
+            else -> {
+                // authentication and certificate failures do not fix themselves
+                report(when (status) {
+                    STATE_AUTH_ERROR -> "error: authentication failed"
+                    STATE_PEER_AUTH_ERROR -> "error: gateway authentication failed"
+                    STATE_CERTIFICATE_UNAVAILABLE -> "error: client certificate unavailable"
+                    else -> "error: unknown ($status)"
+                })
+                control.execute { stopConnection() }
+            }
+        }
     }
 
     fun updateImcState(value: Int) {}
@@ -170,6 +267,7 @@ class CharonVpnService : VpnService() {
         private val dns = ArrayList<String>()
         private var mtu = 1400
         private var established: Triple<List<Pair<String, Int>>, List<Pair<String, Int>>, Int>? = null
+        private var blocking: ParcelFileDescriptor? = null
 
         @Synchronized fun addAddress(address: String, prefixLength: Int): Boolean {
             addresses.add(address to prefixLength); return true
@@ -203,7 +301,44 @@ class CharonVpnService : VpnService() {
             return create(last.first, last.second, emptyList(), last.third)
         }
 
+        /**
+         * Replace the tunnel with a device that keeps the same addresses and
+         * routes but drops everything, so nothing leaves outside the tunnel
+         * while the engine is down.
+         */
+        @Synchronized fun establishBlocking() {
+            val last = established ?: return
+            if (blocking != null) return
+            try {
+                val b = Builder().setSession("Lattice CNSA 2.0 lab (blocked)").setMtu(last.third).setBlocking(true)
+                last.first.forEach { b.addAddress(it.first, it.second) }
+                last.second.forEach { b.addRoute(it.first, it.second) }
+                val pfd = b.establish() ?: return
+                blocking = pfd
+                Thread({
+                    try {
+                        FileInputStream(pfd.fileDescriptor).use { input ->
+                            val buffer = ByteArray(2048)
+                            while (input.read(buffer) >= 0) { /* dropped */ }
+                        }
+                    } catch (_: Exception) {
+                    }
+                }, "cnsa2-dropper").start()
+            } catch (e: Exception) {
+                Log.e(TAG, "blocking TUN device failed", e)
+            }
+        }
+
+        @Synchronized fun closeBlocking() {
+            try {
+                blocking?.close()
+            } catch (_: Exception) {
+            }
+            blocking = null
+        }
+
         @Synchronized fun close() {
+            closeBlocking()
             established = null
         }
 
@@ -229,6 +364,20 @@ class CharonVpnService : VpnService() {
         const val STATUS_FILE = "cnsa2-status.txt"
         const val LOG_FILE = "cnsa2-charon.log"
         private const val TAG = "LatticeCNSA2"
+        private const val CHANNEL = "cnsa2"
+        private const val NOTIFICATION_ID = 7702
+        private const val RETRY_FIRST_MS = 1000L
+        private const val RETRY_MAX_MS = 30000L
+
+        // values of android_vpn_state_t in libandroidbridge
+        private const val STATE_CHILD_SA_UP = 1
+        private const val STATE_CHILD_SA_DOWN = 2
+        private const val STATE_AUTH_ERROR = 3
+        private const val STATE_PEER_AUTH_ERROR = 4
+        private const val STATE_LOOKUP_ERROR = 5
+        private const val STATE_UNREACHABLE_ERROR = 6
+        private const val STATE_CERTIFICATE_UNAVAILABLE = 7
+        private const val STATE_GENERIC_ERROR = 8
 
         /** CNSA 2.0 suite, nothing else offered (draft-guthrie-cnsa2-ipsec-profile). */
         const val IKE_PROPOSAL = "aes256gcm16-prfsha384-ecp384-ke1_mlkem1024"

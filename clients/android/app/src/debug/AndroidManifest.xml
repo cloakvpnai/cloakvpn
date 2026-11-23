@@ -4,6 +4,8 @@
     Nothing here is part of the release build.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
+
     <application>
         <activity
             android:name=".cnsa2.Cnsa2LabActivity"
@@ -12,6 +14,7 @@
         <service
             android:name="org.strongswan.android.logic.CharonVpnService"
             android:exported="false"
+            android:foregroundServiceType="systemExempted"
             android:permission="android.permission.BIND_VPN_SERVICE">
             <intent-filter>
                 <action android:name="android.net.VpnService" />

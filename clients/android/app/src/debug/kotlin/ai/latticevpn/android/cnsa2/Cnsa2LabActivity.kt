@@ -3,6 +3,7 @@ package ai.latticevpn.android.cnsa2
 import android.app.Activity
 import android.content.Intent
 import android.net.VpnService
+import android.os.Build
 import android.os.Bundle
 import android.util.Base64
 import org.strongswan.android.logic.CharonVpnService
@@ -37,9 +38,10 @@ class Cnsa2LabActivity : Activity() {
     }
 
     private fun start() {
-        startService(Intent(this, CharonVpnService::class.java)
+        val start = Intent(this, CharonVpnService::class.java)
             .setAction(CharonVpnService.ACTION_START)
-            .putExtra(CharonVpnService.EXTRA_CONFIG, config))
+            .putExtra(CharonVpnService.EXTRA_CONFIG, config)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(start) else startService(start)
         finish()
     }
 }
