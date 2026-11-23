@@ -120,7 +120,7 @@ fun SettingsScreen(vm: LatticeViewModel) {
                 if (vm.cnsa2Available) {
                     SettingsToggle(
                         title = "CNSA 2.0 mode (lab)",
-                        subtitle = "IKEv2/IPsec with " + Cnsa2Suite.SUMMARY +
+                        subtitle = "TLS 1.3 tunnel with " + Cnsa2Suite.SUMMARY +
                             ". Connects to the lab gateway and never falls back to WireGuard.",
                         checked = cnsa2Mode,
                         onCheckedChange = vm::setCnsa2Mode,
@@ -129,7 +129,7 @@ fun SettingsScreen(vm: LatticeViewModel) {
                 }
                 InfoItem(
                     label = "Encryption",
-                    value = if (cnsa2Mode) "IKEv2/IPsec, CNSA 2.0 suite" else "WireGuard + ML-KEM-768",
+                    value = if (cnsa2Mode) "TLS 1.3 tunnel, CNSA 2.0 suite" else "WireGuard + ML-KEM-768",
                 )
                 RowDivider()
                 InfoItem(label = "Key exchange status", value = rosenpassLabel(rosenpass))

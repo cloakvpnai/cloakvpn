@@ -9,7 +9,6 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Base64
 import java.io.File
-import org.strongswan.android.logic.CharonVpnService
 
 /**
  * Debug builds only. Starts or stops the CNSA 2.0 lab tunnel from adb:
@@ -24,7 +23,7 @@ class Cnsa2LabActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (intent.getBooleanExtra("stop", false)) {
-            startService(Intent(this, CharonVpnService::class.java).setAction(CharonVpnService.ACTION_STOP))
+            startService(Intent(this, LatticeTlsVpnService::class.java).setAction(LatticeTlsVpnService.ACTION_STOP))
             finish()
             return
         }
@@ -63,9 +62,9 @@ class Cnsa2LabActivity : Activity() {
     }
 
     private fun start() {
-        val start = Intent(this, CharonVpnService::class.java)
-            .setAction(CharonVpnService.ACTION_START)
-            .putExtra(CharonVpnService.EXTRA_CONFIG, config)
+        val start = Intent(this, LatticeTlsVpnService::class.java)
+            .setAction(LatticeTlsVpnService.ACTION_START)
+            .putExtra(LatticeTlsVpnService.EXTRA_CONFIG, config)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(start) else startService(start)
         finish()
     }

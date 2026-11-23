@@ -39,5 +39,3 @@ app/src/main/jniLibs/*/lib*.so.tmp
 !app/src/main/jniLibs/**/librosenpassffi.so
 !app/src/main/jniLibs/**/libwg-go.so
 
-# strongSwan native libraries for the CNSA 2.0 lab: build with strongswan/build-native.sh
-app/src/debug/jniLibs/

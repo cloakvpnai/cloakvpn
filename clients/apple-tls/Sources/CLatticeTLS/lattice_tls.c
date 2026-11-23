@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <openssl/decoder.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
@@ -32,6 +33,25 @@ static void set_err(char *dst, size_t cap, const char *what)
     if (e) ERR_error_string_n(e, detail, sizeof(detail));
     snprintf(dst, cap, "%s%s%s", what, e ? ": " : "", detail);
     ERR_clear_error();
+}
+
+/* PKCS#8 through the provider decoders, which understand every ML-DSA private
+ * key form (seed only, expanded, or both). */
+static EVP_PKEY *load_private_key(const uint8_t *key, size_t key_len)
+{
+    EVP_PKEY *pkey = NULL;
+    const unsigned char *p = key;
+    size_t len = key_len;
+    OSSL_DECODER_CTX *d = OSSL_DECODER_CTX_new_for_pkey(&pkey, "DER", "PrivateKeyInfo", NULL,
+                                                        EVP_PKEY_KEYPAIR, NULL, NULL);
+    if (d) {
+        if (OSSL_DECODER_from_data(d, &p, &len) != 1) {
+            EVP_PKEY_free(pkey);
+            pkey = NULL;
+        }
+        OSSL_DECODER_CTX_free(d);
+    }
+    return pkey;
 }
 
 ltls *ltls_new(const uint8_t *ca, size_t ca_len, const uint8_t *cert, size_t cert_len,
@@ -73,8 +93,7 @@ ltls *ltls_new(const uint8_t *ca, size_t ca_len, const uint8_t *cert, size_t cer
     own = d2i_X509(NULL, &p, (long)cert_len);
     if (!own || SSL_CTX_use_certificate(t->ctx, own) != 1) goto fail;
     what = "device key";
-    p = key;
-    pkey = d2i_AutoPrivateKey(NULL, &p, (long)key_len);
+    pkey = load_private_key(key, key_len);
     if (!pkey || !EVP_PKEY_is_a(pkey, "ML-DSA-87") ||
         SSL_CTX_use_PrivateKey(t->ctx, pkey) != 1 ||
         SSL_CTX_check_private_key(t->ctx) != 1) goto fail;

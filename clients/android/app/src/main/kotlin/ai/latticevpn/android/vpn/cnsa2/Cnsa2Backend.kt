@@ -63,5 +63,5 @@ interface Cnsa2Backend {
 
 object Cnsa2Suite {
     /** The only suite CNSA 2.0 mode offers, so also the only one it can negotiate. */
-    const val SUMMARY = "AES-256-GCM, SHA-384, P-384 + ML-KEM-1024, ML-DSA-87"
+    const val SUMMARY = "AES-256-GCM, SHA-384, ML-KEM-1024, ML-DSA-87"
 }
