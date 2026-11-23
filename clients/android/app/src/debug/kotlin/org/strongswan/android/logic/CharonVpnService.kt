@@ -12,6 +12,10 @@
 package org.strongswan.android.logic
 
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2IdentityStore
+import ai.latticevpn.android.vpn.cnsa2.Cnsa2State
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -88,6 +92,7 @@ class CharonVpnService : VpnService() {
         retryDelay = RETRY_FIRST_MS
         File(filesDir, LOG_FILE).delete()
         report("starting")
+        publish(Cnsa2State.CONNECTING)
         startEngine()
     }
 
@@ -97,6 +102,7 @@ class CharonVpnService : VpnService() {
         val log = File(filesDir, LOG_FILE)
         if (!initializeCharon(builderAdapter, log.absolutePath, filesDir.absolutePath, false, false)) {
             report("error: engine failed to start")
+            publish(Cnsa2State.FAILED, "The engine could not start")
             stopConnection()
             return
         }
@@ -115,6 +121,7 @@ class CharonVpnService : VpnService() {
         val delay = retryDelay
         retryDelay = minOf(retryDelay * 2, RETRY_MAX_MS)
         report("retrying in ${delay / 1000}s")
+        publish(Cnsa2State.RECONNECTING)
         showNotification("Reconnecting. Traffic is blocked until the tunnel is back.")
         retryPending = control.schedule({
             retryPending = null
@@ -137,6 +144,7 @@ class CharonVpnService : VpnService() {
         stopEngine()
         builderAdapter.close()
         report("stopped")
+        if (state.value != Cnsa2State.FAILED) publish(Cnsa2State.OFF)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
@@ -214,6 +222,7 @@ class CharonVpnService : VpnService() {
         when (status) {
             STATE_CHILD_SA_UP -> {
                 report("child_sa_up")
+                publish(Cnsa2State.CONNECTED)
                 control.execute {
                     retryDelay = RETRY_FIRST_MS
                     builderAdapter.closeBlocking()
@@ -221,7 +230,10 @@ class CharonVpnService : VpnService() {
                 }
             }
             // the engine re-establishes a lost tunnel itself and tells us if that fails
-            STATE_CHILD_SA_DOWN -> report("child_sa_down")
+            STATE_CHILD_SA_DOWN -> {
+                report("child_sa_down")
+                if (running) publish(Cnsa2State.RECONNECTING)
+            }
             STATE_LOOKUP_ERROR, STATE_UNREACHABLE_ERROR, STATE_GENERIC_ERROR -> {
                 report(when (status) {
                     STATE_LOOKUP_ERROR -> "error: gateway address lookup failed"
@@ -232,12 +244,14 @@ class CharonVpnService : VpnService() {
             }
             else -> {
                 // authentication and certificate failures do not fix themselves
-                report(when (status) {
-                    STATE_AUTH_ERROR -> "error: authentication failed"
-                    STATE_PEER_AUTH_ERROR -> "error: gateway authentication failed"
-                    STATE_CERTIFICATE_UNAVAILABLE -> "error: client certificate unavailable"
-                    else -> "error: unknown ($status)"
-                })
+                val reason = when (status) {
+                    STATE_AUTH_ERROR -> "authentication failed"
+                    STATE_PEER_AUTH_ERROR -> "gateway authentication failed"
+                    STATE_CERTIFICATE_UNAVAILABLE -> "client certificate unavailable"
+                    else -> "unknown ($status)"
+                }
+                report("error: $reason")
+                publish(Cnsa2State.FAILED, reason.replaceFirstChar { it.uppercase() })
                 control.execute { stopConnection() }
             }
         }
@@ -366,7 +380,17 @@ class CharonVpnService : VpnService() {
         }
     }
 
+    private fun publish(newState: Cnsa2State, reason: String? = null) {
+        _detail.value = reason
+        _state.value = newState
+    }
+
     companion object {
+        private val _state = MutableStateFlow(Cnsa2State.OFF)
+        private val _detail = MutableStateFlow<String?>(null)
+        val state: StateFlow<Cnsa2State> = _state.asStateFlow()
+        val detail: StateFlow<String?> = _detail.asStateFlow()
+
         const val ACTION_START = "ai.latticevpn.android.cnsa2.START"
         const val ACTION_STOP = "ai.latticevpn.android.cnsa2.STOP"
         const val EXTRA_CONFIG = "config"

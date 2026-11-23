@@ -1,5 +1,6 @@
 package ai.latticevpn.android.cnsa2
 
+import ai.latticevpn.android.vpn.cnsa2.Cnsa2Config
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2IdentityStore
 import android.app.Activity
 import android.content.Intent
@@ -33,6 +34,12 @@ class Cnsa2LabActivity : Activity() {
             val store = Cnsa2IdentityStore(this)
             File(filesDir, "cnsa2/request.der").writeBytes(store.certificateRequest(name))
             File(filesDir, "cnsa2/protection.txt").writeText(store.wrappingKeyProtection())
+            finish()
+            return
+        }
+        // gateway: where the app's CNSA 2.0 mode connects (host, IDs, CA; no secrets)
+        intent.getStringExtra("gateway")?.let { b64 ->
+            Cnsa2Config.save(this, String(Base64.decode(b64, Base64.DEFAULT)))
             finish()
             return
         }

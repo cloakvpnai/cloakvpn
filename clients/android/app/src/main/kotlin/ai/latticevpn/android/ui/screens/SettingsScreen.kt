@@ -1,5 +1,6 @@
 package ai.latticevpn.android.ui.screens
 
+import ai.latticevpn.android.vpn.cnsa2.Cnsa2Suite
 import ai.latticevpn.android.BuildConfig
 import ai.latticevpn.android.data.LatticeRegion
 import ai.latticevpn.android.ui.LatticeViewModel
@@ -42,6 +43,7 @@ fun SettingsScreen(vm: LatticeViewModel) {
 
     val context = LocalContext.current
     val autoConnect by vm.autoConnect.collectAsState()
+    val cnsa2Mode by vm.cnsa2Mode.collectAsState()
     val rosenpass by vm.rosenpassStatus.collectAsState()
     val deviceKey by vm.localRosenpassPublicKeyB64.collectAsState()
 
@@ -115,7 +117,20 @@ fun SettingsScreen(vm: LatticeViewModel) {
             // ---- Security ---------------------------------------------------
             SectionHeader("Security")
             SettingsCard {
-                InfoItem(label = "Encryption", value = "WireGuard + ML-KEM-768")
+                if (vm.cnsa2Available) {
+                    SettingsToggle(
+                        title = "CNSA 2.0 mode (lab)",
+                        subtitle = "IKEv2/IPsec with " + Cnsa2Suite.SUMMARY +
+                            ". Connects to the lab gateway and never falls back to WireGuard.",
+                        checked = cnsa2Mode,
+                        onCheckedChange = vm::setCnsa2Mode,
+                    )
+                    RowDivider()
+                }
+                InfoItem(
+                    label = "Encryption",
+                    value = if (cnsa2Mode) "IKEv2/IPsec, CNSA 2.0 suite" else "WireGuard + ML-KEM-768",
+                )
                 RowDivider()
                 InfoItem(label = "Key exchange status", value = rosenpassLabel(rosenpass))
                 RowDivider()

@@ -22,6 +22,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import ai.latticevpn.android.vpn.cnsa2.Cnsa2Backend
+import ai.latticevpn.android.vpn.cnsa2.Cnsa2Config
+import ai.latticevpn.android.vpn.cnsa2.Cnsa2IdentityStore
+import ai.latticevpn.android.vpn.cnsa2.Cnsa2Provider
+import ai.latticevpn.android.vpn.cnsa2.Cnsa2State
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 
 /** The top-level destinations in the UI. */
 enum class Screen { SIGN_IN, PAYWALL, HOME, REGIONS, SETTINGS, ACCOUNT, LICENSES }
@@ -65,7 +73,38 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Tunnel / region state — delegated straight from TunnelManager ----
 
-    val tunnelState: StateFlow<TunnelState> get() = tm.tunnelState
+    // ---- CNSA 2.0 mode (only in builds that carry the engine) -------------
+
+    private val cnsa2: Cnsa2Backend? = Cnsa2Provider.backend()
+    private val cnsa2Config: Cnsa2Config? = if (cnsa2 != null) Cnsa2Config.load(app) else null
+
+    /** True when this build has the engine, a gateway is configured and the device is enrolled. */
+    val cnsa2Available: Boolean =
+        cnsa2 != null && cnsa2Config != null && Cnsa2IdentityStore(app).certificate() != null
+
+    private val _cnsa2Mode = MutableStateFlow(cnsa2Available && prefs.getBoolean(KEY_CNSA2_MODE, false))
+    val cnsa2Mode: StateFlow<Boolean> = _cnsa2Mode.asStateFlow()
+    val cnsa2Detail: StateFlow<String?> = cnsa2?.detail ?: MutableStateFlow(null)
+
+    /** Switching modes always drops the current tunnel first; there is no fallback between them. */
+    fun setCnsa2Mode(enabled: Boolean) {
+        if (!cnsa2Available || enabled == _cnsa2Mode.value) return
+        disconnect()
+        prefs.edit().putBoolean(KEY_CNSA2_MODE, enabled).apply()
+        _cnsa2Mode.value = enabled
+    }
+
+    val tunnelState: StateFlow<TunnelState> =
+        if (cnsa2 == null) tm.tunnelState
+        else combine(tm.tunnelState, cnsa2.state, _cnsa2Mode) { wireGuard, suite, mode ->
+            if (!mode && suite == Cnsa2State.OFF) wireGuard
+            else when (suite) {
+                Cnsa2State.OFF -> TunnelState.DISCONNECTED
+                Cnsa2State.CONNECTING, Cnsa2State.RECONNECTING -> TunnelState.CONNECTING
+                Cnsa2State.CONNECTED -> TunnelState.CONNECTED
+                Cnsa2State.FAILED -> TunnelState.ERROR
+            }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, tm.tunnelState.value)
     val tunnelConfig get() = tm.tunnelConfig
     val selectedRegion: StateFlow<LatticeRegion?> get() = tm.selectedRegion
     val regionSelectionInProgress: StateFlow<Boolean> get() = tm.regionSelectionInProgress
@@ -164,13 +203,23 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun connect() {
+        val config = cnsa2Config
+        if (_cnsa2Mode.value && cnsa2 != null && config != null) {
+            // never falls back to WireGuard: this mode connects with the CNSA 2.0 suite or not at all
+            tm.disconnect()
+            cnsa2.connect(getApplication(), config)
+            return
+        }
         viewModelScope.launch {
             tm.rekeyForConnect()
             tm.connect()
         }
     }
 
-    fun disconnect() = tm.disconnect()
+    fun disconnect() {
+        if (cnsa2 != null && cnsa2.state.value != Cnsa2State.OFF) cnsa2.disconnect(getApplication())
+        tm.disconnect()
+    }
 
     // ---- Public IP -------------------------------------------------------
 
@@ -408,6 +457,7 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val PREFS = "lattice"
         private const val KEY_AUTO_CONNECT = "pref_auto_connect"
+        private const val KEY_CNSA2_MODE = "cnsa2_mode"
 
         /** Public-IP lookup: attempts and the wait between them, to ride
          *  out the few seconds a freshly-connected tunnel needs to settle. */

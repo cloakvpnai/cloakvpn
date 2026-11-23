@@ -50,13 +50,15 @@ fun HomeScreen(
     val handshakeVerified by vm.handshakeVerified.collectAsState()
     val ipState by vm.publicIp.collectAsState()
     val realIp by vm.realIp.collectAsState()
+    val cnsa2Mode by vm.cnsa2Mode.collectAsState()
+    val cnsa2Detail by vm.cnsa2Detail.collectAsState()
 
     val onControlTap: () -> Unit = {
         when (state) {
             TunnelState.CONNECTED, TunnelState.CONNECTING -> vm.disconnect()
             TunnelState.DISCONNECTING -> { /* already tearing down */ }
             TunnelState.DISCONNECTED, TunnelState.ERROR ->
-                if (config == null) vm.navigateTo(Screen.REGIONS) else onConnect()
+                if (config == null && !cnsa2Mode) vm.navigateTo(Screen.REGIONS) else onConnect()
         }
     }
 
@@ -110,14 +112,14 @@ fun HomeScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = statusSubtitle(state, config != null, region),
+                    text = if (cnsa2Mode) cnsa2Subtitle(state, cnsa2Detail) else statusSubtitle(state, config != null, region),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center,
                 )
 
                 Spacer(Modifier.height(14.dp))
-                PqcChip(state = state, rosenpass = rosenpass, handshakeVerified = handshakeVerified)
+                PqcChip(state = state, rosenpass = rosenpass, handshakeVerified = handshakeVerified, cnsa2Mode = cnsa2Mode)
 
                 Spacer(Modifier.height(22.dp))
 
@@ -141,9 +143,9 @@ fun HomeScreen(
 
 /** The post-quantum status pill shown beneath the connect control. */
 @Composable
-private fun PqcChip(state: TunnelState, rosenpass: RosenpassStatus, handshakeVerified: Boolean) {
+private fun PqcChip(state: TunnelState, rosenpass: RosenpassStatus, handshakeVerified: Boolean, cnsa2Mode: Boolean = false) {
     val active = state == TunnelState.CONNECTED &&
-        (rosenpass is RosenpassStatus.Established || (rosenpass is RosenpassStatus.Idle && handshakeVerified))
+        (cnsa2Mode || rosenpass is RosenpassStatus.Established || (rosenpass is RosenpassStatus.Idle && handshakeVerified))
     val dotColor =
         if (active) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.onSurfaceVariant
@@ -160,7 +162,7 @@ private fun PqcChip(state: TunnelState, rosenpass: RosenpassStatus, handshakeVer
             Box(Modifier.size(8.dp).background(dotColor, CircleShape))
             Spacer(Modifier.width(8.dp))
             Text(
-                text = pqcLine(state, rosenpass, handshakeVerified),
+                text = if (cnsa2Mode) cnsa2Line(state) else pqcLine(state, rosenpass, handshakeVerified),
                 color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 13.sp,
             )
@@ -374,6 +376,19 @@ private fun statusSubtitle(
     TunnelState.ERROR -> "Tap the shield to try again"
     TunnelState.DISCONNECTED ->
         if (!hasConfig) "Choose a location to get started" else "Tap the shield to connect"
+}
+
+/** CNSA 2.0 mode offers one suite only, so connected means that suite is in use. */
+private fun cnsa2Line(state: TunnelState): String =
+    if (state == TunnelState.CONNECTED) "CNSA 2.0 suite active · ML-KEM-1024 · ML-DSA-87"
+    else "CNSA 2.0 mode · ML-KEM-1024 · ML-DSA-87"
+
+private fun cnsa2Subtitle(state: TunnelState, detail: String?): String = when (state) {
+    TunnelState.CONNECTED -> "Connected to the lab gateway"
+    TunnelState.CONNECTING -> "Connecting. Traffic waits for the tunnel."
+    TunnelState.DISCONNECTING -> "Disconnecting"
+    TunnelState.ERROR -> detail ?: "Could not connect"
+    TunnelState.DISCONNECTED -> "Tap the shield to connect in CNSA 2.0 mode"
 }
 
 private fun pqcLine(
