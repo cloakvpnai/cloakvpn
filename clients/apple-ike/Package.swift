@@ -11,5 +11,6 @@ let package = Package(
     targets: [
         .target(name: "LatticeIKE", swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(name: "ikeprobe", dependencies: ["LatticeIKE"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .testTarget(name: "LatticeIKETests", dependencies: ["LatticeIKE"], swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )

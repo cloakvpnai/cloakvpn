@@ -1,0 +1,14 @@
+Target dependency graph (5 targets)
+Target 'AllIncludingTests' in project 'Aggregate'
+➜ Explicit dependency on target 'LatticeIKETests-product' in project 'LatticeIKE'
+➜ Dependency on target 'LatticeIKETests-product' in project 'LatticeIKE' via transitive dependency through 'LatticeIKETests-test-runner'
+➜ Explicit dependency on target 'LatticeIKE-product' in project 'LatticeIKE'
+➜ Explicit dependency on target 'ikeprobe-product' in project 'LatticeIKE'
+➜ Explicit dependency on target 'LatticeIKE' in project 'LatticeIKE'
+Target 'ikeprobe-product' in project 'LatticeIKE'
+➜ Explicit dependency on target 'LatticeIKE' in project 'LatticeIKE'
+Target 'LatticeIKE-product' in project 'LatticeIKE'
+➜ Explicit dependency on target 'LatticeIKE' in project 'LatticeIKE'
+Target 'LatticeIKETests-product' in project 'LatticeIKE'
+➜ Explicit dependency on target 'LatticeIKE' in project 'LatticeIKE'
+Target 'LatticeIKE' in project 'LatticeIKE' (no dependencies)

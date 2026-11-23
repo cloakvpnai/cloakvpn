@@ -5,11 +5,11 @@
       "name" : "LatticeIKE",
       "path" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike",
       "projects" : [
-        "d5d4798168c127ed95451f8d188f64603ceeaf9b914882db2fd2c4cc06d81952",
-        "011e268288a7332c7f9938b01896803aa90682ae8bfbf310c478a38827913b83"
+        "183acff43483e3a79456c4d8c8fb8e220244e290215475cb9fa8ad6d3c69a7e9",
+        "ce6892148b771c977de50f6d069c8f35a56703692c1510f29a47cf5743ae09fc"
       ]
     },
-    "signature" : "307c55b10d54f96b2e85a0162a1e1b543932712c20fbf12a8fc49f75e1aa487e",
+    "signature" : "aa110eba35d5e0d43875f16f5fd69737da26b82d08faeb1eb34bc8ca33d7517e",
     "type" : "workspace"
   },
   {
@@ -207,15 +207,15 @@
               {
                 "fileType" : "sourcecode.swift",
                 "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_2::REF_0",
-                "name" : "main.swift",
-                "path" : "main.swift",
+                "name" : "RobustnessTests.swift",
+                "path" : "RobustnessTests.swift",
                 "sourceTree" : "<group>",
                 "type" : "file"
               }
             ],
             "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_2",
-            "name" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/Sources/ikeprobe",
-            "path" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/Sources/ikeprobe",
+            "name" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/Tests/LatticeIKETests",
+            "path" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/Tests/LatticeIKETests",
             "sourceTree" : "<absolute>",
             "type" : "group"
           },
@@ -224,63 +224,15 @@
               {
                 "fileType" : "sourcecode.swift",
                 "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_0",
-                "name" : "Bytes.swift",
-                "path" : "Bytes.swift",
-                "sourceTree" : "<group>",
-                "type" : "file"
-              },
-              {
-                "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_1",
-                "name" : "ESP.swift",
-                "path" : "ESP.swift",
-                "sourceTree" : "<group>",
-                "type" : "file"
-              },
-              {
-                "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_2",
-                "name" : "Primitives.swift",
-                "path" : "Primitives.swift",
-                "sourceTree" : "<group>",
-                "type" : "file"
-              },
-              {
-                "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_3",
-                "name" : "Runtime.swift",
-                "path" : "Runtime.swift",
-                "sourceTree" : "<group>",
-                "type" : "file"
-              },
-              {
-                "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_4",
-                "name" : "Session.swift",
-                "path" : "Session.swift",
-                "sourceTree" : "<group>",
-                "type" : "file"
-              },
-              {
-                "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_5",
-                "name" : "Wire.swift",
-                "path" : "Wire.swift",
-                "sourceTree" : "<group>",
-                "type" : "file"
-              },
-              {
-                "fileType" : "sourcecode.swift",
-                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_6",
-                "name" : "X509.swift",
-                "path" : "X509.swift",
+                "name" : "main.swift",
+                "path" : "main.swift",
                 "sourceTree" : "<group>",
                 "type" : "file"
               }
             ],
             "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_3",
-            "name" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/Sources/LatticeIKE",
-            "path" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/Sources/LatticeIKE",
+            "name" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/Sources/ikeprobe",
+            "path" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/Sources/ikeprobe",
             "sourceTree" : "<absolute>",
             "type" : "group"
           },
@@ -354,13 +306,78 @@
               {
                 "fileType" : "sourcecode.swift",
                 "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_5::REF_0",
+                "name" : "Bytes.swift",
+                "path" : "Bytes.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_5::REF_1",
+                "name" : "ESP.swift",
+                "path" : "ESP.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_5::REF_2",
+                "name" : "Primitives.swift",
+                "path" : "Primitives.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_5::REF_3",
+                "name" : "Runtime.swift",
+                "path" : "Runtime.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_5::REF_4",
+                "name" : "Session.swift",
+                "path" : "Session.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_5::REF_5",
+                "name" : "Wire.swift",
+                "path" : "Wire.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              },
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_5::REF_6",
+                "name" : "X509.swift",
+                "path" : "X509.swift",
+                "sourceTree" : "<group>",
+                "type" : "file"
+              }
+            ],
+            "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_5",
+            "name" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/Sources/LatticeIKE",
+            "path" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/Sources/LatticeIKE",
+            "sourceTree" : "<absolute>",
+            "type" : "group"
+          },
+          {
+            "children" : [
+              {
+                "fileType" : "sourcecode.swift",
+                "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_6::REF_0",
                 "name" : "main.swift",
                 "path" : "main.swift",
                 "sourceTree" : "<group>",
                 "type" : "file"
               }
             ],
-            "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_5",
+            "guid" : "PACKAGE:apple-ike::MAINGROUP::REF_6",
             "name" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/Sources/ikeprobe",
             "path" : "/Users/agentworker2/Documents/Claude/Projects/Cloak VPN App - Business Opportunity/cloak-vpn/clients/apple-ike/Sources/ikeprobe",
             "sourceTree" : "<absolute>",
@@ -379,17 +396,363 @@
       "projectIsPackage" : "true",
       "projectName" : "LatticeIKE",
       "targets" : [
+        "8d3a39c61e8bd3022f5bbf246118912d3cc11eb7849e712f2e913119fd4c1c1b",
+        "832a723d0db1b23ffa6a78f48ed340028ef23870974cb137c2eaf842424474d5",
         "3237e44373b5a38a314f3008999ae7e73d662d83b459368e532a9f1bc4f07d62",
         "824f1ba617a80c0b6745c5f5c0111ad53347b8efe2dd5241ea7b72a292b84808",
-        "c3266ba5313680bf15aecdd23785fe4dafb706def022edf65227c4c1bd57026d",
-        "dd7ba51e2bac3251e6bdd07f99817ca5b27d94f999d917a6855e63eacb582ac3",
-        "d3b7c1b50effed895d3f91e667298ca5b3f805d419f224c7d3ecef8fe6051123",
-        "be9a27d7aa078a460559d644c9ffe3a288b921f8702657b83e3116880285ff4a",
-        "77c975e74f6920b950a4315b65de925d3dcf29d282e088c311fc06c1f81b0cf4"
+        "80c76a5c63cb926fc540aae0c65a260132a919dd3dfe474eadde79b16b5b6f11",
+        "7b3c2f1773fcb6dee2b48c76e9880778710d12ced2343cbfc1fd6f2fcf2342be",
+        "b271a75883c80fcf3fb35d3983677a08d2c53034aad9e7612565594fe1ed0d68",
+        "04ea41456364d77ae2393d3a1e7fe797e8dfd78455caa8a2f16dae190055aef8",
+        "3f46413d5ac671080935ea9a7d57fb6a4766c86a531f4ce314cbc8283d649386"
       ]
     },
-    "signature" : "d5d4798168c127ed95451f8d188f64603ceeaf9b914882db2fd2c4cc06d81952",
+    "signature" : "183acff43483e3a79456c4d8c8fb8e220244e290215475cb9fa8ad6d3c69a7e9",
     "type" : "project"
+  },
+  {
+    "contents" : {
+      "approvedByUser" : "true",
+      "buildConfigurations" : [
+        {
+          "buildSettings" : {
+            "APPLE_TEST_BUNDLE_RPATH" : "$(APPLE_TEST_BUNDLE_RPATH_SHALLOW_BUNDLE_$(SHALLOW_BUNDLE:default=NO))",
+            "APPLE_TEST_BUNDLE_RPATH_SHALLOW_BUNDLE_NO" : "@loader_path/../../..",
+            "APPLE_TEST_BUNDLE_RPATH_SHALLOW_BUNDLE_YES" : "@loader_path/../..",
+            "BUILD_SERVER_PROTOCOL_TARGET_TAGS" : [
+              "$(inherited)",
+              "test"
+            ],
+            "DOCC_EXTRACT_PROJECT_HEADERS_DOCUMENTATION" : "YES",
+            "DRIVERKIT_DEPLOYMENT_TARGET" : "21.0",
+            "GENERATE_EMBED_IN_CODE_ACCESSORS" : "NO",
+            "GENERATE_INFOPLIST_FILE" : "YES",
+            "GENERATE_RESOURCE_ACCESSORS" : "YES",
+            "INDEX_ENABLE_DATA_STORE" : "YES",
+            "IPHONEOS_DEPLOYMENT_TARGET" : "26.0",
+            "IPHONEOS_DEPLOYMENT_TARGET[__platform_filter=ios-maccatalyst]" : "26.0",
+            "LD_RUNPATH_SEARCH_PATHS" : [
+              "$(RPATH_ORIGIN)/Frameworks",
+              "$(RPATH_ORIGIN)/../Frameworks",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=driverkit]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=ios-maccatalyst]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=ios;ios-simulator]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=macos]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=tvos;tvos-simulator]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=watchos;watchos-simulator]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=xros;xros-simulator]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "MACOSX_DEPLOYMENT_TARGET" : "26.0",
+            "PACKAGE_RESOURCE_TARGET_KIND" : "regular",
+            "PRODUCT_BUNDLE_IDENTIFIER" : "apple-ike.LatticeIKETests",
+            "PRODUCT_MODULE_NAME" : "LatticeIKETests",
+            "PRODUCT_NAME" : "$(TARGET_NAME)",
+            "SDKROOT" : "auto",
+            "SDK_VARIANT" : "auto",
+            "SKIP_INSTALL" : "NO",
+            "SWIFT_ACTIVE_COMPILATION_CONDITIONS" : [
+              "$(inherited)"
+            ],
+            "SWIFT_DISABLE_PARSE_AS_LIBRARY" : "NO",
+            "SWIFT_ENABLE_BARE_SLASH_REGEX" : "NO",
+            "SWIFT_LIBRARIES_ONLY" : "YES",
+            "SWIFT_PACKAGE_NAME" : "apple_ike",
+            "SWIFT_VERSION" : "5",
+            "SYMBOL_GRAPH_EXTRACTOR_OUTPUT_DIR" : "$(TARGET_BUILD_DIR)/$(CURRENT_ARCH)/LatticeIKETests.symbolgraphs",
+            "TAPI_EXTRACT_API_OUTPUT_DIR" : "$(TARGET_BUILD_DIR)/$(CURRENT_ARCH)/LatticeIKETests.symbolgraphs",
+            "TARGET_NAME" : "LatticeIKETests",
+            "TARGET_TEMP_DIR_SUFFIX" : "-p",
+            "TVOS_DEPLOYMENT_TARGET" : "17.0",
+            "WATCHOS_DEPLOYMENT_TARGET" : "26.0",
+            "XROS_DEPLOYMENT_TARGET" : "1.0"
+          },
+          "guid" : "PACKAGE-PRODUCT:apple-ike_LatticeIKETests.LatticeIKETests::BUILDCONFIG_0",
+          "impartedBuildProperties" : {
+            "buildSettings" : {
+
+            }
+          },
+          "name" : "Debug"
+        },
+        {
+          "buildSettings" : {
+            "APPLE_TEST_BUNDLE_RPATH" : "$(APPLE_TEST_BUNDLE_RPATH_SHALLOW_BUNDLE_$(SHALLOW_BUNDLE:default=NO))",
+            "APPLE_TEST_BUNDLE_RPATH_SHALLOW_BUNDLE_NO" : "@loader_path/../../..",
+            "APPLE_TEST_BUNDLE_RPATH_SHALLOW_BUNDLE_YES" : "@loader_path/../..",
+            "BUILD_SERVER_PROTOCOL_TARGET_TAGS" : [
+              "$(inherited)",
+              "test"
+            ],
+            "DOCC_EXTRACT_PROJECT_HEADERS_DOCUMENTATION" : "YES",
+            "DRIVERKIT_DEPLOYMENT_TARGET" : "21.0",
+            "GENERATE_EMBED_IN_CODE_ACCESSORS" : "NO",
+            "GENERATE_INFOPLIST_FILE" : "YES",
+            "GENERATE_RESOURCE_ACCESSORS" : "YES",
+            "INDEX_ENABLE_DATA_STORE" : "YES",
+            "IPHONEOS_DEPLOYMENT_TARGET" : "26.0",
+            "IPHONEOS_DEPLOYMENT_TARGET[__platform_filter=ios-maccatalyst]" : "26.0",
+            "LD_RUNPATH_SEARCH_PATHS" : [
+              "$(RPATH_ORIGIN)/Frameworks",
+              "$(RPATH_ORIGIN)/../Frameworks",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=driverkit]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=ios-maccatalyst]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=ios;ios-simulator]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=macos]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=tvos;tvos-simulator]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=watchos;watchos-simulator]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "LD_RUNPATH_SEARCH_PATHS[__platform_filter=xros;xros-simulator]" : [
+              "$(APPLE_TEST_BUNDLE_RPATH)",
+              "$(inherited)"
+            ],
+            "MACOSX_DEPLOYMENT_TARGET" : "26.0",
+            "PACKAGE_RESOURCE_TARGET_KIND" : "regular",
+            "PRODUCT_BUNDLE_IDENTIFIER" : "apple-ike.LatticeIKETests",
+            "PRODUCT_MODULE_NAME" : "LatticeIKETests",
+            "PRODUCT_NAME" : "$(TARGET_NAME)",
+            "SDKROOT" : "auto",
+            "SDK_VARIANT" : "auto",
+            "SKIP_INSTALL" : "NO",
+            "SWIFT_ACTIVE_COMPILATION_CONDITIONS" : [
+              "$(inherited)"
+            ],
+            "SWIFT_DISABLE_PARSE_AS_LIBRARY" : "NO",
+            "SWIFT_ENABLE_BARE_SLASH_REGEX" : "NO",
+            "SWIFT_LIBRARIES_ONLY" : "YES",
+            "SWIFT_PACKAGE_NAME" : "apple_ike",
+            "SWIFT_VERSION" : "5",
+            "SYMBOL_GRAPH_EXTRACTOR_OUTPUT_DIR" : "$(TARGET_BUILD_DIR)/$(CURRENT_ARCH)/LatticeIKETests.symbolgraphs",
+            "TAPI_EXTRACT_API_OUTPUT_DIR" : "$(TARGET_BUILD_DIR)/$(CURRENT_ARCH)/LatticeIKETests.symbolgraphs",
+            "TARGET_NAME" : "LatticeIKETests",
+            "TARGET_TEMP_DIR_SUFFIX" : "-p",
+            "TVOS_DEPLOYMENT_TARGET" : "17.0",
+            "WATCHOS_DEPLOYMENT_TARGET" : "26.0",
+            "XROS_DEPLOYMENT_TARGET" : "1.0"
+          },
+          "guid" : "PACKAGE-PRODUCT:apple-ike_LatticeIKETests.LatticeIKETests::BUILDCONFIG_1",
+          "impartedBuildProperties" : {
+            "buildSettings" : {
+
+            }
+          },
+          "name" : "Release"
+        }
+      ],
+      "buildPhases" : [
+        {
+          "buildFiles" : [
+            {
+              "codeSignOnCopy" : "false",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_2::REF_0",
+              "guid" : "PACKAGE-PRODUCT:apple-ike_LatticeIKETests.LatticeIKETests::BUILDPHASE_0::0",
+              "platformFilters" : [
+
+              ],
+              "removeHeadersOnCopy" : "false"
+            }
+          ],
+          "guid" : "PACKAGE-PRODUCT:apple-ike_LatticeIKETests.LatticeIKETests::BUILDPHASE_0",
+          "type" : "com.apple.buildphase.sources"
+        },
+        {
+          "buildFiles" : [
+            {
+              "guid" : "PACKAGE-PRODUCT:apple-ike_LatticeIKETests.LatticeIKETests::BUILDPHASE_1::0",
+              "platformFilters" : [
+
+              ],
+              "targetReference" : "PACKAGE-TARGET:LatticeIKE"
+            }
+          ],
+          "guid" : "PACKAGE-PRODUCT:apple-ike_LatticeIKETests.LatticeIKETests::BUILDPHASE_1",
+          "type" : "com.apple.buildphase.frameworks"
+        }
+      ],
+      "buildRules" : [
+
+      ],
+      "customTasks" : [
+
+      ],
+      "dependencies" : [
+        {
+          "guid" : "PACKAGE-TARGET:LatticeIKE",
+          "platformFilters" : [
+
+          ]
+        }
+      ],
+      "guid" : "PACKAGE-PRODUCT:apple-ike_LatticeIKETests.LatticeIKETests",
+      "name" : "LatticeIKETests-product",
+      "productReference" : {
+        "guid" : "PRODUCTREF-PACKAGE-PRODUCT:apple-ike_LatticeIKETests.LatticeIKETests",
+        "name" : "$(EXECUTABLE_NAME)",
+        "type" : "file"
+      },
+      "productTypeIdentifier" : "com.apple.product-type.bundle.unit-test",
+      "type" : "standard"
+    },
+    "signature" : "8d3a39c61e8bd3022f5bbf246118912d3cc11eb7849e712f2e913119fd4c1c1b",
+    "type" : "target"
+  },
+  {
+    "contents" : {
+      "approvedByUser" : "true",
+      "buildConfigurations" : [
+        {
+          "buildSettings" : {
+            "DRIVERKIT_DEPLOYMENT_TARGET" : "21.0",
+            "IPHONEOS_DEPLOYMENT_TARGET" : "26.0",
+            "IPHONEOS_DEPLOYMENT_TARGET[__platform_filter=ios-maccatalyst]" : "26.0",
+            "LD_RUNPATH_SEARCH_PATHS" : [
+              "$(inherited)",
+              "$(RPATH_ORIGIN)"
+            ],
+            "LINKER_DRIVER" : "swiftc",
+            "MACOSX_DEPLOYMENT_TARGET" : "26.0",
+            "PACKAGE_RESOURCE_TARGET_KIND" : "regular",
+            "PRODUCT_BUNDLE_IDENTIFIER" : "apple-ike.LatticeIKETests-test-runner",
+            "PRODUCT_MODULE_NAME" : "LatticeIKETests_test_runner",
+            "PRODUCT_NAME" : "$(TARGET_NAME)",
+            "SDKROOT" : "auto",
+            "SDK_VARIANT" : "auto",
+            "SKIP_INSTALL" : "NO",
+            "SWIFT_VERSION" : "5.0",
+            "TARGET_NAME" : "LatticeIKETests-test-runner",
+            "TVOS_DEPLOYMENT_TARGET" : "17.0",
+            "WATCHOS_DEPLOYMENT_TARGET" : "26.0",
+            "XROS_DEPLOYMENT_TARGET" : "1.0"
+          },
+          "guid" : "PACKAGE-TARGET:LatticeIKETests_test_runner::BUILDCONFIG_0",
+          "impartedBuildProperties" : {
+            "buildSettings" : {
+
+            }
+          },
+          "name" : "Debug"
+        },
+        {
+          "buildSettings" : {
+            "DRIVERKIT_DEPLOYMENT_TARGET" : "21.0",
+            "IPHONEOS_DEPLOYMENT_TARGET" : "26.0",
+            "IPHONEOS_DEPLOYMENT_TARGET[__platform_filter=ios-maccatalyst]" : "26.0",
+            "LD_RUNPATH_SEARCH_PATHS" : [
+              "$(inherited)",
+              "$(RPATH_ORIGIN)"
+            ],
+            "LINKER_DRIVER" : "swiftc",
+            "MACOSX_DEPLOYMENT_TARGET" : "26.0",
+            "PACKAGE_RESOURCE_TARGET_KIND" : "regular",
+            "PRODUCT_BUNDLE_IDENTIFIER" : "apple-ike.LatticeIKETests-test-runner",
+            "PRODUCT_MODULE_NAME" : "LatticeIKETests_test_runner",
+            "PRODUCT_NAME" : "$(TARGET_NAME)",
+            "SDKROOT" : "auto",
+            "SDK_VARIANT" : "auto",
+            "SKIP_INSTALL" : "NO",
+            "SWIFT_VERSION" : "5.0",
+            "TARGET_NAME" : "LatticeIKETests-test-runner",
+            "TVOS_DEPLOYMENT_TARGET" : "17.0",
+            "WATCHOS_DEPLOYMENT_TARGET" : "26.0",
+            "XROS_DEPLOYMENT_TARGET" : "1.0"
+          },
+          "guid" : "PACKAGE-TARGET:LatticeIKETests_test_runner::BUILDCONFIG_1",
+          "impartedBuildProperties" : {
+            "buildSettings" : {
+
+            }
+          },
+          "name" : "Release"
+        }
+      ],
+      "buildPhases" : [
+        {
+          "buildFiles" : [
+
+          ],
+          "guid" : "PACKAGE-TARGET:LatticeIKETests_test_runner::BUILDPHASE_0",
+          "type" : "com.apple.buildphase.sources"
+        },
+        {
+          "buildFiles" : [
+            {
+              "guid" : "PACKAGE-TARGET:LatticeIKETests_test_runner::BUILDPHASE_1::0",
+              "platformFilters" : [
+
+              ],
+              "targetReference" : "PACKAGE-PRODUCT:apple-ike_LatticeIKETests.LatticeIKETests"
+            }
+          ],
+          "guid" : "PACKAGE-TARGET:LatticeIKETests_test_runner::BUILDPHASE_1",
+          "type" : "com.apple.buildphase.frameworks"
+        }
+      ],
+      "buildRules" : [
+
+      ],
+      "customTasks" : [
+
+      ],
+      "dependencies" : [
+        {
+          "guid" : "PACKAGE-PRODUCT:apple-ike_LatticeIKETests.LatticeIKETests",
+          "platformFilters" : [
+
+          ]
+        }
+      ],
+      "guid" : "PACKAGE-TARGET:LatticeIKETests_test_runner",
+      "name" : "LatticeIKETests-test-runner",
+      "productReference" : {
+        "guid" : "PRODUCTREF-PACKAGE-TARGET:LatticeIKETests_test_runner",
+        "name" : "LatticeIKETests-test-runner",
+        "type" : "file"
+      },
+      "productTypeIdentifier" : "com.apple.product-type.tool.swiftpm-test-runner",
+      "type" : "standard"
+    },
+    "signature" : "832a723d0db1b23ffa6a78f48ed340028ef23870974cb137c2eaf842424474d5",
+    "type" : "target"
   },
   {
     "contents" : {
@@ -588,7 +951,7 @@
           "buildFiles" : [
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_2::REF_0",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_0",
               "guid" : "PACKAGE-PRODUCT:apple-ike_ikeprobe.ikeprobe::BUILDPHASE_0::0",
               "platformFilters" : [
 
@@ -637,7 +1000,7 @@
       "productTypeIdentifier" : "com.apple.product-type.tool",
       "type" : "standard"
     },
-    "signature" : "c3266ba5313680bf15aecdd23785fe4dafb706def022edf65227c4c1bd57026d",
+    "signature" : "80c76a5c63cb926fc540aae0c65a260132a919dd3dfe474eadde79b16b5b6f11",
     "type" : "target"
   },
   {
@@ -761,7 +1124,7 @@
           "buildFiles" : [
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_0",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_0",
               "guid" : "PACKAGE-TARGET:LatticeIKE::BUILDPHASE_0::0",
               "platformFilters" : [
 
@@ -770,7 +1133,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_1",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_1",
               "guid" : "PACKAGE-TARGET:LatticeIKE::BUILDPHASE_0::1",
               "platformFilters" : [
 
@@ -779,7 +1142,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_2",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_2",
               "guid" : "PACKAGE-TARGET:LatticeIKE::BUILDPHASE_0::2",
               "platformFilters" : [
 
@@ -788,7 +1151,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_3",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_3",
               "guid" : "PACKAGE-TARGET:LatticeIKE::BUILDPHASE_0::3",
               "platformFilters" : [
 
@@ -797,7 +1160,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_4",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_4",
               "guid" : "PACKAGE-TARGET:LatticeIKE::BUILDPHASE_0::4",
               "platformFilters" : [
 
@@ -806,7 +1169,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_5",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_5",
               "guid" : "PACKAGE-TARGET:LatticeIKE::BUILDPHASE_0::5",
               "platformFilters" : [
 
@@ -815,7 +1178,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_3::REF_6",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_6",
               "guid" : "PACKAGE-TARGET:LatticeIKE::BUILDPHASE_0::6",
               "platformFilters" : [
 
@@ -847,7 +1210,7 @@
       "productTypeIdentifier" : "org.swift.product-type.library.static",
       "type" : "standard"
     },
-    "signature" : "dd7ba51e2bac3251e6bdd07f99817ca5b27d94f999d917a6855e63eacb582ac3",
+    "signature" : "7b3c2f1773fcb6dee2b48c76e9880778710d12ced2343cbfc1fd6f2fcf2342be",
     "type" : "target"
   },
   {
@@ -985,7 +1348,7 @@
           "buildFiles" : [
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_5::REF_0",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_6::REF_0",
               "guid" : "PACKAGE-TARGET:ikeprobe-30D44451D8184C59-testable::BUILDPHASE_0::0",
               "platformFilters" : [
 
@@ -1021,7 +1384,7 @@
       "productTypeIdentifier" : "org.swift.product-type.common.object",
       "type" : "standard"
     },
-    "signature" : "be9a27d7aa078a460559d644c9ffe3a288b921f8702657b83e3116880285ff4a",
+    "signature" : "04ea41456364d77ae2393d3a1e7fe797e8dfd78455caa8a2f16dae190055aef8",
     "type" : "target"
   },
   {
@@ -1062,13 +1425,24 @@
 
       ],
       "dependencies" : [
+        {
+          "guid" : "PACKAGE-PRODUCT:apple-ike_LatticeIKETests.LatticeIKETests",
+          "platformFilters" : [
 
+          ]
+        },
+        {
+          "guid" : "PACKAGE-TARGET:LatticeIKETests_test_runner",
+          "platformFilters" : [
+
+          ]
+        }
       ],
       "guid" : "PACKAGE-PRODUCT:apple-ike-LatticeIKEPackageTests.LatticeIKEPackageTests",
       "name" : "LatticeIKEPackageTests-product",
       "type" : "aggregate"
     },
-    "signature" : "77c975e74f6920b950a4315b65de925d3dcf29d282e088c311fc06c1f81b0cf4",
+    "signature" : "3f46413d5ac671080935ea9a7d57fb6a4766c86a531f4ce314cbc8283d649386",
     "type" : "target"
   },
   {
@@ -1282,7 +1656,7 @@
           "buildFiles" : [
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_0",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_5::REF_0",
               "guid" : "PACKAGE-TARGET:LatticeIKE-4A754CDC4CE648A9-dynamic::BUILDPHASE_0::0",
               "platformFilters" : [
 
@@ -1291,7 +1665,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_1",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_5::REF_1",
               "guid" : "PACKAGE-TARGET:LatticeIKE-4A754CDC4CE648A9-dynamic::BUILDPHASE_0::1",
               "platformFilters" : [
 
@@ -1300,7 +1674,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_2",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_5::REF_2",
               "guid" : "PACKAGE-TARGET:LatticeIKE-4A754CDC4CE648A9-dynamic::BUILDPHASE_0::2",
               "platformFilters" : [
 
@@ -1309,7 +1683,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_3",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_5::REF_3",
               "guid" : "PACKAGE-TARGET:LatticeIKE-4A754CDC4CE648A9-dynamic::BUILDPHASE_0::3",
               "platformFilters" : [
 
@@ -1318,7 +1692,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_4",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_5::REF_4",
               "guid" : "PACKAGE-TARGET:LatticeIKE-4A754CDC4CE648A9-dynamic::BUILDPHASE_0::4",
               "platformFilters" : [
 
@@ -1327,7 +1701,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_5",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_5::REF_5",
               "guid" : "PACKAGE-TARGET:LatticeIKE-4A754CDC4CE648A9-dynamic::BUILDPHASE_0::5",
               "platformFilters" : [
 
@@ -1336,7 +1710,7 @@
             },
             {
               "codeSignOnCopy" : "false",
-              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_4::REF_6",
+              "fileReference" : "PACKAGE:apple-ike::MAINGROUP::REF_5::REF_6",
               "guid" : "PACKAGE-TARGET:LatticeIKE-4A754CDC4CE648A9-dynamic::BUILDPHASE_0::6",
               "platformFilters" : [
 
@@ -1367,7 +1741,7 @@
       "productTypeIdentifier" : "com.apple.product-type.library.dynamic",
       "type" : "standard"
     },
-    "signature" : "d3b7c1b50effed895d3f91e667298ca5b3f805d419f224c7d3ecef8fe6051123",
+    "signature" : "b271a75883c80fcf3fb35d3983677a08d2c53034aad9e7612565594fe1ed0d68",
     "type" : "target"
   },
   {
@@ -1428,11 +1802,11 @@
       "projectIsPackage" : "true",
       "projectName" : "Aggregate",
       "targets" : [
-        "faf81fb5aec247aa6582a0c6c56b595848f42329bdb68ca8ca51be16117b39b7",
+        "3774d64b52b06f55074e463ec4e82aed2d73987d55184c34c920212a2cfb5dd7",
         "2228e061583690c2688549206341591593471ca87b0f041965c9c57b720366f0"
       ]
     },
-    "signature" : "011e268288a7332c7f9938b01896803aa90682ae8bfbf310c478a38827913b83",
+    "signature" : "ce6892148b771c977de50f6d069c8f35a56703692c1510f29a47cf5743ae09fc",
     "type" : "project"
   },
   {
@@ -1474,6 +1848,18 @@
       ],
       "dependencies" : [
         {
+          "guid" : "PACKAGE-PRODUCT:apple-ike_LatticeIKETests.LatticeIKETests",
+          "platformFilters" : [
+
+          ]
+        },
+        {
+          "guid" : "PACKAGE-TARGET:LatticeIKETests_test_runner",
+          "platformFilters" : [
+
+          ]
+        },
+        {
           "guid" : "PACKAGE-PRODUCT:apple-ike_LatticeIKE.LatticeIKE",
           "platformFilters" : [
 
@@ -1496,7 +1882,7 @@
       "name" : "AllIncludingTests",
       "type" : "aggregate"
     },
-    "signature" : "faf81fb5aec247aa6582a0c6c56b595848f42329bdb68ca8ca51be16117b39b7",
+    "signature" : "3774d64b52b06f55074e463ec4e82aed2d73987d55184c34c920212a2cfb5dd7",
     "type" : "target"
   },
   {
