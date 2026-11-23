@@ -1,0 +1,100 @@
+diff --git a/src/frontends/android/app/src/main/jni/Android.mk b/src/frontends/android/app/src/main/jni/Android.mk
+index b3be940..046f299 100644
+--- a/src/frontends/android/app/src/main/jni/Android.mk
++++ b/src/frontends/android/app/src/main/jni/Android.mk
+@@ -3,11 +3,10 @@ include $(CLEAR_VARS)
+ 
+ # use "bring your own device" (BYOD) features (also see USE_BYOD in
+ # MainActivity.java)
+-strongswan_USE_BYOD := true
++strongswan_USE_BYOD :=
+ 
+ strongswan_CHARON_PLUGINS := android-log socket-default openssl nonce \
+-	pkcs1 pem x509 xcbc kdf revocation \
+-	eap-identity eap-mschapv2 eap-md5 eap-gtc eap-tls
++	pkcs1 pkcs8 pem x509 kdf revocation
+ 
+ ifneq ($(strongswan_USE_BYOD),)
+ strongswan_BYOD_PLUGINS := eap-ttls eap-tnc tnc-imc tnc-tnccs tnccs-20
+diff --git a/src/frontends/android/app/src/main/jni/libandroidbridge/backend/android_service.c b/src/frontends/android/app/src/main/jni/libandroidbridge/backend/android_service.c
+index 2ab0af9..5930eff 100644
+--- a/src/frontends/android/app/src/main/jni/libandroidbridge/backend/android_service.c
++++ b/src/frontends/android/app/src/main/jni/libandroidbridge/backend/android_service.c
+@@ -792,6 +792,23 @@ static job_requeue_t initiate(private_android_service_t *this)
+ 	};
+ 	char *type, *remote_id;
+ 
++	/* optional lifetimes in seconds, the client drives the rekeying */
++	child.lifetime.time.rekey = this->settings->get_int(this->settings,
++							"connection.child_rekey", child.lifetime.time.rekey);
++	if (child.lifetime.time.rekey < 7200)
++	{
++		child.lifetime.time.jitter = child.lifetime.time.rekey / 10;
++		child.lifetime.time.life = child.lifetime.time.rekey +
++								   max(60, child.lifetime.time.rekey / 2);
++	}
++	peer.rekey_time = this->settings->get_int(this->settings,
++							"connection.ike_rekey", peer.rekey_time);
++	if (peer.rekey_time < 36000)
++	{
++		peer.jitter_time = peer.rekey_time / 10;
++		peer.over_time = max(60, peer.rekey_time / 2);
++	}
++
+ 	/* only try once and notify the GUI since Android 5+ where we have a
+ 	 * blocking TUN device */
+ 	peer.keyingtries = 1;
+diff --git a/src/frontends/android/app/src/main/jni/libandroidbridge/charonservice.c b/src/frontends/android/app/src/main/jni/libandroidbridge/charonservice.c
+index 531fd94..7e9af45 100644
+--- a/src/frontends/android/app/src/main/jni/libandroidbridge/charonservice.c
++++ b/src/frontends/android/app/src/main/jni/libandroidbridge/charonservice.c
+@@ -371,6 +371,39 @@ METHOD(charonservice_t, get_user_key, private_key_t*,
+ 
+ 	androidjni_attach_thread(&env);
+ 
++	/* prefer a key the app hands over in encoded form, which is loaded and
++	 * used natively (needed for algorithms the platform does not provide) */
++	method_id = (*env)->GetMethodID(env, android_charonvpnservice_class,
++									"getUserKeyEncoded", "()[B");
++	if (method_id)
++	{
++		jbyteArray jencoded;
++
++		jencoded = (*env)->CallObjectMethod(env, this->vpn_service, method_id);
++		if (!androidjni_exception_occurred(env) && jencoded)
++		{
++			chunk_t encoded;
++
++			encoded = chunk_from_byte_array(env, jencoded);
++			key = lib->creds->create(lib->creds, CRED_PRIVATE_KEY, KEY_ANY,
++									 BUILD_BLOB_ASN1_DER, encoded, BUILD_END);
++			memwipe(encoded.ptr, encoded.len);
++			chunk_free(&encoded);
++			if (key)
++			{
++				DESTROY_IF(pubkey);
++				androidjni_detach_thread();
++				return key;
++			}
++			DBG1(DBG_CFG, "failed to parse encoded private key");
++			goto failed;
++		}
++	}
++	else
++	{
++		(*env)->ExceptionClear(env);
++	}
++
+ 	method_id = (*env)->GetMethodID(env,
+ 						android_charonvpnservice_class,
+ 						"getUserKey", "()Ljava/security/PrivateKey;");
+@@ -507,6 +540,9 @@ static void set_options(char *logfile, jboolean ipv6)
+ 					"charon.retransmit_base", ANDROID_RETRANSMIT_BASE);
+ 	lib->settings->set_bool(lib->settings,
+ 					"charon.initiator_only", TRUE);
++	/* ML-DSA-87 certificates and signatures make IKE_AUTH about 13 KB */
++	lib->settings->set_int(lib->settings,
++					"charon.max_packet", 30000);
+ 	/* the service currently can't handle make-before-break reauth and assumes
+ 	 * the old SA is deleted before the replacement and installs a special
+ 	 * replacement TUN device in-between */

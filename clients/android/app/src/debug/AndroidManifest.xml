@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Debug builds only: the CNSA 2.0 lab mode (IKEv2/IPsec through strongSwan).
+    Nothing here is part of the release build.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name=".cnsa2.Cnsa2LabActivity"
+            android:exported="true"
+            android:label="Lattice CNSA 2.0 lab" />
+        <service
+            android:name="org.strongswan.android.logic.CharonVpnService"
+            android:exported="false"
+            android:permission="android.permission.BIND_VPN_SERVICE">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

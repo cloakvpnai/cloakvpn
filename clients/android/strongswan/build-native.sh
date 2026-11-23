@@ -8,8 +8,13 @@
 #   strongSwan  eb7fa250749b3979055e09312cd603f1a61d9aee  (development branch: ML-DSA is not in 6.1.0)
 #   OpenSSL     3.5.9, sha256 603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
 # Needs: Android NDK, Docker (for strongSwan's autotools step), perl, make.
-# Output: $OUT/arm64-v8a/lib{strongswan,charon,ipsec,androidbridge,...}.so
+# Output: $OUT/arm64-v8a/lib{strongswan,charon,ipsec,androidbridge}.so
+# Copy those into ../app/src/debug/jniLibs/arm64-v8a/ (git-ignored).
+# lattice-android.patch: certificate authentication only (no EAP, no BYOD),
+# larger IKE messages, private key handed over by the app, lifetimes from the
+# profile.
 set -eu
+HERE="$(cd "$(dirname "$0")" && pwd)"
 : "${ANDROID_NDK_ROOT:?set ANDROID_NDK_ROOT to the NDK directory}"
 WORK="${WORK:-$HOME/src}"
 OUT="${OUT:-$WORK/strongswan-android-libs}"
@@ -21,6 +26,7 @@ if [ ! -d strongswan ]; then
   git clone https://github.com/strongswan/strongswan.git
 fi
 git -C strongswan checkout -q eb7fa250749b3979055e09312cd603f1a61d9aee
+git -C strongswan checkout -q -- . && git -C strongswan apply "$HERE/lattice-android.patch"
 
 if [ ! -d openssl-3.5.9 ]; then
   curl -fsSL -o openssl-3.5.9.tar.gz https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz
