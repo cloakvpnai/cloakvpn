@@ -41,6 +41,12 @@ struct CloakConfig: Codable, Equatable {
     var clientRPPublicKeyB64: String
     var pskRotationSeconds: Int
 
+    // ML-KEM-768 path (see MLKEM768Exchange.swift). Optional so configs
+    // cached before this field existed still decode. When set, `pqEnabled`
+    // (which means "Rosenpass") is false and the tunnel starts with this PSK.
+    var presharedKeyB64: String?
+    var pqKEM: String?
+
     /// Subset of fields suitable for `NETunnelProviderProtocol.providerConfiguration`.
     ///
     /// Deliberately EXCLUDES the three Rosenpass key blobs
@@ -53,7 +59,7 @@ struct CloakConfig: Codable, Equatable {
     /// app only and pushes derived 32-byte PSKs to the NE via
     /// `sendProviderMessage`.
     var asDictionary: [String: Any] {
-        [
+        var dict: [String: Any] = [
             "wgPrivateKey": wgPrivateKey,
             "addressV4": addressV4, "addressV6": addressV6,
             "dns": dns,
@@ -65,6 +71,11 @@ struct CloakConfig: Codable, Equatable {
             "rpEndpoint": rpEndpoint,
             "pskRotationSeconds": pskRotationSeconds
         ]
+        // ML-KEM-768 path: the PSK is fixed for the provision, so it travels
+        // with the WireGuard private key instead of being pushed at runtime.
+        if let presharedKeyB64 { dict["presharedKeyB64"] = presharedKeyB64 }
+        if let pqKEM { dict["pqKEM"] = pqKEM }
+        return dict
     }
 
     init(dict: [String: Any]) throws {
@@ -94,6 +105,8 @@ struct CloakConfig: Codable, Equatable {
         serverRPPublicKeyB64 = (dict["serverRPPublicKeyB64"] as? String) ?? ""
         clientRPSecretKeyB64 = (dict["clientRPSecretKeyB64"] as? String) ?? ""
         clientRPPublicKeyB64 = (dict["clientRPPublicKeyB64"] as? String) ?? ""
+        presharedKeyB64      = dict["presharedKeyB64"] as? String
+        pqKEM                = dict["pqKEM"] as? String
     }
 
     init(wgPrivateKey: String, addressV4: String, addressV6: String, dns: [String],
@@ -154,7 +167,7 @@ enum ConfigParser {
         let peer = "wireguard.peer"
         let rp = "rosenpass"
 
-        return CloakConfig(
+        var cfg = CloakConfig(
             // private_key is now OPTIONAL: configs returned by
             // cloak-api-server omit it (the iPhone holds its own
             // locally-generated keypair). When this field is absent,
@@ -177,5 +190,13 @@ enum ConfigParser {
             clientRPPublicKeyB64: (try? v(rp, "client_public_key_b64")) ?? "",
             pskRotationSeconds: Int((try? v(rp, "psk_rotation_seconds")) ?? "120") ?? 120
         )
+        if let psk = try? v("mlkem768", "preshared_key_b64") {
+            guard let raw = Data(base64Encoded: psk), raw.count == 32 else {
+                throw TunnelError.parse("[mlkem768] preshared_key_b64 is not a 32-byte key")
+            }
+            cfg.presharedKeyB64 = psk
+            cfg.pqKEM = "ML-KEM-768"
+        }
+        return cfg
     }
 }

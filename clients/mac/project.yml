@@ -32,7 +32,7 @@ options:
   bundleIdPrefix: ai.latticevpn
   createIntermediateGroups: true
   deploymentTarget:
-    macOS: '14.0'
+    macOS: '26.0'
   developmentLanguage: en
   groupSortPosition: top
   defaultConfig: Debug
@@ -65,7 +65,7 @@ targets:
   LatticeMac:
     type: application
     platform: macOS
-    deploymentTarget: '14.0'
+    deploymentTarget: '26.0'
 
     sources:
       - path: LatticeMac
@@ -77,6 +77,8 @@ targets:
       - path: ../ios/CloakVPN/AppGroupKeyStore.swift
       - path: ../ios/CloakVPN/LatticeAPI.swift
       - path: ../ios/CloakVPN/LatticeAccountClient.swift
+      # ML-KEM-768 exchange (CryptoKit, needs macOS 26)
+      - path: ../ios/CloakVPN/MLKEM768Exchange.swift
       - path: ../ios/CloakVPN/StoreManager.swift
       - path: ../ios/CloakVPN/ConfigParser.swift
       - path: ../ios/CloakVPN/Region.swift
@@ -100,7 +102,7 @@ targets:
         # The defining setting for a menu-bar-only app: no Dock icon,
         # no menu bar app name, no first-run window.
         LSUIElement: true
-        LSMinimumSystemVersion: '14.0'
+        LSMinimumSystemVersion: '26.0'
         LSApplicationCategoryType: public.app-category.utilities
         NSHighResolutionCapable: true
         NSNetworkUsageDescription: "Lattice VPN routes your internet traffic through a post-quantum encrypted tunnel."
@@ -181,7 +183,7 @@ targets:
   LatticeMacTunnel:
     type: app-extension
     platform: macOS
-    deploymentTarget: '14.0'
+    deploymentTarget: '26.0'
 
     sources:
       - path: LatticeMacTunnel
@@ -301,7 +303,11 @@ targets:
           done
           [ -n "$WG_GO_DIR" ] || { echo "error: WireGuardKitGo not found"; exit 1; }
           echo "info: building wg-go bridge in $WG_GO_DIR"
-          export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
+          export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin"
+          # Stripping the enum-map-derive proc-macro dylib on this toolchain
+          # produces a Mach-O dyld rejects (rustc E0463 "can't find crate for
+          # enum_map_derive"). Building maybenot unstripped avoids it.
+          export CARGO_PROFILE_RELEASE_STRIP=none
           cd "$WG_GO_DIR"
           make -j$(sysctl -n hw.ncpu)
 

@@ -23,6 +23,7 @@
 		84700939DE8F4738607EA2DA /* ConfigParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A104B36A4CB5B6AAB224E961 /* ConfigParser.swift */; };
 		8F5AF229D25A1F22ADA73A6B /* rosenpassffi.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC9FBB5322F6F153C7A6F6CC /* rosenpassffi.swift */; };
 		9976D68EC55F77F6CA200753 /* rosenpassffiFFI.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = BDDC416DE1D696A237620B9C /* rosenpassffiFFI.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		9BE11121E6CC838F25E0F4D1 /* MLKEM768Exchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85D3071AF77DC39693600E08 /* MLKEM768Exchange.swift */; };
 		A848AFC600E98731ECADE270 /* ConnectionViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 588EB77FE56779DD2E458442 /* ConnectionViewModel.swift */; };
 		AF099372ED2C6A41B4CD3A5D /* LatticeMacTunnel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C70211E508CDEF32A95D730E /* LatticeMacTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B1AB44BC2480110F46EC8765 /* WireGuardKit in Frameworks */ = {isa = PBXBuildFile; productRef = AE77F3F852E2699E6B1ECF04 /* WireGuardKit */; };
@@ -84,6 +85,7 @@
 		53012357CF1AF36AA615A567 /* Region.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Region.swift; sourceTree = "<group>"; };
 		588EB77FE56779DD2E458442 /* ConnectionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionViewModel.swift; sourceTree = "<group>"; };
 		5F5AC903F93485FEF3A202DC /* RosenpassBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosenpassBridge.swift; sourceTree = "<group>"; };
+		85D3071AF77DC39693600E08 /* MLKEM768Exchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLKEM768Exchange.swift; sourceTree = "<group>"; };
 		8927E4ACEA21E973CD56CE9E /* LatticeMacTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticeMacTunnelProvider.swift; sourceTree = "<group>"; };
 		A104B36A4CB5B6AAB224E961 /* ConfigParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigParser.swift; sourceTree = "<group>"; };
 		A891D2E5644988BC3B2347F3 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
@@ -209,6 +211,7 @@
 				A104B36A4CB5B6AAB224E961 /* ConfigParser.swift */,
 				23A76637DAF36D4A08A21FEB /* LatticeAccountClient.swift */,
 				2AAC0F6409163575246BDDF9 /* LatticeAPI.swift */,
+				85D3071AF77DC39693600E08 /* MLKEM768Exchange.swift */,
 				53012357CF1AF36AA615A567 /* Region.swift */,
 				5F5AC903F93485FEF3A202DC /* RosenpassBridge.swift */,
 				CC9FBB5322F6F153C7A6F6CC /* rosenpassffi.swift */,
@@ -340,7 +343,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -euo pipefail\nWG_GO_DIR=\"\"\nDIR=\"$BUILT_PRODUCTS_DIR\"\nwhile [ \"$DIR\" != \"/\" ]; do\n    CANDIDATE=\"$DIR/SourcePackages/checkouts/wireguard-apple/Sources/WireGuardKitGo\"\n    if [ -d \"$CANDIDATE\" ]; then\n        WG_GO_DIR=\"$CANDIDATE\"\n        break\n    fi\n    DIR=\"$(dirname \"$DIR\")\"\ndone\n[ -n \"$WG_GO_DIR\" ] || { echo \"error: WireGuardKitGo not found\"; exit 1; }\necho \"info: building wg-go bridge in $WG_GO_DIR\"\nexport PATH=\"/opt/homebrew/bin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin\"\ncd \"$WG_GO_DIR\"\nmake -j$(sysctl -n hw.ncpu)\n";
+			shellScript = "set -euo pipefail\nWG_GO_DIR=\"\"\nDIR=\"$BUILT_PRODUCTS_DIR\"\nwhile [ \"$DIR\" != \"/\" ]; do\n    CANDIDATE=\"$DIR/SourcePackages/checkouts/wireguard-apple/Sources/WireGuardKitGo\"\n    if [ -d \"$CANDIDATE\" ]; then\n        WG_GO_DIR=\"$CANDIDATE\"\n        break\n    fi\n    DIR=\"$(dirname \"$DIR\")\"\ndone\n[ -n \"$WG_GO_DIR\" ] || { echo \"error: WireGuardKitGo not found\"; exit 1; }\necho \"info: building wg-go bridge in $WG_GO_DIR\"\nexport PATH=\"/opt/homebrew/bin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin\"\n# Stripping the enum-map-derive proc-macro dylib on this toolchain\n# produces a Mach-O dyld rejects (rustc E0463 \"can't find crate for\n# enum_map_derive\"). Building maybenot unstripped avoids it.\nexport CARGO_PROFILE_RELEASE_STRIP=none\ncd \"$WG_GO_DIR\"\nmake -j$(sysctl -n hw.ncpu)\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -357,6 +360,7 @@
 				EAFFFD6133D38C2D7A905A0D /* LatticeAPI.swift in Sources */,
 				BD7E11B34B2390845C974194 /* LatticeAccountClient.swift in Sources */,
 				B98EA2B1AFF3B0E29256B127 /* LatticeMacApp.swift in Sources */,
+				9BE11121E6CC838F25E0F4D1 /* MLKEM768Exchange.swift in Sources */,
 				06A8D73A5E1017556ACBD1A5 /* MenuBarController.swift in Sources */,
 				4574E08ADCC960CE3490CFD8 /* Region.swift in Sources */,
 				63DECF939F2C8716FFF1465E /* RosenpassBridge.swift in Sources */,
@@ -412,7 +416,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) -DDIRECT_DOWNLOAD_BUILD";
 				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos;
@@ -468,7 +472,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -497,7 +501,7 @@
 					"$(inherited)",
 					"@executable_path/../../../../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) -DAPPSTORE_BUILD";
 				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos.tunnel;
@@ -560,7 +564,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -592,7 +596,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos;
 				PRODUCT_NAME = LatticeMac;
@@ -648,7 +652,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -677,7 +681,7 @@
 					"$(inherited)",
 					"@executable_path/../../../../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos.tunnel;
 				PRODUCT_NAME = LatticeMacTunnel;
@@ -733,7 +737,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -763,7 +767,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) -DAPPSTORE_BUILD";
 				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos;
@@ -790,7 +794,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos;
 				PRODUCT_NAME = LatticeMac;
@@ -815,7 +819,7 @@
 					"$(inherited)",
 					"@executable_path/../../../../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) -DDIRECT_DOWNLOAD_BUILD";
 				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos.tunnel;
@@ -843,7 +847,7 @@
 					"$(inherited)",
 					"@executable_path/../../../../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = ai.latticevpn.macos.tunnel;
 				PRODUCT_NAME = LatticeMacTunnel;

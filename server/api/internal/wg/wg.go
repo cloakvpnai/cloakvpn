@@ -129,6 +129,11 @@ type ClientConfig struct {
 	RosenpassClientSK   string // base64 of client rosenpass secret
 	RosenpassClientPK   string // base64 of client rosenpass public
 	AssignedIP          string // "10.99.0.5"
+
+	// ML-KEM-768 path only (see mlkem.go). Omitted from the JSON for
+	// Rosenpass provisions, so existing clients see an unchanged response.
+	PQKEM              string `json:",omitempty"` // "ML-KEM-768"
+	MLKEM768Ciphertext string `json:",omitempty"` // base64, 1088 bytes raw
 }
 
 // Provision is the end-to-end "add a new device" flow. It:

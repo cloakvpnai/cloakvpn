@@ -105,7 +105,10 @@ func NewDeviceHandler(db *store.DB, regs *regions.Registry, rc *regions.Client,
 type provisionReq struct {
 	WGPubkey        string `json:"wg_pubkey"`
 	RosenpassPubkey string `json:"rosenpass_pubkey"`
-	Region          string `json:"region"`
+	// MLKEM768Pubkey selects the ML-KEM-768 path (see wg/mlkem.go): the
+	// device's encapsulation key, passed through to the region untouched.
+	MLKEM768Pubkey string `json:"mlkem768_pubkey"`
+	Region         string `json:"region"`
 }
 
 type provisionResp struct {
@@ -217,9 +220,13 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
-	if req.WGPubkey == "" || req.RosenpassPubkey == "" {
-		http.Error(w, "wg_pubkey and rosenpass_pubkey required", http.StatusBadRequest)
+	if req.WGPubkey == "" || (req.RosenpassPubkey == "" && req.MLKEM768Pubkey == "") {
+		http.Error(w, "wg_pubkey and one of rosenpass_pubkey or mlkem768_pubkey required", http.StatusBadRequest)
 		return
+	}
+	if req.MLKEM768Pubkey != "" {
+		// One path per provision. The ML-KEM-768 key replaces Rosenpass.
+		req.RosenpassPubkey = ""
 	}
 	regionID := req.Region
 	if regionID == "" {
@@ -267,7 +274,7 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 		if known.Region == regionID {
 			// Same region — re-provision in place at the existing IP. Every
 			// regionsvc peer operation is idempotent.
-			cfg, err := h.rc.Provision(reg, req.WGPubkey, req.RosenpassPubkey, known.WGIP)
+			cfg, err := h.rc.Provision(reg, req.WGPubkey, req.RosenpassPubkey, req.MLKEM768Pubkey, known.WGIP)
 			if err != nil {
 				log.Printf("reprovision %s: %v", regionID, err)
 				http.Error(w, "provision failed", http.StatusBadGateway)
@@ -303,7 +310,7 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "server", http.StatusInternalServerError)
 			return
 		}
-		cfg, err := h.rc.Provision(reg, req.WGPubkey, req.RosenpassPubkey, ip)
+		cfg, err := h.rc.Provision(reg, req.WGPubkey, req.RosenpassPubkey, req.MLKEM768Pubkey, ip)
 		if err != nil {
 			log.Printf("provision %s: %v", regionID, err)
 			http.Error(w, "provision failed", http.StatusBadGateway)
@@ -386,7 +393,7 @@ func (h *DeviceHandler) create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "server", http.StatusInternalServerError)
 		return
 	}
-	cfg, err := h.rc.Provision(reg, req.WGPubkey, req.RosenpassPubkey, ip)
+	cfg, err := h.rc.Provision(reg, req.WGPubkey, req.RosenpassPubkey, req.MLKEM768Pubkey, ip)
 	if err != nil {
 		log.Printf("provision %s: %v", regionID, err)
 		http.Error(w, "provision failed", http.StatusBadGateway)

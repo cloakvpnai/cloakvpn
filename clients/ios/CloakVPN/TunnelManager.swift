@@ -968,6 +968,23 @@ final class TunnelManager: ObservableObject {
         guard let number = accountNumber, !number.isEmpty else {
             throw TunnelError.parse("Enter your account number to connect.")
         }
+        #if os(macOS)
+        // macOS uses ML-KEM-768: a fresh post-quantum key pair is created
+        // inside provisionDeviceMLKEM768 for every provision, so only the
+        // WireGuard keypair has to exist beforehand. No Rosenpass.
+        await ensureLocalWGKeypair()
+        let wgKeys = try AppGroupKeyStore.loadLocalWGKeypair()
+
+        debugLog("provisionFromAPIRaw: region=\(region.id) (wg_pub=\(wgKeys.publicB64.prefix(8))…, pq=ML-KEM-768)")
+
+        func provision(_ accountNumber: String) async throws -> String {
+            try await accountClient.provisionDeviceMLKEM768(
+                accountNumber: accountNumber,
+                wgPubkeyB64: wgKeys.publicB64,
+                region: region.id
+            )
+        }
+        #else
         // Make sure both keypairs exist locally before talking to the
         // server. ensureLocalKeypair handles rosenpass; ensureLocalWGKeypair
         // handles WG. Both are idempotent.
@@ -987,6 +1004,7 @@ final class TunnelManager: ObservableObject {
                 region: region.id
             )
         }
+        #endif
 
         let configText: String
         do {

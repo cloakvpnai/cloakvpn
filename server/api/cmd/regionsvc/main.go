@@ -166,7 +166,10 @@ type handler struct {
 type provisionReq struct {
 	WGPubkey        string `json:"wg_pubkey"`
 	RosenpassPubkey string `json:"rosenpass_pubkey"`
-	IP              string `json:"ip"`
+	// MLKEM768Pubkey, when set, selects the ML-KEM-768 path instead of
+	// Rosenpass: base64 of the device's 1184-byte encapsulation key.
+	MLKEM768Pubkey string `json:"mlkem768_pubkey"`
+	IP             string `json:"ip"`
 }
 
 type revokeReq struct {
@@ -199,14 +202,22 @@ func (h *handler) provision(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
-	if req.WGPubkey == "" || req.RosenpassPubkey == "" || req.IP == "" {
-		http.Error(w, "wg_pubkey, rosenpass_pubkey and ip are required", http.StatusBadRequest)
+	if req.WGPubkey == "" || req.IP == "" || (req.RosenpassPubkey == "" && req.MLKEM768Pubkey == "") {
+		http.Error(w, "wg_pubkey, ip and one of rosenpass_pubkey or mlkem768_pubkey are required", http.StatusBadRequest)
 		return
 	}
 
 	// IP is pinned via reuseIP — the central API already chose it from the
 	// database, so regionsvc passes no usedIPs set of its own.
-	cfg, err := h.ctrl.ProvisionWithKeys(nil, req.IP, req.WGPubkey, req.RosenpassPubkey)
+	var (
+		cfg *wg.ClientConfig
+		err error
+	)
+	if req.MLKEM768Pubkey != "" {
+		cfg, err = h.ctrl.ProvisionMLKEM768(nil, req.IP, req.WGPubkey, req.MLKEM768Pubkey)
+	} else {
+		cfg, err = h.ctrl.ProvisionWithKeys(nil, req.IP, req.WGPubkey, req.RosenpassPubkey)
+	}
 	if err != nil {
 		log.Printf("provision %s: %v", req.IP, err)
 		http.Error(w, "provision failed", http.StatusInternalServerError)

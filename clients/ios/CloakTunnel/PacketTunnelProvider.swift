@@ -1189,8 +1189,18 @@ extension PacketTunnelProvider {
         }
         peer.endpoint = endpoint
         peer.persistentKeepAlive = UInt16(clamping: cfg.persistentKeepalive)
-        // peer.preSharedKey is left nil; the Rosenpass-derived PSK will
-        // be installed later via handleAppMessage → applyPresharedKey.
+        // Rosenpass path: peer.preSharedKey is left nil; the derived PSK is
+        // installed later via handleAppMessage → applyPresharedKey.
+        // ML-KEM-768 path: the PSK came with the provision, so the very first
+        // handshake already uses it. A malformed key fails the start rather
+        // than bringing up a tunnel without it.
+        if let pskB64 = cfg.presharedKeyB64 {
+            guard let pskBytes = Data(base64Encoded: pskB64),
+                  let psk = PreSharedKey(rawValue: pskBytes) else {
+                throw PacketTunnelError.badField("presharedKeyB64", "<redacted>")
+            }
+            peer.preSharedKey = psk
+        }
 
         return TunnelConfiguration(name: "Cloak", interface: iface, peers: [peer])
     }

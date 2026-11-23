@@ -98,6 +98,7 @@ func NewClient(secret string) *Client {
 type provisionBody struct {
 	WGPubkey        string `json:"wg_pubkey"`
 	RosenpassPubkey string `json:"rosenpass_pubkey"`
+	MLKEM768Pubkey  string `json:"mlkem768_pubkey,omitempty"`
 	IP              string `json:"ip"`
 }
 
@@ -108,10 +109,16 @@ type revokeBody struct {
 // Provision asks the region's regionsvc to add a WireGuard + Rosenpass peer
 // at ip and returns the resulting client config. The ip must already be
 // allocated by the caller from the database.
-func (c *Client) Provision(reg Region, wgPubkey, rosenpassPubkey, ip string) (*wg.ClientConfig, error) {
+//
+// Exactly one of rosenpassPubkey or mlkem768Pubkey is set. With
+// mlkem768Pubkey the region derives the WireGuard PSK from an ML-KEM-768
+// exchange and the returned config carries the ciphertext; a region whose
+// regionsvc predates that path answers 400, surfaced as ErrRegionUnavailable.
+func (c *Client) Provision(reg Region, wgPubkey, rosenpassPubkey, mlkem768Pubkey, ip string) (*wg.ClientConfig, error) {
 	body, _ := json.Marshal(provisionBody{
 		WGPubkey:        wgPubkey,
 		RosenpassPubkey: rosenpassPubkey,
+		MLKEM768Pubkey:  mlkem768Pubkey,
 		IP:              ip,
 	})
 	resp, err := c.do(reg, "/internal/provision", body)
