@@ -488,7 +488,16 @@ final class TunnelManager: ObservableObject {
         // the server round-trip entirely; just re-import the cached
         // config text. Empirically takes 200-400ms (config parse +
         // saveToPreferences) vs 3-8s for full provisioning.
-        if let cachedText = provisionedConfigsByRegionID[region.id] {
+        var cachedConfig = provisionedConfigsByRegionID[region.id]
+        #if os(macOS)
+        // macOS requires ML-KEM-768. A config cached by an earlier build is a
+        // Rosenpass config; reusing it would skip the exchange, so drop it.
+        if let text = cachedConfig, !text.contains("[mlkem768]") {
+            cachedConfig = nil
+            provisionedConfigsByRegionID.removeValue(forKey: region.id)
+        }
+        #endif
+        if let cachedText = cachedConfig {
             debugLog("selectRegion: \(region.id) — cache hit, instant swap")
             do {
                 try await importConfig(cachedText)

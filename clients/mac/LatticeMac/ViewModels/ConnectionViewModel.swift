@@ -272,7 +272,19 @@ final class ConnectionViewModel: ObservableObject {
             lastError = "No regions available"
             return
         }
+        // selectRegion provisions the device and saves the VPN configuration,
+        // but only restarts a tunnel that was already up. From a disconnected
+        // state the tunnel has to be started here, or Connect does nothing.
         await tunnel.selectRegion(region)
+        if let regionError = tunnel.lastRegionError {
+            lastError = regionError
+            return
+        }
+        do {
+            try await tunnel.connect()
+        } catch {
+            lastError = "Couldn't start the VPN: \(error.localizedDescription)"
+        }
     }
 
     /// Connect to a specific region. Called when the user clicks a
