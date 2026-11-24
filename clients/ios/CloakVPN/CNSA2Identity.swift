@@ -46,6 +46,18 @@ enum CNSA2Identity {
 
     static func certificate() -> Data? { read("certificate") }
 
+    /// When the stored certificate expires, as the server reported it. Kept beside the
+    /// certificate so the app and the tunnel extension agree on when to renew.
+    static var certificateExpiry: Date? {
+        guard let data = read("expiry"), let text = String(data: data, encoding: .utf8),
+              let seconds = TimeInterval(text), seconds > 0 else { return nil }
+        return Date(timeIntervalSince1970: seconds)
+    }
+
+    static func setCertificateExpiry(_ date: Date) throws {
+        try write("expiry", Data(String(Int(date.timeIntervalSince1970)).utf8))
+    }
+
     /// PKCS#8 in the seed-only form, as OpenSSL 3.5 reads it.
     static func privateKeyPKCS8() throws -> Data {
         guard let seed = read("seed") else { throw Failure(description: "this device is not enrolled") }
@@ -53,7 +65,7 @@ enum CNSA2Identity {
     }
 
     static func reset() {
-        for account in ["seed", "certificate"] { SecItemDelete(query(account) as CFDictionary) }
+        for account in ["seed", "certificate", "expiry"] { SecItemDelete(query(account) as CFDictionary) }
     }
 
     // MARK: key
@@ -67,6 +79,7 @@ enum CNSA2Identity {
         let key = try MLDSA87.PrivateKey(seedRepresentation: seed, publicKey: nil)
         try write("seed", seed)
         SecItemDelete(query("certificate") as CFDictionary)
+        SecItemDelete(query("expiry") as CFDictionary)
         return key
     }
 

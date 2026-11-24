@@ -32,6 +32,7 @@ final class CNSA2TunnelController {
     private var port = 1194
     private var identity: TunnelIdentity?
     private var rekeyInterval: TimeInterval = 300
+    private var renewalTimer: DispatchSourceTimer?
     /// Set once the tunnel has come up the first time. From then on a lost connection is
     /// rebuilt here, with the routes left in place so traffic waits instead of leaking.
     private var everConnected = false
@@ -78,6 +79,7 @@ final class CNSA2TunnelController {
                 self.rekeyInterval = rekey
                 self.startCompletion = completion
                 try self.connect()
+                if cfg["clientKeyPKCS8"] == nil { self.scheduleRenewal() }
             } catch {
                 os_log("cnsa2: start failed: %{public}s", log: self.log, type: .error, String(describing: error))
                 self.teardown()
@@ -86,7 +88,35 @@ final class CNSA2TunnelController {
         }
     }
 
+    /// Checks shortly after the tunnel starts, then every 6 hours, whether the device
+    /// certificate is in its last 10 days, and renews it if so. This runs here because
+    /// the extension is alive for as long as the tunnel is, whether or not the app is open.
+    private func scheduleRenewal() {
+        let t = DispatchSource.makeTimerSource(queue: queue)
+        t.schedule(deadline: .now() + 45, repeating: 6 * 60 * 60, leeway: .seconds(60))
+        t.setEventHandler { [weak self] in
+            Task {
+                guard await CNSA2Renewal.renewIfDue(), let self else { return }
+                os_log("cnsa2: certificate renewed; it is used from the next connection", log: self.log, type: .default)
+            }
+        }
+        t.resume()
+        renewalTimer = t
+    }
+
+    /// Picks up the current certificate, so a renewal (by this extension or by the app)
+    /// takes effect at the next connection without restarting the tunnel.
+    private func reloadIdentity() {
+        guard config["clientKeyPKCS8"] == nil,
+              let ca = (config["caDER"] as? String).flatMap({ Data(base64Encoded: $0) }),
+              let name = config["gatewayID"] as? String,
+              let certificate = CNSA2Identity.certificate(),
+              let key = try? CNSA2Identity.privateKeyPKCS8() else { return }
+        identity = TunnelIdentity(caDER: ca, certificateDER: certificate, privateKeyPKCS8: key, gatewayName: name)
+    }
+
     private func connect() throws {
+        reloadIdentity()
         guard let identity else { throw LatticeTunnelError("configuration") }
         try openSocket(host: host, port: port)
         let s = TunnelSession(identity: identity, rekeyInterval: rekeyInterval)
@@ -298,6 +328,7 @@ final class CNSA2TunnelController {
     func stop(completion: @escaping () -> Void) {
         queue.async { [self] in
             stopping = true
+            renewalTimer?.cancel(); renewalTimer = nil
             pathMonitor?.cancel(); pathMonitor = nil
             session?.close(now: now())
             // let the exit notice leave before the socket closes

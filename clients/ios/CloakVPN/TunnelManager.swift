@@ -1304,6 +1304,13 @@ final class TunnelManager: ObservableObject {
             guard let url = container?.appendingPathComponent("cnsa2-enroll.txt") else { return }
             try? Data(text.utf8).write(to: url)
         }
+        // `-LatticeCNSA2PretendDaysLeft <n>`: tell this device its certificate expires in n days,
+        // to watch a renewal without waiting three weeks. The real certificate is untouched.
+        if defaults.object(forKey: "LatticeCNSA2PretendDaysLeft") != nil, CNSA2Identity.certificate() != nil {
+            let days = defaults.double(forKey: "LatticeCNSA2PretendDaysLeft")
+            try? CNSA2Identity.setCertificateExpiry(Date().addingTimeInterval(days * 86400))
+            note("pretending the certificate expires in \(days) days")
+        }
         if let name = defaults.string(forKey: "LatticeCNSA2Enroll") {
             do {
                 let request = try CNSA2Identity.certificateRequest(commonName: name)
@@ -1362,7 +1369,7 @@ final class TunnelManager: ObservableObject {
             try await startCNSA2Tunnel(cfg)
             debugLog("cnsa2: tunnel start requested")
             // Renew ahead of expiry with the same key. The live tunnel keeps its current certificate.
-            _ = try? await CNSA2Enroller.shared.renewIfDue(accountNumber: number)
+            await renewCNSA2IfDue()
             return nil
         } catch let error as AccountError {
             return error.userMessage
@@ -1374,6 +1381,8 @@ final class TunnelManager: ObservableObject {
 
     /// Renews the CNSA 2.0 certificate if it is in its last 10 days. Safe to call often.
     func renewCNSA2IfDue() async {
+        // set by the test option below, so the tunnel extension's renewal can be watched alone
+        if UserDefaults.standard.object(forKey: "LatticeCNSA2PretendDaysLeft") != nil { return }
         guard let number = accountNumber, !number.isEmpty else { return }
         do {
             if try await CNSA2Enroller.shared.renewIfDue(accountNumber: number) {

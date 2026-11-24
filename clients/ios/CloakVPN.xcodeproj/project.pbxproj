@@ -59,7 +59,9 @@
 			membershipExceptions = (
 				AppGroupKeyStore.swift,
 				CNSA2Identity.swift,
+				CNSA2Renewal.swift,
 				ConfigParser.swift,
+				LatticeAPI.swift,
 				rosenpassffi.swift,
 			);
 			target = 80F31E192F9C911500E4B598 /* CloakTunnel */;
