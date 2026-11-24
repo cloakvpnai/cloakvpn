@@ -10,7 +10,7 @@
 set -eu
 MODE=$1; NAME=$2
 D=/etc/openvpn/server/lattice-cnsa2
-ROOT_SHA256=03f0a61239af18dcacf6753422c004d04674e324d7b10baa1b4f9eb49150f5bc
+ROOT_SHA384=38b0bad58ca0da515a9cf6b6c0974d3f4a58375eda398fd78d2539b1a67945f670708d7b8693ffb5725e94d806ae07e2
 WAN=$(ip -o -4 route show default | awk '{print $5}' | head -1)
 
 if [ "$MODE" = prepare ]; then
@@ -28,10 +28,10 @@ fi
 [ "$MODE" = finish ] || { echo "unknown mode"; exit 1; }
 cd "$D"
 # The root must be the Lattice root, the chain must verify, and the certificate must be for this key and name.
-[ "$(openssl x509 -in root-ca.pem -outform DER | sha256sum | cut -d' ' -f1)" = "$ROOT_SHA256" ] || { echo "root certificate is not the Lattice root"; exit 1; }
+[ "$(openssl x509 -in root-ca.pem -outform DER | sha384sum | cut -d' ' -f1)" = "$ROOT_SHA384" ] || { echo "root certificate is not the Lattice root"; exit 1; }
 openssl x509 -inform DER -in gateway.der -out gateway.pem
 openssl verify -x509_strict -purpose sslserver -CAfile root-ca.pem -untrusted issuing-ca.pem gateway.pem >/dev/null || { echo "gateway certificate does not verify"; exit 1; }
-[ "$(openssl x509 -in gateway.pem -noout -pubkey | sha256sum)" = "$(openssl pkey -in gateway.key -pubout | sha256sum)" ] || { echo "certificate is not for this server's key"; exit 1; }
+[ "$(openssl x509 -in gateway.pem -noout -pubkey | sha384sum)" = "$(openssl pkey -in gateway.key -pubout | sha384sum)" ] || { echo "certificate is not for this server's key"; exit 1; }
 openssl x509 -in gateway.pem -noout -ext subjectAltName | grep -q "DNS:$NAME" || { echo "certificate is not for $NAME"; exit 1; }
 cat root-ca.pem issuing-ca.pem > ca-chain.pem
 chmod 600 gateway.key; chmod 644 gateway.pem issuing-ca.pem root-ca.pem ca-chain.pem; rm -f gateway.req gateway.der

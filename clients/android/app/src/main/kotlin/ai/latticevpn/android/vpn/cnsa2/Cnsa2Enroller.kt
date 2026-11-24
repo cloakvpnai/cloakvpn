@@ -170,8 +170,8 @@ class Cnsa2Enroller(context: Context, private val api: AccountClient) {
     }
 
     companion object {
-        /** SHA-256 of the Lattice VPN CNSA2 Root CA G1 certificate (signed Nov 23, 2026). */
-        const val ROOT_SHA256 = "03f0a61239af18dcacf6753422c004d04674e324d7b10baa1b4f9eb49150f5bc"
+        /** SHA-384 of the Lattice VPN CNSA2 Root CA G1 certificate (signed Nov 23, 2026). */
+        const val ROOT_SHA384 = "38b0bad58ca0da515a9cf6b6c0974d3f4a58375eda398fd78d2539b1a67945f670708d7b8693ffb5725e94d806ae07e2"
         const val REKEY_SECONDS = 600
         const val RENEW_BEFORE_MILLIS = 10L * 24 * 60 * 60 * 1000
 
@@ -186,9 +186,9 @@ class Cnsa2Enroller(context: Context, private val api: AccountClient) {
             expiryMillis != null && nowMillis >= expiryMillis - RENEW_BEFORE_MILLIS
 
         fun isLatticeRoot(der: ByteArray): Boolean {
-            val digest = MessageDigest.getInstance("SHA-256").digest(der)
+            val digest = MessageDigest.getInstance("SHA-384").digest(der)
             val hex = digest.joinToString("") { "%02x".format(it) }
-            return MessageDigest.isEqual(hex.toByteArray(), ROOT_SHA256.toByteArray())
+            return MessageDigest.isEqual(hex.toByteArray(), ROOT_SHA384.toByteArray())
         }
 
         /** Parses the server's expiry, for example 2026-12-24T09:34:11Z. */

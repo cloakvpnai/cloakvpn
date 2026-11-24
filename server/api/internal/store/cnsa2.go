@@ -72,6 +72,13 @@ func (d *DB) CNSA2DeviceByKeyHash(keyHash string) (*CNSA2Device, error) {
 	return &dev, nil
 }
 
+// CNSA2RekeyDeviceHash replaces a device's stored key hash, used once per
+// device to move it from the SHA-256 form to SHA-384.
+func (d *DB) CNSA2RekeyDeviceHash(id int64, keyHash string) error {
+	_, err := d.Exec(`UPDATE cnsa2_devices SET key_hash = ? WHERE id = ?`, keyHash, id)
+	return err
+}
+
 func (d *DB) CNSA2DeviceByID(id, accountID int64) (*CNSA2Device, error) {
 	dev, err := scanCNSA2Device(d.QueryRow(
 		`SELECT `+cnsa2DeviceCols+` FROM cnsa2_devices WHERE id = ? AND account_id = ?`, id, accountID))

@@ -515,3 +515,39 @@ func TestCNSA2GatewayKeyHashIsNotSentToApps(t *testing.T) {
 		t.Fatalf("enroll reply leaks the key hash: %d", rec2.Code)
 	}
 }
+
+func TestCNSA2DeviceEnrolledUnderSHA256KeepsItsIdentity(t *testing.T) {
+	f := newCNSA2Fixture(t)
+	number := f.account("txn-legacy", 3, f.now.Add(24*time.Hour))
+	request := testRequest(t, oidMLDSA87, 2592)
+	der, _ := base64.StdEncoding.DecodeString(request)
+	legacy, err := cnsa2.LegacyRequestKeyHash(der)
+	if err != nil {
+		t.Fatalf("legacy hash: %v", err)
+	}
+	current, _ := cnsa2.RequestKeyHash(der)
+	if len(legacy) != 64 || len(current) != 96 {
+		t.Fatalf("hash lengths %d and %d, want 64 (SHA-256) and 96 (SHA-384)", len(legacy), len(current))
+	}
+	rec, first := f.enroll(number, request)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("enroll: %d", rec.Code)
+	}
+	// Put the row back the way an older server stored it.
+	if err := f.db.CNSA2RekeyDeviceHash(first.Device.ID, legacy); err != nil {
+		t.Fatalf("set legacy hash: %v", err)
+	}
+	rec, again := f.enroll(number, request)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("renew: %d %s", rec.Code, rec.Body)
+	}
+	if again.Device.ID != first.Device.ID || again.Device.UID != first.Device.UID {
+		t.Fatalf("device changed identity: %+v then %+v", first.Device, again.Device)
+	}
+	if dev, err := f.db.CNSA2DeviceByKeyHash(current); err != nil || dev.ID != first.Device.ID {
+		t.Fatalf("row was not moved to the SHA-384 hash: %v", err)
+	}
+	if _, err := f.db.CNSA2DeviceByKeyHash(legacy); err == nil {
+		t.Fatalf("the SHA-256 hash still finds a row")
+	}
+}

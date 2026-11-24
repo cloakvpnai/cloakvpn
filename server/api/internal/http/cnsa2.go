@@ -263,6 +263,21 @@ func (h *CNSA2Handler) Enroll(w http.ResponseWriter, r *http.Request) {
 	defer h.mu.Unlock()
 
 	dev, err := h.db.CNSA2DeviceByKeyHash(keyHash)
+	if errors.Is(err, store.ErrNotFound) {
+		// A device enrolled when key hashes were SHA-256: find it by the old
+		// form and move it to SHA-384, so it keeps its identity.
+		if legacy, lerr := cnsa2.LegacyRequestKeyHash(der); lerr == nil {
+			if old, oerr := h.db.CNSA2DeviceByKeyHash(legacy); oerr == nil {
+				if uerr := h.db.CNSA2RekeyDeviceHash(old.ID, keyHash); uerr != nil {
+					log.Printf("cnsa2 enroll: move key hash: %v", uerr)
+					http.Error(w, "server", http.StatusInternalServerError)
+					return
+				}
+				old.KeyHash = keyHash
+				dev, err = old, nil
+			}
+		}
+	}
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		log.Printf("cnsa2 device lookup: %v", err)
 		http.Error(w, "server", http.StatusInternalServerError)

@@ -21,8 +21,8 @@ struct CNSA2Gateway: Equatable {
 /// goes out. A reply is accepted only if the root certificate is the Lattice root
 /// this build was compiled with and the device certificate carries this device's key.
 enum CNSA2Renewal {
-    /// SHA-256 of the Lattice VPN CNSA2 Root CA G1 certificate (signed Nov 23, 2026).
-    static let rootSHA256 = "03f0a61239af18dcacf6753422c004d04674e324d7b10baa1b4f9eb49150f5bc"
+    /// SHA-384 of the Lattice VPN CNSA2 Root CA G1 certificate (signed Nov 23, 2026).
+    static let rootSHA384 = "38b0bad58ca0da515a9cf6b6c0974d3f4a58375eda398fd78d2539b1a67945f670708d7b8693ffb5725e94d806ae07e2"
     /// A 30 day certificate is renewed in its last 10 days, with the same key.
     static let renewBefore: TimeInterval = 10 * 24 * 60 * 60
 
@@ -46,7 +46,7 @@ enum CNSA2Renewal {
     // MARK: pure checks
 
     static func isLatticeRoot(_ der: Data) -> Bool {
-        SHA256.hash(data: der).map { String(format: "%02x", $0) }.joined() == rootSHA256
+        SHA384.hash(data: der).map { String(format: "%02x", $0) }.joined() == rootSHA384
     }
 
     /// Parses the server's expiry, for example 2026-12-24T09:34:11Z.

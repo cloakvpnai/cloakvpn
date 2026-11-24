@@ -25,6 +25,6 @@ PY
 scp -q "$W/gateway.der" "$W/issuing-ca.pem" "$W/root-ca.pem" "root@$HOST:$D/"
 ssh "root@$HOST" "bash /root/lattice-install-gateway.sh finish '$NAME'; rm -f /root/lattice-install-gateway.sh"
 # Daily renewal check. The key hash it prints must be added to this gateway's entry
-# ("key_sha256") in /etc/cloakvpn/cnsa2-gateways.json on the account API host, or renewal is refused.
+# ("key_sha384") in /etc/cloakvpn/cnsa2-gateways.json on the account API host, or renewal is refused.
 scp -q "$HERE/install-renewal-timer.sh" "root@$HOST:/root/lattice-install-renewal-timer.sh"
 ssh "root@$HOST" "bash /root/lattice-install-renewal-timer.sh; rm -f /root/lattice-install-renewal-timer.sh"

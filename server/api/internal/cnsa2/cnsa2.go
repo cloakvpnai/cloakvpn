@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/asn1"
 	"encoding/base64"
 	"encoding/hex"
@@ -65,22 +66,43 @@ var ErrBadRequest = errors.New("certificate request not acceptable")
 // PKCS#10 request: the hex SHA-256 of its SubjectPublicKeyInfo. It does not
 // check the request's signature; the signing service does that before it
 // signs anything.
-func RequestKeyHash(der []byte) (string, error) {
+func requestKey(der []byte) ([]byte, error) {
 	if len(der) == 0 || len(der) > MaxRequestBytes {
-		return "", ErrBadRequest
+		return nil, ErrBadRequest
 	}
 	var req request
 	rest, err := asn1.Unmarshal(der, &req)
 	if err != nil || len(rest) != 0 {
-		return "", ErrBadRequest
+		return nil, ErrBadRequest
 	}
 	pk := req.Info.PublicKey
 	if req.Info.Version != 0 || !pk.Algorithm.Algorithm.Equal(oidMLDSA87) ||
 		len(pk.Algorithm.Parameters.FullBytes) != 0 ||
 		pk.PublicKey.BitLength != mldsa87PublicKeyBytes*8 {
-		return "", ErrBadRequest
+		return nil, ErrBadRequest
 	}
-	sum := sha256.Sum256(pk.Raw)
+	return pk.Raw, nil
+}
+
+// RequestKeyHash returns the SHA-384 of the public key in a certificate
+// request, in hex. It identifies a device or gateway key.
+func RequestKeyHash(der []byte) (string, error) {
+	raw, err := requestKey(der)
+	if err != nil {
+		return "", err
+	}
+	sum := sha512.Sum384(raw)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// LegacyRequestKeyHash is the SHA-256 form stored before Nov 24, 2026. It is
+// used only to find an existing device row so it can be moved to SHA-384.
+func LegacyRequestKeyHash(der []byte) (string, error) {
+	raw, err := requestKey(der)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:]), nil
 }
 
@@ -168,7 +190,7 @@ func (c *Client) issue(ctx context.Context, kind, name string, requestDER []byte
 // Gateway is one CNSA 2.0 gateway the apps may connect to. Name is the DNS
 // name in the gateway's certificate, which the app checks.
 //
-// KeyHash is the SHA-256 of the gateway's public key (the same value
+// KeyHash is the SHA-384 of the gateway's public key (the same value
 // RequestKeyHash gives for its certificate request). It is configuration
 // for certificate renewal only and is never sent to apps.
 type Gateway struct {
@@ -176,5 +198,5 @@ type Gateway struct {
 	Host    string `json:"host"`
 	Port    int    `json:"port"`
 	Name    string `json:"name"`
-	KeyHash string `json:"key_sha256,omitempty"`
+	KeyHash string `json:"key_sha384,omitempty"`
 }

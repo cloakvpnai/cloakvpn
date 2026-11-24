@@ -9,7 +9,7 @@ set -eu
 URL=$1; SECRET_FILE=$2; FORCE=${3:-}
 D=/etc/openvpn/server/lattice-cnsa2
 UNIT=openvpn-server@lattice-cnsa2
-ROOT_SHA256=03f0a61239af18dcacf6753422c004d04674e324d7b10baa1b4f9eb49150f5bc
+ROOT_SHA384=38b0bad58ca0da515a9cf6b6c0974d3f4a58375eda398fd78d2539b1a67945f670708d7b8693ffb5725e94d806ae07e2
 RENEW_DAYS=30
 cd "$D"
 NAME=$(openssl x509 -in gateway.pem -noout -ext subjectAltName | sed -n 's/.*DNS:\([^, ]*\).*/\1/p' | head -1)
@@ -36,10 +36,10 @@ open(w + "/new.pem", "w").write(ssl.DER_cert_to_PEM_cert(base64.b64decode(j["cer
 open(w + "/issuing.pem", "w").write(ssl.DER_cert_to_PEM_cert(base64.b64decode(j["issuing"])))
 open(w + "/root.der", "wb").write(base64.b64decode(j["root"]))
 PY
-[ "$(sha256sum < "$W/root.der" | cut -d' ' -f1)" = "$ROOT_SHA256" ] || { echo "reply names a different root; refused"; exit 1; }
-[ "$(openssl x509 -in root-ca.pem -outform DER | sha256sum | cut -d' ' -f1)" = "$ROOT_SHA256" ] || { echo "local root is not the Lattice root; refused"; exit 1; }
+[ "$(sha384sum < "$W/root.der" | cut -d' ' -f1)" = "$ROOT_SHA384" ] || { echo "reply names a different root; refused"; exit 1; }
+[ "$(openssl x509 -in root-ca.pem -outform DER | sha384sum | cut -d' ' -f1)" = "$ROOT_SHA384" ] || { echo "local root is not the Lattice root; refused"; exit 1; }
 openssl verify -x509_strict -purpose sslserver -CAfile root-ca.pem -untrusted "$W/issuing.pem" "$W/new.pem" >/dev/null || { echo "new certificate does not verify; refused"; exit 1; }
-[ "$(openssl x509 -in "$W/new.pem" -noout -pubkey | sha256sum)" = "$(openssl pkey -in gateway.key -pubout | sha256sum)" ] || { echo "new certificate is not for this server's key; refused"; exit 1; }
+[ "$(openssl x509 -in "$W/new.pem" -noout -pubkey | sha384sum)" = "$(openssl pkey -in gateway.key -pubout | sha384sum)" ] || { echo "new certificate is not for this server's key; refused"; exit 1; }
 openssl x509 -in "$W/new.pem" -noout -ext subjectAltName | grep -q "DNS:$NAME" || { echo "new certificate is not for $NAME; refused"; exit 1; }
 old_end=$(date -d "$(openssl x509 -in gateway.pem -noout -enddate | cut -d= -f2)" +%s)
 new_end=$(date -d "$(openssl x509 -in "$W/new.pem" -noout -enddate | cut -d= -f2)" +%s)

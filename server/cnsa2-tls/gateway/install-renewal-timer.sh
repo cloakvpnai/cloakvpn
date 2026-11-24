@@ -25,4 +25,4 @@ WantedBy=timers.target
 UNIT
 systemctl daemon-reload
 systemctl enable -q --now lattice-cnsa2-gateway-renew.timer
-echo "renewal timer: $(systemctl is-active lattice-cnsa2-gateway-renew.timer), key hash $(openssl pkey -in $D/gateway.key -pubout -outform DER | sha256sum | cut -d' ' -f1)"
+echo "renewal timer: $(systemctl is-active lattice-cnsa2-gateway-renew.timer), key hash $(openssl pkey -in $D/gateway.key -pubout -outform DER | sha384sum | cut -d' ' -f1)"
