@@ -127,7 +127,7 @@ fun HomeScreen(
                     publicIp = ipState,
                     realIp = realIp,
                     connected = state == TunnelState.CONNECTED,
-                    regionName = region?.displayName,
+                    regionName = if (cnsa2Mode) "CNSA 2.0 gateway" else region?.displayName,
                     onRetry = { vm.refreshPublicIp() },
                 )
                 Spacer(Modifier.height(10.dp))
@@ -384,7 +384,7 @@ private fun cnsa2Line(state: TunnelState): String =
     else "CNSA 2.0 mode · ML-KEM-1024 · ML-DSA-87"
 
 private fun cnsa2Subtitle(state: TunnelState, detail: String?): String = when (state) {
-    TunnelState.CONNECTED -> "Connected to the lab gateway"
+    TunnelState.CONNECTED -> "Connected to the CNSA 2.0 gateway"
     TunnelState.CONNECTING -> "Connecting. Traffic waits for the tunnel."
     TunnelState.DISCONNECTING -> "Disconnecting"
     TunnelState.ERROR -> detail ?: "Could not connect"

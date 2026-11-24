@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Dns
@@ -93,6 +94,19 @@ data class DeviceProvision(
     val config: ProvisionedConfig,
     val tier: String,
     val deviceId: Long,
+)
+
+/** One CNSA 2.0 gateway. [name] is the name in its certificate, which the tunnel checks. */
+data class Cnsa2Gateway(val id: String, val host: String, val port: Int, val name: String)
+
+/** Result of POST /v1/device/cnsa2/enroll. Certificates are DER. */
+class Cnsa2Enrollment(
+    val certificate: ByteArray,
+    val root: ByteArray,
+    val notAfter: String,
+    val deviceId: Long,
+    val deviceUid: String,
+    val gateways: List<Cnsa2Gateway>,
 )
 
 /**
@@ -257,6 +271,44 @@ class AccountClient(private val context: Context) {
         }
     }
 
+    /**
+     * POST /v1/device/cnsa2/enroll: enroll this device for CNSA 2.0 mode, or
+     * renew its certificate. Only the certificate request (public key) is
+     * sent; the device's private key never leaves it.
+     */
+    suspend fun enrollCnsa2(accountNumber: String, requestDer: ByteArray): Cnsa2Enrollment =
+        withContext(Dispatchers.IO) {
+            val payload = JSONObject()
+                .put("request", Base64.encodeToString(requestDer, Base64.NO_WRAP))
+                .toString()
+            val request = Request.Builder()
+                .url("${LatticeApi.BASE_URL}/v1/device/cnsa2/enroll")
+                .header("Authorization", bearer(accountNumber))
+                .post(payload.toRequestBody(JSON))
+                .build()
+            val j = jsonOf(execute(request))
+            val gateways = mutableListOf<Cnsa2Gateway>()
+            j.optJSONArray("gateways")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val g = arr.optJSONObject(i) ?: continue
+                    gateways += Cnsa2Gateway(g.optString("id"), g.optString("host"), g.optInt("port", 1194), g.optString("name"))
+                }
+            }
+            val device = j.optJSONObject("device")
+            try {
+                Cnsa2Enrollment(
+                    certificate = Base64.decode(j.getString("certificate"), Base64.DEFAULT),
+                    root = Base64.decode(j.getString("root"), Base64.DEFAULT),
+                    notAfter = j.getString("not_after"),
+                    deviceId = device?.optLong("id") ?: 0L,
+                    deviceUid = device?.optString("uid").orEmpty(),
+                    gateways = gateways,
+                )
+            } catch (e: Exception) {
+                throw AccountException("The server sent an enrollment reply we couldn't read.")
+            }
+        }
+
     // ---- internals ------------------------------------------------------
 
     private fun bearer(accountNumber: String): String =
@@ -286,6 +338,14 @@ class AccountClient(private val context: Context) {
                 402 -> AccountException(
                     "This subscription isn't active. Renew it at latticevpn.ai to continue.",
                     AccountException.Kind.NO_SUBSCRIPTION,
+                )
+                409 -> AccountException(
+                    "This device is already registered to a different account.",
+                    AccountException.Kind.OTHER,
+                )
+                429 -> AccountException(
+                    "Too many requests. Please try again in a little while.",
+                    AccountException.Kind.OTHER,
                 )
                 403 -> AccountException(
                     "You've reached your device limit. Remove a device to add this one.",

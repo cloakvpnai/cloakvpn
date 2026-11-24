@@ -49,6 +49,10 @@ tls-server
 dh none
 topology subnet
 server 10.88.0.0 255.255.255.0
+# full tunnel: all IPv4 traffic and DNS go through the gateway
+push "redirect-gateway def1"
+push "dhcp-option DNS 9.9.9.9"
+push "dhcp-option DNS 149.112.112.112"
 tls-version-min 1.3
 tls-ciphersuites TLS_AES_256_GCM_SHA384
 tls-groups MLKEM1024

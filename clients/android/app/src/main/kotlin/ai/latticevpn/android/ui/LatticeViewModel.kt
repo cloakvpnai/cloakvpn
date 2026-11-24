@@ -24,7 +24,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2Backend
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2Config
-import ai.latticevpn.android.vpn.cnsa2.Cnsa2IdentityStore
+import ai.latticevpn.android.vpn.cnsa2.Cnsa2Enroller
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2Provider
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2State
 import kotlinx.coroutines.flow.SharingStarted
@@ -76,15 +76,21 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     // ---- CNSA 2.0 mode (only in builds that carry the engine) -------------
 
     private val cnsa2: Cnsa2Backend? = Cnsa2Provider.backend()
-    private val cnsa2Config: Cnsa2Config? = if (cnsa2 != null) Cnsa2Config.load(app) else null
+    private val cnsa2Enroller = Cnsa2Enroller(app, accountClient)
+    private var cnsa2Config: Cnsa2Config? = if (cnsa2 != null) Cnsa2Config.load(app) else null
 
-    /** True when this build has the engine, a gateway is configured and the device is enrolled. */
-    val cnsa2Available: Boolean =
-        cnsa2 != null && cnsa2Config != null && Cnsa2IdentityStore(app).certificate() != null
+    /** True when this build has the engine. The device enrolls itself the first time the mode is used. */
+    val cnsa2Available: Boolean = cnsa2 != null
 
     private val _cnsa2Mode = MutableStateFlow(cnsa2Available && prefs.getBoolean(KEY_CNSA2_MODE, false))
     val cnsa2Mode: StateFlow<Boolean> = _cnsa2Mode.asStateFlow()
     val cnsa2Detail: StateFlow<String?> = cnsa2?.detail ?: MutableStateFlow(null)
+
+    private val _cnsa2Enrolling = MutableStateFlow(false)
+    val cnsa2Enrolling: StateFlow<Boolean> = _cnsa2Enrolling.asStateFlow()
+    private val _cnsa2Error = MutableStateFlow<String?>(null)
+    /** Why enrollment failed, if it did. Cleared on the next success. */
+    val cnsa2Error: StateFlow<String?> = _cnsa2Error.asStateFlow()
 
     /** Switching modes always drops the current tunnel first; there is no fallback between them. */
     fun setCnsa2Mode(enabled: Boolean) {
@@ -92,6 +98,31 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
         disconnect()
         prefs.edit().putBoolean(KEY_CNSA2_MODE, enabled).apply()
         _cnsa2Mode.value = enabled
+        _cnsa2Error.value = null
+        if (enabled) viewModelScope.launch { ensureCnsa2Enrolled() }
+    }
+
+    /** Returns the gateway settings, enrolling the device first if it has no usable certificate. */
+    private suspend fun ensureCnsa2Enrolled(): Cnsa2Config? {
+        cnsa2Config?.takeIf { !cnsa2Enroller.needsEnrollment() }?.let { return it }
+        val number = accountStore.accountNumber()
+        if (number == null) {
+            _cnsa2Error.value = "Sign in with your account number to use CNSA 2.0 mode."
+            return null
+        }
+        if (_cnsa2Enrolling.value) return null
+        _cnsa2Enrolling.value = true
+        return try {
+            cnsa2Enroller.enroll(number).also {
+                cnsa2Config = it
+                _cnsa2Error.value = null
+            }
+        } catch (e: Exception) {
+            _cnsa2Error.value = e.message ?: "Could not enroll this device."
+            null
+        } finally {
+            _cnsa2Enrolling.value = false
+        }
     }
 
     val tunnelState: StateFlow<TunnelState> =
@@ -178,7 +209,7 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
         // collect() replays the current value, so this also performs the
         // initial lookup on launch.
         viewModelScope.launch {
-            tm.tunnelState.collect { state ->
+            tunnelState.collect { state ->
                 when (state) {
                     TunnelState.CONNECTED -> scheduleIpRefresh(1500L)
                     TunnelState.DISCONNECTED, TunnelState.ERROR -> scheduleIpRefresh(0L)
@@ -203,11 +234,19 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun connect() {
-        val config = cnsa2Config
-        if (_cnsa2Mode.value && cnsa2 != null && config != null) {
+        if (_cnsa2Mode.value && cnsa2 != null) {
             // never falls back to WireGuard: this mode connects with the CNSA 2.0 suite or not at all
             tm.disconnect()
-            cnsa2.connect(getApplication(), config)
+            viewModelScope.launch {
+                val config = ensureCnsa2Enrolled() ?: return@launch
+                cnsa2.connect(getApplication(), config)
+                // Renew ahead of expiry with the same key. The live tunnel keeps its current certificate.
+                if (cnsa2Enroller.shouldRenew()) {
+                    accountStore.accountNumber()?.let { number ->
+                        runCatching { cnsa2Enroller.enroll(number) }.onSuccess { cnsa2Config = it }
+                    }
+                }
+            }
             return
         }
         viewModelScope.launch {
@@ -238,7 +277,7 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
                     _publicIp.value = IpState.Known(ip)
                     // A lookup made while the tunnel is down sees the
                     // user's real, exposed IP — remember it.
-                    if (tm.tunnelState.value == TunnelState.DISCONNECTED) {
+                    if (tunnelState.value == TunnelState.DISCONNECTED) {
                         _realIp.value = ip
                     }
                     return@launch

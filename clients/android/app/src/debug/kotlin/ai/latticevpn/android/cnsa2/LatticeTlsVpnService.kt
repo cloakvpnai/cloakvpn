@@ -255,7 +255,15 @@ class LatticeTlsVpnService : VpnService() {
             val prefix = prefixLength(s.netmask)
             val b = Builder().setSession("Lattice VPN: CNSA 2.0").setMtu(minOf(s.mtu, TUN_MTU)).setBlocking(true)
             b.addAddress(s.address, prefix)
-            if (s.redirectGateway) b.addRoute("0.0.0.0", 0) else b.addRoute(network(s.address, prefix), prefix)
+            if (s.redirectGateway) {
+                b.addRoute("0.0.0.0", 0)
+                // The gateway carries IPv4 only. Capture IPv6 too so it cannot leave outside the
+                // tunnel; the gateway discards it and apps fall back to IPv4.
+                b.addAddress("fd42:88::2", 128)
+                b.addRoute("::", 0)
+            } else {
+                b.addRoute(network(s.address, prefix), prefix)
+            }
             for (route in s.routes) {
                 val parts = route.split(" ")
                 val bits = prefixLength(parts.getOrElse(1) { "255.255.255.255" })
