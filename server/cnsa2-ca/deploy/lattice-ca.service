@@ -1,0 +1,29 @@
+[Unit]
+Description=Lattice VPN CNSA 2.0 signing service (signs with the issuing key in AWS KMS)
+After=network-online.target wg-quick@wgca.service
+Requires=wg-quick@wgca.service
+
+[Service]
+User=latticeca
+Group=latticeca
+EnvironmentFile=/etc/lattice-ca/env
+Environment=LATTICE_KMS=boto3
+Environment=LATTICE_ISSUING_KEY=arn:aws:kms:us-west-2:096391855278:key/be355c93-86d8-42d3-8a5c-93cfc8d5448b
+Environment=OPENSSL=/usr/bin/openssl
+WorkingDirectory=/opt/lattice-ca
+ExecStart=/opt/lattice-ca/venv/bin/python /opt/lattice-ca/signing_service.py --certs /opt/lattice-ca/certs --log /var/lib/lattice-ca/issued.log --listen 10.200.0.2 --port 8087 --per-minute 60
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+ReadWritePaths=/var/lib/lattice-ca
+MemoryMax=250M
+
+[Install]
+WantedBy=multi-user.target

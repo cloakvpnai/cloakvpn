@@ -19,9 +19,10 @@ ML_DSA_87 = "2.16.840.1.101.3.4.3.19"
 ORG = "Lattice VPN"
 REGION = "us-west-2"
 ROOT_KEY = "alias/lattice-ca-root"
-ISSUING_KEY = "alias/lattice-ca-issuing"
+ISSUING_KEY = os.environ.get("LATTICE_ISSUING_KEY", "alias/lattice-ca-issuing")
+USE_BOTO3 = os.environ.get("LATTICE_KMS") == "boto3"
 AWS = os.environ.get("AWS_CLI", "/opt/homebrew/bin/aws")
-OPENSSL = os.environ.get("OPENSSL", "/opt/homebrew/bin/openssl")
+OPENSSL = os.environ.get("OPENSSL") or ("/opt/homebrew/bin/openssl" if os.path.exists("/opt/homebrew/bin/openssl") else "openssl")
 
 DEVICE_DAYS = 30
 GATEWAY_DAYS = 90
@@ -187,12 +188,28 @@ def certificate_fields(cert_der):
 
 # ---- signing --------------------------------------------------------------
 
+_kms_client = None
+
+
+def _kms():
+    """boto3 client, used when LATTICE_KMS=boto3 (the signing server). Credentials come
+    from the machine's own role, so nothing is stored on disk."""
+    global _kms_client
+    if _kms_client is None:
+        import boto3
+        _kms_client = boto3.client("kms", region_name=REGION)
+    return _kms_client
+
+
 def kms_public_key(key):
-    out = subprocess.run(
-        [AWS, "kms", "get-public-key", "--region", REGION, "--key-id", key,
-         "--query", "PublicKey", "--output", "text"],
-        check=True, capture_output=True, text=True).stdout
-    spki = base64.b64decode(out)
+    if USE_BOTO3:
+        spki = _kms().get_public_key(KeyId=key)["PublicKey"]
+    else:
+        out = subprocess.run(
+            [AWS, "kms", "get-public-key", "--region", REGION, "--key-id", key,
+             "--query", "PublicKey", "--output", "text"],
+            check=True, capture_output=True, text=True).stdout
+        spki = base64.b64decode(out)
     key_id(spki)
     return spki
 
@@ -202,6 +219,9 @@ def kms_signer(key):
     def sign(message):
         if len(message) > 4096:
             raise ValueError("certificate body too large for RAW signing")
+        if USE_BOTO3:
+            return _kms().sign(KeyId=key, Message=message, MessageType="RAW",
+                               SigningAlgorithm="ML_DSA_SHAKE_256")["Signature"]
         with tempfile.NamedTemporaryFile(suffix=".der") as f:
             f.write(message)
             f.flush()
