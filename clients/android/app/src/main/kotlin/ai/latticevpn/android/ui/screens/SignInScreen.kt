@@ -100,7 +100,7 @@ fun SignInScreen(vm: LatticeViewModel) {
             Spacer(Modifier.height(10.dp))
             Text(
                 text = "Enter your account number to get started. No email, " +
-                    "no password — your account number is the only key you need.",
+                    "no password. Your account number is the only key you need.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 14.sp,
                 textAlign = TextAlign.Center,

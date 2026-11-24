@@ -104,7 +104,7 @@ fun PaywallScreen(vm: LatticeViewModel) {
             Spacer(Modifier.height(6.dp))
             Text(
                 text = "No email, no account. Subscribe and you're signed in " +
-                    "automatically — your account number is created for you.",
+                    "automatically. Your account number is created for you.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center,
@@ -129,7 +129,7 @@ fun PaywallScreen(vm: LatticeViewModel) {
                 else -> {
                     PlanCard(
                         title = "Basic",
-                        price = basic?.let { priceLabel(it.formattedPrice, yearly) } ?: "—",
+                        price = basic?.let { priceLabel(it.formattedPrice, yearly) } ?: "--",
                         subtitle = "Post-quantum privacy for everyday use.",
                         features = listOf(
                             "3 devices",
@@ -145,7 +145,7 @@ fun PaywallScreen(vm: LatticeViewModel) {
                     Spacer(Modifier.height(14.dp))
                     PlanCard(
                         title = "Pro",
-                        price = pro?.let { priceLabel(it.formattedPrice, yearly) } ?: "—",
+                        price = pro?.let { priceLabel(it.formattedPrice, yearly) } ?: "--",
                         subtitle = "For users who need more.",
                         features = listOf(
                             "Up to 10 devices",

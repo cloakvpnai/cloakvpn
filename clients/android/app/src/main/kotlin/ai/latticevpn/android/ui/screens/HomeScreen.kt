@@ -165,7 +165,9 @@ private fun PqcChip(state: TunnelState, rosenpass: RosenpassStatus, handshakeVer
             Text(
                 text = if (cnsa2Mode) cnsa2Line(state) else pqcLine(state, rosenpass, handshakeVerified),
                 color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 13.sp,
+                fontSize = 12.sp,
+                maxLines = 1,
+                softWrap = false,
             )
         }
     }
@@ -247,7 +249,7 @@ private fun IpCard(
                 val serverValue = when (publicIp) {
                     is IpState.Known -> publicIp.ip
                     is IpState.Loading -> "Securing…"
-                    is IpState.Unavailable -> "Unavailable — tap to retry"
+                    is IpState.Unavailable -> "Unavailable. Tap to retry."
                 }
                 IpRow(
                     label = "Server IP" + (regionName?.let { " · $it" } ?: ""),
@@ -260,7 +262,7 @@ private fun IpCard(
             Spacer(Modifier.height(10.dp))
             Text(
                 text = if (connected) {
-                    "Sites you visit now see the server IP — your real IP is hidden."
+                    "Sites you visit now see the server IP. Your real IP is hidden."
                 } else {
                     "Every site you visit currently sees this address."
                 },
@@ -284,7 +286,7 @@ private fun IpRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Both sides are weighted so a long label ("Server IP · <region>")
-        // and a long value ("Unavailable — tap to retry") each stay
+        // and a long value ("Unavailable. Tap to retry.") each stay
         // inside their own half and wrap downward instead of overrunning
         // the row and bleeding into the line below.
         Text(

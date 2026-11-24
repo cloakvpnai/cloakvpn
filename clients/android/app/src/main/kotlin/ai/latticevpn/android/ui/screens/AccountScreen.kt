@@ -124,7 +124,7 @@ fun AccountScreen(vm: LatticeViewModel) {
             SettingsCard {
                 Column(Modifier.padding(16.dp)) {
                     Text(
-                        text = accountNumber.ifEmpty { "—" },
+                        text = accountNumber.ifEmpty { "--" },
                         color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -132,7 +132,7 @@ fun AccountScreen(vm: LatticeViewModel) {
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "This is your only credential — keep it somewhere " +
+                        text = "This is your only credential. Keep it somewhere " +
                             "safe. Anyone who has it can use your subscription.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
@@ -364,21 +364,21 @@ private fun tierLabel(tier: String): String = when (tier.lowercase()) {
 }
 
 /**
- * Render an RFC3339 instant as a localized medium date. Returns "—" for
+ * Render an RFC3339 instant as a localized medium date. Returns "--" for
  * a blank value, an unparseable string, or the server's epoch-zero
  * "no expiry" sentinel.
  */
 private fun formatDate(rfc3339: String): String {
-    if (rfc3339.isBlank()) return "—"
+    if (rfc3339.isBlank()) return "--"
     return try {
         val instant = Instant.parse(rfc3339)
-        if (instant.epochSecond <= 0L) return "—"
+        if (instant.epochSecond <= 0L) return "--"
         DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
             .withLocale(Locale.getDefault())
             .withZone(ZoneId.systemDefault())
             .format(instant)
     } catch (e: Exception) {
-        "—"
+        "--"
     }
 }
 
