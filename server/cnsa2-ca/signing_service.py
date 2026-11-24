@@ -62,7 +62,7 @@ class Service:
             der, serial, not_after = ca.issue_leaf(kind, name, spki, self.issuing, self.sign)
             entry = {"time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "kind": kind, "name": name,
                      "serial": "%x" % serial, "notAfter": not_after.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                     "sha256": hashlib.sha256(der).hexdigest(),
+                     "sha384": hashlib.sha384(der).hexdigest(),
                      "keyId": ca.key_id(spki).hex()}
             with open(self.log_path, "a") as f:
                 f.write(json.dumps(entry, sort_keys=True) + "\n")
