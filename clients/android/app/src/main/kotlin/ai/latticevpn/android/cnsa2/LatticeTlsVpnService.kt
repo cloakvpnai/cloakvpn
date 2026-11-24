@@ -31,6 +31,7 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.PortUnreachableException
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -158,7 +159,15 @@ class LatticeTlsVpnService : VpnService() {
         try {
             while (true) {
                 packet.setLength(buffer.size)
-                s.receive(packet)
+                try {
+                    s.receive(packet)
+                } catch (_: PortUnreachableException) {
+                    // The gateway's port was closed for a moment (it is restarting). The socket is still
+                    // good, and leaving this loop would make the next handshake deaf until it times out.
+                    if (s.isClosed) return
+                    Thread.sleep(100)
+                    continue
+                }
                 val data = buffer.copyOf(packet.length)
                 engine.execute { if (mine == generation) t.receive(data, now()) }
             }

@@ -66,6 +66,8 @@ key $D/gateway.key
 extra-certs $D/issuing-ca.pem
 remote-cert-tls client
 keepalive 10 60
+# Tell connected apps the gateway is restarting, so they reconnect at once instead of waiting for the keepalive.
+explicit-exit-notify 1
 script-security 2
 tls-verify "$D/cnsa2-tls-verify.sh $D/denylist"
 user nobody
