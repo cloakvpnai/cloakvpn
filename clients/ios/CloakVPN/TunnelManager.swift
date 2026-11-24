@@ -1099,6 +1099,11 @@ final class TunnelManager: ObservableObject {
         rosenpass.startStatusPolling()
     }
 
+    /// True when the saved VPN configuration is the CNSA 2.0 (TLS 1.3) tunnel, not WireGuard.
+    var isCNSA2Mode: Bool {
+        ((manager?.protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration?["cnsa2"]) != nil
+    }
+
     /// Seconds since the running tunnel last completed a WireGuard handshake,
     /// or nil if it has not completed one (or the provider can't be asked).
     /// "Connected" from NetworkExtension only means the interface is up; this

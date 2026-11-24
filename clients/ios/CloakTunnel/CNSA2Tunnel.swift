@@ -41,6 +41,8 @@ final class CNSA2TunnelController {
     private var pumping = false
     private var pathMonitor: NWPathMonitor?
     private var lastPath: String?
+    private var pendingPath: String?
+    private var currentPath = ""
 
     init(provider: NEPacketTunnelProvider) { self.provider = provider }
 
@@ -190,7 +192,21 @@ final class CNSA2TunnelController {
 
     /// The network under the tunnel changed: rebuild now instead of waiting for the keepalive to notice.
     private func pathChanged(_ description: String) {
-        guard everConnected, !stopping, lastPath != nil, lastPath != description else { lastPath = lastPath ?? description; return }
+        // An empty description means no usable network: wait for one instead of reacting.
+        guard !description.isEmpty else { return }
+        guard everConnected, !stopping, let known = lastPath, known != description else { lastPath = lastPath ?? description; return }
+        // Phones report brief changes all the time. Act only if the new primary
+        // interface is still the primary one two seconds later.
+        pendingPath = description
+        queue.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self, self.pendingPath == description, self.currentPath == description, !self.stopping else { return }
+            self.pendingPath = nil
+            self.switchPath(to: description)
+        }
+    }
+
+    private func switchPath(to description: String) {
+        guard lastPath != description else { return }
         lastPath = description
         os_log("cnsa2: network changed, reconnecting", log: log, type: .info)
         session?.close(now: now())
@@ -204,9 +220,11 @@ final class CNSA2TunnelController {
         guard pathMonitor == nil else { return }
         let m = NWPathMonitor(prohibitedInterfaceTypes: [.other, .loopback])
         m.pathUpdateHandler = { [weak self] path in
-            // identify the path by its usable physical interfaces, ignoring the tunnel itself
-            let names = path.status == .satisfied ? path.availableInterfaces.map { $0.name }.sorted().joined(separator: ",") : ""
-            self?.pathChanged(names)
+            // Identify the path by its primary physical interface only (for example en0
+            // for Wi-Fi, pdp_ip0 for cellular). The full list changes too often to act on.
+            let primary = path.status == .satisfied ? (path.availableInterfaces.first?.name ?? "") : ""
+            self?.currentPath = primary
+            self?.pathChanged(primary)
         }
         m.start(queue: queue)
         pathMonitor = m

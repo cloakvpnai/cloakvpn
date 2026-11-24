@@ -336,6 +336,11 @@ struct ContentView: View {
         let legacy = tunnel.config?.pqEnabled == true
         let active = tunnel.status == .connected && (legacy ? true : tunnel.handshakeVerified)
         let text: String = {
+            if tunnel.isCNSA2Mode {
+                return tunnel.status == .connected
+                    ? "CNSA 2.0 suite active · ML-KEM-1024 · ML-DSA-87"
+                    : "CNSA 2.0 mode · ML-KEM-1024 · ML-DSA-87"
+            }
             if legacy { return tunnel.rosenpass.status.description }
             if tunnel.status == .connected {
                 return tunnel.handshakeVerified
@@ -852,6 +857,11 @@ struct ContentView: View {
                     Image(systemName: "lock.shield").foregroundStyle(.secondary)
                 }
                 Text(tunnel.rosenpass.status.description)
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            } else if tunnel.isCNSA2Mode && tunnel.status == .connected {
+                Image(systemName: "lock.shield.fill").foregroundStyle(.green)
+                Text("TLS 1.3 · AES-256-GCM · ML-KEM-1024 · ML-DSA-87")
                     .font(.system(.footnote, design: .monospaced))
                     .foregroundStyle(.secondary)
             } else if tunnel.status == .connected && tunnel.handshakeVerified {
