@@ -40,6 +40,17 @@ func (f *fakeSigner) IssueDevice(_ context.Context, name string, _ []byte) (*cns
 		NotAfter: time.Now().Add(30 * 24 * time.Hour).UTC().Format(time.RFC3339)}, nil
 }
 
+func (f *fakeSigner) IssueGateway(_ context.Context, name string, _ []byte) (*cnsa2.Issued, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	f.n++
+	f.names = append(f.names, "gateway:"+name)
+	return &cnsa2.Issued{Certificate: "Z3c=", Issuing: "aXNz", Root: "cm9vdA==",
+		Serial:   fmt.Sprintf("gw%d", f.n),
+		NotAfter: time.Now().Add(90 * 24 * time.Hour).UTC().Format(time.RFC3339)}, nil
+}
+
 // testRequest builds a structurally valid PKCS#10 request around a random
 // key of the given algorithm and size. The signature is junk on purpose.
 func testRequest(t *testing.T, oid asn1.ObjectIdentifier, keyBytes int) string {
@@ -413,5 +424,94 @@ func TestCNSA2GatewaysNeedsAnAccount(t *testing.T) {
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || len(out.Gateways) != 1 || out.Gateways[0].ID != "lab" {
 		t.Fatalf("gateways: %v %+v", err, out)
+	}
+}
+
+func TestCNSA2GatewayRenewalOnlyForTheRegisteredKey(t *testing.T) {
+	f := newCNSA2Fixture(t)
+	own := testRequest(t, oidMLDSA87, 2592)
+	ownDER, _ := base64.StdEncoding.DecodeString(own)
+	ownHash, err := cnsa2.RequestKeyHash(ownDER)
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	f.h = NewCNSA2Handler(f.db, f.signer, cnsa2TestSecret, cnsa2TestInternal, "dev.example.",
+		[]cnsa2.Gateway{
+			{ID: "lab", Host: "198.51.100.7", Port: 1194, Name: "lab.gw.example", KeyHash: ownHash},
+			{ID: "nokey", Host: "198.51.100.8", Port: 1194, Name: "nokey.gw.example"},
+		})
+	f.h.now = func() time.Time { return f.now }
+	post := func(secret, name, request string) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(cnsa2GatewayCertReq{Name: name, Request: request})
+		req := httptest.NewRequest(http.MethodPost, "/v1/internal/cnsa2/gateway-cert", bytes.NewReader(body))
+		if secret != "" {
+			req.Header.Set("Authorization", "Bearer "+secret)
+		}
+		rec := httptest.NewRecorder()
+		f.h.GatewayCert(rec, req)
+		return rec
+	}
+	other := testRequest(t, oidMLDSA87, 2592)
+	cases := []struct {
+		what, secret, name, request string
+		want                        int
+	}{
+		{"no secret", "", "lab.gw.example", own, http.StatusUnauthorized},
+		{"wrong secret", "nope", "lab.gw.example", own, http.StatusUnauthorized},
+		{"an account number is not the secret", f.account("txn-gwc", 3, f.now.Add(time.Hour)), "lab.gw.example", own, http.StatusUnauthorized},
+		{"right secret, someone else's key", cnsa2TestInternal, "lab.gw.example", other, http.StatusForbidden},
+		{"unknown gateway name", cnsa2TestInternal, "evil.gw.example", own, http.StatusForbidden},
+		{"gateway with no key registered", cnsa2TestInternal, "nokey.gw.example", own, http.StatusForbidden},
+		{"device name instead of a gateway", cnsa2TestInternal, "x.dev.example", own, http.StatusForbidden},
+		{"not a certificate request", cnsa2TestInternal, "lab.gw.example", "aGVsbG8=", http.StatusBadRequest},
+		{"wrong key type", cnsa2TestInternal, "lab.gw.example", testRequest(t, oidMLDSA65, 1952), http.StatusBadRequest},
+	}
+	for _, c := range cases {
+		if rec := post(c.secret, c.name, c.request); rec.Code != c.want {
+			t.Errorf("%s: status %d, want %d", c.what, rec.Code, c.want)
+		}
+	}
+	if f.signer.n != 0 {
+		t.Fatalf("signer was called %d times for refused requests", f.signer.n)
+	}
+	rec := post(cnsa2TestInternal, "lab.gw.example", own)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("registered key: %d %s", rec.Code, rec.Body)
+	}
+	var out cnsa2GatewayCertResp
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || out.Certificate == "" || out.Root == "" || out.NotAfter == "" {
+		t.Fatalf("reply: %v %+v", err, out)
+	}
+	if got := f.signer.names[len(f.signer.names)-1]; got != "gateway:lab.gw.example" {
+		t.Fatalf("signer asked for %q", got)
+	}
+	// rate limit: three an hour
+	post(cnsa2TestInternal, "lab.gw.example", own)
+	post(cnsa2TestInternal, "lab.gw.example", own)
+	if rec := post(cnsa2TestInternal, "lab.gw.example", own); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("fourth in an hour: %d", rec.Code)
+	}
+	f.now = f.now.Add(61 * time.Minute)
+	if rec := post(cnsa2TestInternal, "lab.gw.example", own); rec.Code != http.StatusOK {
+		t.Fatalf("after an hour: %d", rec.Code)
+	}
+}
+
+func TestCNSA2GatewayKeyHashIsNotSentToApps(t *testing.T) {
+	f := newCNSA2Fixture(t)
+	f.h = NewCNSA2Handler(f.db, f.signer, cnsa2TestSecret, cnsa2TestInternal, "dev.example.",
+		[]cnsa2.Gateway{{ID: "lab", Host: "198.51.100.7", Port: 1194, Name: "lab.gw.example", KeyHash: "abcdef"}})
+	f.h.now = func() time.Time { return f.now }
+	number := f.account("txn-nohash", 3, f.now.Add(24*time.Hour))
+	req := httptest.NewRequest(http.MethodGet, "/v1/cnsa2/gateways", nil)
+	req.Header.Set("Authorization", "Bearer "+number)
+	rec := httptest.NewRecorder()
+	f.h.Gateways(rec, req)
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "key_sha256") || strings.Contains(rec.Body.String(), "abcdef") {
+		t.Fatalf("gateways reply leaks the key hash: %d %s", rec.Code, rec.Body)
+	}
+	rec2, _ := f.enroll(number, testRequest(t, oidMLDSA87, 2592))
+	if rec2.Code != http.StatusOK || strings.Contains(rec2.Body.String(), "key_sha256") {
+		t.Fatalf("enroll reply leaks the key hash: %d", rec2.Code)
 	}
 }

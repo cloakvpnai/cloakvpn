@@ -139,6 +139,7 @@ func main() {
 		mux.HandleFunc("/v1/device/cnsa2", ch.Device)
 		mux.HandleFunc("/v1/cnsa2/gateways", ch.Gateways)
 		mux.HandleFunc("/v1/internal/cnsa2/denylist", ch.DenyList)
+		mux.HandleFunc("/v1/internal/cnsa2/gateway-cert", ch.GatewayCert)
 		log.Printf("cnsa2 enrollment enabled (%d gateways)", len(gateways))
 	} else {
 		log.Printf("cnsa2 enrollment disabled (set CNSA2_SIGNER_URL to enable)")

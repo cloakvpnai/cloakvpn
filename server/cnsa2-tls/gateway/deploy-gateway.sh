@@ -12,7 +12,7 @@ D=/etc/openvpn/server/lattice-cnsa2
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 scp -q "$HERE/install-gateway.sh" "root@$HOST:/root/lattice-install-gateway.sh"
 ssh "root@$HOST" "bash /root/lattice-install-gateway.sh prepare '$NAME'"
-scp -q "$HERE/cnsa2-tls-verify.sh" "$HERE/cnsa2-denylist-sync.sh" "root@$HOST:$D/"
+scp -q "$HERE/cnsa2-tls-verify.sh" "$HERE/cnsa2-denylist-sync.sh" "$HERE/cnsa2-gateway-renew.sh" "root@$HOST:$D/"
 ssh "root@$HOST" "cat $D/gateway.req" > "$W/gateway.req"
 ssh "root@$API_HOST" "python3 /root/lattice-issue.py gateway '$NAME'" < "$W/gateway.req" > "$W/issued.json"
 python3 - "$W" <<'PY'
@@ -24,3 +24,7 @@ for key, name in (("issuing", "issuing-ca.pem"), ("root", "root-ca.pem")):
 PY
 scp -q "$W/gateway.der" "$W/issuing-ca.pem" "$W/root-ca.pem" "root@$HOST:$D/"
 ssh "root@$HOST" "bash /root/lattice-install-gateway.sh finish '$NAME'; rm -f /root/lattice-install-gateway.sh"
+# Daily renewal check. The key hash it prints must be added to this gateway's entry
+# ("key_sha256") in /etc/cloakvpn/cnsa2-gateways.json on the account API host, or renewal is refused.
+scp -q "$HERE/install-renewal-timer.sh" "root@$HOST:/root/lattice-install-renewal-timer.sh"
+ssh "root@$HOST" "bash /root/lattice-install-renewal-timer.sh; rm -f /root/lattice-install-renewal-timer.sh"

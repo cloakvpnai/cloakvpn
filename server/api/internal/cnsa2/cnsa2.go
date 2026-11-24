@@ -96,10 +96,11 @@ type Issued struct {
 // Expiry parses NotAfter.
 func (i Issued) Expiry() (time.Time, error) { return time.Parse(time.RFC3339, i.NotAfter) }
 
-// Signer issues a device certificate for a request. Implemented by Client;
-// tests substitute their own.
+// Signer issues a certificate for a request. Implemented by Client; tests
+// substitute their own.
 type Signer interface {
 	IssueDevice(ctx context.Context, name string, requestDER []byte) (*Issued, error)
+	IssueGateway(ctx context.Context, name string, requestDER []byte) (*Issued, error)
 }
 
 // ErrRejected means the signing service refused the request itself (bad
@@ -118,8 +119,17 @@ func NewClient(url, token string) *Client {
 }
 
 func (c *Client) IssueDevice(ctx context.Context, name string, requestDER []byte) (*Issued, error) {
+	return c.issue(ctx, "device", name, requestDER)
+}
+
+// IssueGateway asks for a server certificate (90 days) for a gateway name.
+func (c *Client) IssueGateway(ctx context.Context, name string, requestDER []byte) (*Issued, error) {
+	return c.issue(ctx, "gateway", name, requestDER)
+}
+
+func (c *Client) issue(ctx context.Context, kind, name string, requestDER []byte) (*Issued, error) {
 	body, _ := json.Marshal(map[string]string{
-		"kind": "device", "name": name, "request": base64.StdEncoding.EncodeToString(requestDER),
+		"kind": kind, "name": name, "request": base64.StdEncoding.EncodeToString(requestDER),
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url+"/v1/issue", bytes.NewReader(body))
 	if err != nil {
@@ -157,9 +167,14 @@ func (c *Client) IssueDevice(ctx context.Context, name string, requestDER []byte
 
 // Gateway is one CNSA 2.0 gateway the apps may connect to. Name is the DNS
 // name in the gateway's certificate, which the app checks.
+//
+// KeyHash is the SHA-256 of the gateway's public key (the same value
+// RequestKeyHash gives for its certificate request). It is configuration
+// for certificate renewal only and is never sent to apps.
 type Gateway struct {
-	ID   string `json:"id"`
-	Host string `json:"host"`
-	Port int    `json:"port"`
-	Name string `json:"name"`
+	ID      string `json:"id"`
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
+	Name    string `json:"name"`
+	KeyHash string `json:"key_sha256,omitempty"`
 }

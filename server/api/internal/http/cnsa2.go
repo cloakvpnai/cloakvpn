@@ -24,6 +24,7 @@ import (
 //	POST   /v1/device/cnsa2/enroll        enroll a device, or renew its certificate
 //	DELETE /v1/device/cnsa2?id=<id>       remove a device; its certificates are refused from then on
 //	GET    /v1/cnsa2/gateways             gateways a signed-in app may use (account number)
+//	POST   /v1/internal/cnsa2/gateway-cert a gateway renewing its own certificate (internal secret)
 //	GET    /v1/internal/cnsa2/denylist    for gateways: serials to refuse (internal secret)
 //
 // The device makes its own ML-DSA-87 key and sends a certificate request.
@@ -40,7 +41,13 @@ type CNSA2Handler struct {
 	internalSecret string
 	nameSuffix     string
 	gateways       []cnsa2.Gateway
-	now            func() time.Time
+	// gatewayKeys maps a gateway name to the hash of the one key that may
+	// renew its certificate.
+	gatewayKeys map[string]string
+	now         func() time.Time
+
+	gwMu     sync.Mutex
+	gwIssued map[string][]time.Time
 
 	// mu makes the device-limit check, the signing call and the row writes
 	// one step, so two enrollments cannot both take the last slot.
@@ -54,8 +61,111 @@ const cnsa2MaxIssuesPerHour = 6
 
 func NewCNSA2Handler(db *store.DB, signer cnsa2.Signer, accountSecret, internalSecret, nameSuffix string,
 	gateways []cnsa2.Gateway) *CNSA2Handler {
+	keys := map[string]string{}
+	public := make([]cnsa2.Gateway, len(gateways))
+	for i, g := range gateways {
+		if g.KeyHash != "" {
+			keys[g.Name] = strings.ToLower(g.KeyHash)
+		}
+		g.KeyHash = "" // apps have no use for it
+		public[i] = g
+	}
 	return &CNSA2Handler{db: db, signer: signer, accountSecret: accountSecret, internalSecret: internalSecret,
-		nameSuffix: strings.Trim(nameSuffix, "."), gateways: gateways, now: time.Now}
+		nameSuffix: strings.Trim(nameSuffix, "."), gateways: public, gatewayKeys: keys, now: time.Now,
+		gwIssued: map[string][]time.Time{}}
+}
+
+// internalAuth reports whether the request carries the region internal secret.
+func (h *CNSA2Handler) internalAuth(r *http.Request) bool {
+	const prefix = "Bearer "
+	got := r.Header.Get("Authorization")
+	return h.internalSecret != "" && strings.HasPrefix(got, prefix) &&
+		subtle.ConstantTimeCompare([]byte(got[len(prefix):]), []byte(h.internalSecret)) == 1
+}
+
+// Certificates one gateway may be issued per hour. Renewal needs one about
+// every two months.
+const cnsa2MaxGatewayIssuesPerHour = 3
+
+type cnsa2GatewayCertReq struct {
+	Name    string `json:"name"`
+	Request string `json:"request"`
+}
+
+type cnsa2GatewayCertResp struct {
+	Certificate string `json:"certificate"`
+	Issuing     string `json:"issuing"`
+	Root        string `json:"root"`
+	NotAfter    string `json:"not_after"`
+}
+
+// GatewayCert handles POST /v1/internal/cnsa2/gateway-cert: a gateway renewing
+// its own certificate. The region internal secret gets a caller in the door,
+// but a certificate is issued only for a listed gateway name and only for the
+// key recorded for that name, so the secret alone cannot be used to obtain a
+// certificate for any other key.
+func (h *CNSA2Handler) GatewayCert(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.internalAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var req cnsa2GatewayCertReq
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2*cnsa2.MaxRequestBytes)).Decode(&req); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	der, err := base64.StdEncoding.DecodeString(req.Request)
+	if err != nil {
+		http.Error(w, "bad request encoding", http.StatusBadRequest)
+		return
+	}
+	keyHash, err := cnsa2.RequestKeyHash(der)
+	if err != nil {
+		http.Error(w, "bad certificate request", http.StatusBadRequest)
+		return
+	}
+	want, ok := h.gatewayKeys[req.Name]
+	if !ok || subtle.ConstantTimeCompare([]byte(want), []byte(keyHash)) != 1 {
+		log.Printf("cnsa2 gateway renewal refused for %q: name or key not registered", req.Name)
+		http.Error(w, "gateway or key not registered", http.StatusForbidden)
+		return
+	}
+	now := h.now()
+	h.gwMu.Lock()
+	recent := h.gwIssued[req.Name][:0]
+	for _, t := range h.gwIssued[req.Name] {
+		if now.Sub(t) < time.Hour {
+			recent = append(recent, t)
+		}
+	}
+	if len(recent) >= cnsa2MaxGatewayIssuesPerHour {
+		h.gwIssued[req.Name] = recent
+		h.gwMu.Unlock()
+		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		return
+	}
+	h.gwIssued[req.Name] = append(recent, now)
+	h.gwMu.Unlock()
+
+	issued, err := h.signer.IssueGateway(r.Context(), req.Name, der)
+	if errors.Is(err, cnsa2.ErrRejected) {
+		http.Error(w, "certificate request rejected", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		log.Printf("cnsa2 gateway renewal for %q: %v", req.Name, err)
+		http.Error(w, "signing unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	log.Printf("cnsa2 gateway certificate issued: %s serial %s until %s", req.Name, issued.Serial, issued.NotAfter)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(cnsa2GatewayCertResp{
+		Certificate: issued.Certificate, Issuing: issued.Issuing, Root: issued.Root, NotAfter: issued.NotAfter})
 }
 
 func (h *CNSA2Handler) authAccount(w http.ResponseWriter, r *http.Request) *store.Account {
@@ -281,10 +391,7 @@ func (h *CNSA2Handler) DenyList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	const prefix = "Bearer "
-	got := r.Header.Get("Authorization")
-	if h.internalSecret == "" || !strings.HasPrefix(got, prefix) ||
-		subtle.ConstantTimeCompare([]byte(got[len(prefix):]), []byte(h.internalSecret)) != 1 {
+	if !h.internalAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
