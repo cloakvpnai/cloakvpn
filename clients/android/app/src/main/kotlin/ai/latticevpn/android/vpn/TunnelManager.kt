@@ -248,6 +248,11 @@ class TunnelManager private constructor(appCtx: Context) {
      * same peer.
      */
     suspend fun selectRegion(region: LatticeRegion) {
+        // CNSA 2.0 is the only way the app connects. A region only chooses the gateway,
+        // so nothing is provisioned for WireGuard here any more.
+        _lastRegionError.value = null
+        setSelectedRegion(region)
+        return
         if (_regionSelectionInProgress.value) return
         _regionSelectionInProgress.value = true
         _lastRegionError.value = null
@@ -310,6 +315,8 @@ class TunnelManager private constructor(appCtx: Context) {
      * the iOS `warmUpPreferredRegion`.
      */
     suspend fun warmUpPreferredRegion() {
+        // CNSA 2.0 is the only way the app connects: there is no WireGuard configuration to warm up.
+        return
         // Provisioning needs the customer's account number — there is
         // nothing to warm up until they have signed in.
         if (accountStore.accountNumber() == null) return

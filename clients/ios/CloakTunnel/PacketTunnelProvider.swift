@@ -273,6 +273,15 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
+        // CNSA 2.0 is the only way the apps connect. A profile with no "cnsa2" section was
+        // saved by an older build: refuse to run it. The app writes the CNSA 2.0 profile
+        // over it at the next Connect.
+        if dict["cnsa2"] == nil {
+            os_log("startTunnel: refusing a profile that is not CNSA 2.0", log: log, type: .error)
+            completionHandler(PacketTunnelError.missingProtocol)
+            return
+        }
+
         let cloakCfg: CloakConfig
         do {
             cloakCfg = try CloakConfig(dict: dict)

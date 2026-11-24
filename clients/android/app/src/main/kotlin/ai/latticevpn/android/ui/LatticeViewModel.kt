@@ -229,8 +229,15 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun selectRegion(region: LatticeRegion, onComplete: (error: String?) -> Unit) {
         viewModelScope.launch {
+            val wasUp = cnsa2 != null && cnsa2.state.value != Cnsa2State.OFF
             tm.selectRegion(region)
             onComplete(tm.lastRegionError.value)
+            // A live tunnel moves to the new region's gateway.
+            if (wasUp) {
+                cnsa2?.disconnect(getApplication())
+                kotlinx.coroutines.delay(600)
+                connect()
+            }
         }
     }
 
