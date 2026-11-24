@@ -68,6 +68,7 @@ final class ConnectionViewModel: ObservableObject {
     #if DEBUG
     /// Lab only: start the CNSA 2.0 tunnel against a development gateway.
     func startCNSA2Lab(_ blob: String) async { await tunnel?.startCNSA2Lab(blob) }
+    #endif
 
     @Published private(set) var cnsa2Busy = false
     @Published private(set) var cnsa2Message: String?
@@ -87,7 +88,6 @@ final class ConnectionViewModel: ObservableObject {
     /// True when the saved VPN profile is the CNSA 2.0 one.
     var isCNSA2Mode: Bool { tunnel?.isCNSA2Mode ?? false }
     var cnsa2GatewayRegionName: String? { tunnel?.cnsa2GatewayRegionName }
-    #endif
 
     @Published private(set) var isSignedIn = false
     @Published private(set) var accountStatus: AccountStatus?

@@ -38,4 +38,5 @@ app/src/main/jniLibs/*/lib*.so.tmp
 #   libwg-go.so        — regenerate via Scripts/build-libwg-go-android.sh
 !app/src/main/jniLibs/**/librosenpassffi.so
 !app/src/main/jniLibs/**/libwg-go.so
+!app/src/main/jniLibs/**/liblatticetls.so
 

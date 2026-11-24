@@ -37,7 +37,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Runs the CNSA 2.0 tunnel (TLS 1.3 client in vpn/cnsa2/tls) as a VPN service.
- * Debug builds only until there is a production gateway.
+ * Part of release builds since Nov 24, 2026; the user turns the mode on in Settings.
  *
  * The TUN device stays in place for as long as the mode is on. While the
  * tunnel is down its packets are dropped, so nothing leaves outside the tunnel.

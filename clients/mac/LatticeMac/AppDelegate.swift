@@ -28,9 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Combine subscriptions kept alive for the app's lifetime.
     private var cancellables = Set<AnyCancellable>()
 
-    #if DEBUG
     private var cnsa2RenewalTimer: Timer?
-    #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Wire up the menu bar. The MenuBarController owns the
@@ -60,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     regionID: UserDefaults.standard.string(forKey: "LatticeCNSA2Region"))
             }
         }
+        #endif
         // Renew the CNSA 2.0 certificate when due: shortly after launch, then once a day
         // for as long as the app runs (it lives in the menu bar).
         cnsa2RenewalTimer = Timer.scheduledTimer(withTimeInterval: 24 * 60 * 60, repeats: true) { [weak self] _ in
@@ -69,7 +68,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? await Task.sleep(nanoseconds: 20_000_000_000)
             await self.connection.renewCNSA2IfDue()
         }
-        #endif
 
         // Mirror the connection state into the menu bar icon. Changing
         // the icon based on state (idle / connecting / connected /

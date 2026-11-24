@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- CNSA 2.0 mode: the TLS 1.3 tunnel runs as a VPN foreground service. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
 
     <application
         android:allowBackup="false"
@@ -34,5 +36,15 @@
             in the tunnel AAR's manifest and merged in automatically — we
             do not declare our own. GoBackend owns the tunnel lifecycle.
         -->
+        <!-- CNSA 2.0 mode (TLS 1.3 tunnel). -->
+        <service
+            android:name=".cnsa2.LatticeTlsVpnService"
+            android:exported="false"
+            android:foregroundServiceType="systemExempted"
+            android:permission="android.permission.BIND_VPN_SERVICE">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

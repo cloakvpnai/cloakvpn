@@ -1360,7 +1360,9 @@ final class TunnelManager: ObservableObject {
         }
     }
 
-    /// Debug builds only for now. Connects in CNSA 2.0 mode through the production
+    #endif
+
+    /// Connects in CNSA 2.0 mode through the production
     /// account API: enrolls this device if it has no usable certificate, then starts
     /// the TLS 1.3 tunnel to the gateway the server named. Never falls back to
     /// WireGuard. `routes` overrides what the gateway assigns (used for testing).
@@ -1389,8 +1391,10 @@ final class TunnelManager: ObservableObject {
 
     /// Renews the CNSA 2.0 certificate if it is in its last 10 days. Safe to call often.
     func renewCNSA2IfDue() async {
-        // set by the test option below, so the tunnel extension's renewal can be watched alone
+        #if DEBUG
+        // set by a test option, so the tunnel extension's renewal can be watched alone
         if UserDefaults.standard.object(forKey: "LatticeCNSA2PretendDaysLeft") != nil { return }
+        #endif
         guard let number = accountNumber, !number.isEmpty else { return }
         do {
             if try await CNSA2Enroller.shared.renewIfDue(accountNumber: number) {
@@ -1418,7 +1422,6 @@ final class TunnelManager: ObservableObject {
         observeStatus(m.connection)
         try m.connection.startVPNTunnel()
     }
-    #endif
 
     private func observeStatus(_ conn: NEVPNConnection) {
         if let o = statusObserver { NotificationCenter.default.removeObserver(o) }

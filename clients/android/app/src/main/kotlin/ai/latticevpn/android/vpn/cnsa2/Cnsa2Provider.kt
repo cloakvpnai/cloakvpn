@@ -6,9 +6,16 @@ import android.content.Intent
 import android.os.Build
 import kotlinx.coroutines.flow.StateFlow
 
-/** Debug builds: the Lattice TLS 1.3 tunnel client. */
+/**
+ * The Lattice TLS 1.3 tunnel client. Null on a device whose processor type the
+ * native library was not built for, in which case the app offers WireGuard only.
+ */
 object Cnsa2Provider {
-    fun backend(): Cnsa2Backend? = LatticeTlsBackend
+    private val engineLoads: Boolean by lazy {
+        runCatching { ai.latticevpn.android.vpn.cnsa2.tls.NativeTls.random(1) }.isSuccess
+    }
+
+    fun backend(): Cnsa2Backend? = if (engineLoads) LatticeTlsBackend else null
 }
 
 private object LatticeTlsBackend : Cnsa2Backend {

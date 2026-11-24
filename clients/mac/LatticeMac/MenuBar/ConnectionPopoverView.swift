@@ -35,12 +35,10 @@ struct ConnectionPopoverView: View {
             statusBlock
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
-            #if DEBUG
             Divider().padding(.horizontal, -16)
             cnsa2Preview
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-            #endif
             Divider().padding(.horizontal, -16)
             regionSection
                 .padding(.horizontal, 16)
@@ -67,8 +65,7 @@ struct ConnectionPopoverView: View {
 
     // MARK: - Sections
 
-    #if DEBUG
-    /// Preview builds only. From WireGuard mode: a button that switches to the CNSA 2.0
+    /// From WireGuard mode: a button that switches to the CNSA 2.0
     /// suite, using the gateway of the selected region. In CNSA 2.0 mode: a status line
     /// only, because the main button connects and disconnects.
     private var cnsa2Preview: some View {
@@ -99,7 +96,6 @@ struct ConnectionPopoverView: View {
             }
         }
     }
-    #endif
 
     private var header: some View {
         HStack(spacing: 10) {
@@ -193,10 +189,8 @@ struct ConnectionPopoverView: View {
                 if connection.status.isConnected {
                     await connection.disconnect()
                 } else {
-                    #if DEBUG
                     // In CNSA 2.0 mode the main button stays in that mode.
                     if connection.isCNSA2Mode { await connection.connectCNSA2(); return }
-                    #endif
                     await connection.connect()
                 }
             }

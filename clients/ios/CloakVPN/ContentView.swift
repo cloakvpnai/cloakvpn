@@ -88,9 +88,7 @@ struct ContentView: View {
     @State private var showingImport = false
     @State private var showingFileImporter = false
     @State private var errorMsg: String?
-    #if DEBUG
     @State private var cnsa2Busy = false
-    #endif
 
     // Runtime smoke test for the post-quantum FFI. Pressing the button
     // calls into Rust, generates a Classic McEliece-460896 + ML-KEM-768
@@ -289,12 +287,10 @@ struct ContentView: View {
             try await tunnel.disconnect()
             return
         }
-        #if DEBUG
         if tunnel.isCNSA2Mode {
             if let failure = await tunnel.startCNSA2() { errorMsg = "CNSA 2.0 mode: \(failure)" }
             return
         }
-        #endif
         try await tunnel.connect()
     }
 
@@ -348,8 +344,7 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.25), value: orbState)
     }
 
-    #if DEBUG
-    /// Preview builds only: enroll this iPhone if needed and connect with the CNSA 2.0 suite.
+    /// Enroll this iPhone if needed and connect with the CNSA 2.0 suite.
     /// To go back to WireGuard, pick a location.
     private var cnsa2PreviewButton: some View {
         Button {
@@ -368,7 +363,6 @@ struct ContentView: View {
         }
         .disabled(cnsa2Busy)
     }
-    #endif
 
     /// Post-quantum status as a capsule. Same truth table as the old
     /// one-line readout: ML-KEM-768 is only called active after a
@@ -526,10 +520,8 @@ struct ContentView: View {
                 signalOrb
                     .padding(.top, 8)
                 signalPQChip
-                #if DEBUG
                 // Only offered from WireGuard mode. In CNSA 2.0 mode the main button connects.
                 if !tunnel.isCNSA2Mode { cnsa2PreviewButton }
-                #endif
                 signalIPCard
                 signalRegionList
                     .padding(.top, 4)
@@ -548,10 +540,8 @@ struct ContentView: View {
                 Spacer(minLength: 0)
                 signalOrb
                 signalPQChip
-                #if DEBUG
                 // Only offered from WireGuard mode. In CNSA 2.0 mode the main button connects.
                 if !tunnel.isCNSA2Mode { cnsa2PreviewButton }
-                #endif
                 signalIPCard
                 Spacer(minLength: 0)
             }

@@ -26,11 +26,13 @@ struct CloakVPNApp: App {
                             try? Data((failure ?? "started").utf8).write(to: docs.appendingPathComponent("cnsa2-connect.txt"))
                         }
                     }
-                    // Renew the CNSA 2.0 certificate when it is in its last 10 days.
-                    try? await Task.sleep(nanoseconds: 15_000_000_000)
-                    await tunnel.renewCNSA2IfDue()
                 }
                 #endif
+                .task {
+                    // Renew the CNSA 2.0 certificate when it is in its last 10 days.
+                    try? await Task.sleep(nanoseconds: 20_000_000_000)
+                    await tunnel.renewCNSA2IfDue()
+                }
                 .task {
                     // load() must complete BEFORE preCreateManagerIfNeeded
                     // so we don't double-create on second launches. The
