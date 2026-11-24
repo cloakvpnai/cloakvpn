@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -169,12 +170,23 @@ func (d *DB) CNSA2CertsIssuedSince(uid string, since time.Time) (int, error) {
 	return n, err
 }
 
-// CNSA2DeniedSerials returns the serials of revoked certificates that have
-// not yet expired. An expired certificate is refused by every gateway anyway,
-// so the list stays as short as the certificate lifetime allows.
+// CNSA2LapseGrace is how long after a subscription ends its certificates stay
+// usable. It absorbs a renewal notice from the payment provider arriving a
+// little late; it is not a free period.
+const CNSA2LapseGrace = time.Hour
+
+// CNSA2DeniedSerials returns the serials of unexpired certificates the
+// gateways must refuse: revoked ones, and every certificate of an account
+// whose subscription has ended (or that no longer exists). A lapsed account
+// comes off the list by itself when it renews. An expired certificate is
+// refused by every gateway anyway, so the list stays as short as the
+// certificate lifetime allows.
 func (d *DB) CNSA2DeniedSerials(now time.Time) ([]string, error) {
 	rows, err := d.Query(
-		`SELECT serial FROM cnsa2_certs WHERE revoked_at IS NOT NULL AND not_after > ? ORDER BY serial`,
+		`SELECT c.serial, c.revoked_at IS NOT NULL, a.id IS NOT NULL,
+		        COALESCE(a.tier, ''), COALESCE(a.active_until, '1970-01-01T00:00:00Z')
+		   FROM cnsa2_certs c LEFT JOIN accounts a ON a.id = c.account_id
+		  WHERE c.not_after > ? ORDER BY c.serial`,
 		cnsa2Time(now))
 	if err != nil {
 		return nil, err
@@ -182,11 +194,22 @@ func (d *DB) CNSA2DeniedSerials(now time.Time) ([]string, error) {
 	defer rows.Close()
 	out := []string{}
 	for rows.Next() {
-		var s string
-		if err := rows.Scan(&s); err != nil {
+		var serial, tier, until string
+		var revoked, hasAccount bool
+		if err := rows.Scan(&serial, &revoked, &hasAccount, &tier, &until); err != nil {
 			return nil, err
 		}
-		out = append(out, s)
+		denied := revoked || !hasAccount || Tier(tier) == TierNone
+		if !denied {
+			activeUntil, err := time.Parse(time.RFC3339Nano, until)
+			if err != nil {
+				return nil, fmt.Errorf("parse active_until %q: %w", until, err)
+			}
+			denied = now.After(activeUntil.Add(CNSA2LapseGrace))
+		}
+		if denied {
+			out = append(out, serial)
+		}
 	}
 	return out, rows.Err()
 }

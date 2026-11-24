@@ -346,3 +346,42 @@ func TestCNSA2DenyListNeedsInternalSecret(t *testing.T) {
 		}
 	}
 }
+
+func TestCNSA2LapsedSubscriptionIsDenied(t *testing.T) {
+	f := newCNSA2Fixture(t)
+	until := f.now.Add(24 * time.Hour)
+	paying := f.account("txn-lapse", 3, until)
+	other := f.account("txn-stays", 3, f.now.Add(60*24*time.Hour))
+	rec, lapsing := f.enroll(paying, testRequest(t, oidMLDSA87, 2592))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("enroll: %d %s", rec.Code, rec.Body)
+	}
+	if rec, _ := f.enroll(other, testRequest(t, oidMLDSA87, 2592)); rec.Code != http.StatusOK {
+		t.Fatalf("enroll other: %d", rec.Code)
+	}
+	if got := f.denied(); len(got) != 0 {
+		t.Fatalf("while paid: denied %v", got)
+	}
+
+	// Inside the grace period nothing changes.
+	f.now = until.Add(store.CNSA2LapseGrace - time.Minute)
+	if got := f.denied(); len(got) != 0 {
+		t.Fatalf("inside grace: denied %v", got)
+	}
+
+	// Past it, that account's certificate is refused and the other account's is not.
+	f.now = until.Add(store.CNSA2LapseGrace + time.Minute)
+	got := f.denied()
+	if len(got) != 1 {
+		t.Fatalf("after lapse: denied %v, want exactly the lapsed account's certificate", got)
+	}
+	_ = lapsing
+
+	// Renewing the subscription takes it off the list again.
+	if err := f.db.UpdateSubscriptionByAppleTxn("txn-lapse", store.TierBasic, 3, f.now.Add(30*24*time.Hour)); err != nil {
+		t.Fatalf("renew: %v", err)
+	}
+	if got := f.denied(); len(got) != 0 {
+		t.Fatalf("after renewal: denied %v", got)
+	}
+}
