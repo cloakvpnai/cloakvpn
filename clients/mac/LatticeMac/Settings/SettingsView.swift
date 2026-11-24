@@ -48,7 +48,7 @@ struct GeneralSettingsView: View {
         Form {
             Section("Lattice VPN") {
                 Text("Lattice lives in your menu bar. Click the shield icon at the top of the screen to choose a region and connect.")
-                Text("Every connection is protected with WireGuard and an ML-KEM-768 post-quantum key exchange. All traffic goes through the tunnel while you are connected.")
+                Text("Every connection uses a TLS 1.3 tunnel with the CNSA 2.0 algorithm suite: ML-KEM-1024, ML-DSA-87 and AES-256. All traffic goes through the tunnel while you are connected.")
                     .foregroundStyle(.secondary)
             }
             Section("Getting started") {
@@ -326,7 +326,7 @@ struct AboutSettingsView: View {
             Section("Lattice VPN") {
                 LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
                 LabeledContent("Build", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "")
-                LabeledContent("Encryption", value: "WireGuard with ML-KEM-768")
+                LabeledContent("Encryption", value: "TLS 1.3, CNSA 2.0 suite")
             }
             Section("Support") {
                 Button("support@latticevpn.ai") {

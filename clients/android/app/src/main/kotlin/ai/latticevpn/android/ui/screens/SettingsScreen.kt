@@ -43,11 +43,8 @@ fun SettingsScreen(vm: LatticeViewModel) {
 
     val context = LocalContext.current
     val autoConnect by vm.autoConnect.collectAsState()
-    val cnsa2Mode by vm.cnsa2Mode.collectAsState()
     val cnsa2Enrolling by vm.cnsa2Enrolling.collectAsState()
     val cnsa2Error by vm.cnsa2Error.collectAsState()
-    val rosenpass by vm.rosenpassStatus.collectAsState()
-    val deviceKey by vm.localRosenpassPublicKeyB64.collectAsState()
 
     var showImport by remember { mutableStateOf(false) }
 
@@ -119,40 +116,20 @@ fun SettingsScreen(vm: LatticeViewModel) {
             // ---- Security ---------------------------------------------------
             SectionHeader("Security")
             SettingsCard {
-                if (vm.cnsa2Available) {
-                    SettingsToggle(
-                        title = "CNSA 2.0 mode (preview)",
-                        subtitle = when {
-                            cnsa2Enrolling -> "Enrolling this device\u2026"
-                            cnsa2Error != null -> "Could not enroll: $cnsa2Error"
-                            else -> "TLS 1.3 tunnel with " + Cnsa2Suite.SUMMARY +
-                                ". Never falls back to WireGuard."
-                        },
-                        checked = cnsa2Mode,
-                        onCheckedChange = vm::setCnsa2Mode,
-                    )
-                    RowDivider()
-                }
                 InfoItem(
                     label = "Encryption",
-                    value = if (cnsa2Mode) "TLS 1.3 tunnel, CNSA 2.0 suite" else "WireGuard + ML-KEM-768",
+                    value = "TLS 1.3 tunnel, CNSA 2.0 suite",
                 )
                 RowDivider()
-                InfoItem(label = "Key exchange status", value = rosenpassLabel(rosenpass))
+                InfoItem(label = "Algorithms", value = Cnsa2Suite.SUMMARY)
                 RowDivider()
-                InfoItem(label = "Device PQ key", value = keyFingerprint(deviceKey))
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // ---- Advanced ---------------------------------------------------
-            SectionHeader("Advanced")
-            SettingsCard {
-                SettingsItem(
-                    title = "Import configuration manually",
-                    subtitle = "Paste a WireGuard + Rosenpass config block.",
-                    showChevron = true,
-                    onClick = { showImport = true },
+                InfoItem(
+                    label = "This device",
+                    value = when {
+                        cnsa2Enrolling -> "Enrolling\u2026"
+                        cnsa2Error != null -> "Could not enroll: $cnsa2Error"
+                        else -> "ML-DSA-87 key made on this device"
+                    },
                 )
             }
 

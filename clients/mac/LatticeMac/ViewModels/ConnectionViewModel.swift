@@ -85,17 +85,8 @@ final class ConnectionViewModel: ObservableObject {
 
     func renewCNSA2IfDue() async { await tunnel?.renewCNSA2IfDue() }
 
-    /// True while CNSA 2.0 mode is switched on.
-    @Published private(set) var isCNSA2Mode = false
-
-    /// Turns the mode on or off. Stops a running tunnel; does not start one.
-    func setCNSA2Mode(_ on: Bool) async {
-        guard let tunnel, !cnsa2Busy else { return }
-        cnsa2Busy = true
-        cnsa2Message = nil
-        await tunnel.setCNSA2Mode(on)
-        cnsa2Busy = false
-    }
+    /// Always true: the CNSA 2.0 suite is the only mode.
+    @Published private(set) var isCNSA2Mode = true
     var cnsa2GatewayRegionName: String? { tunnel?.cnsa2GatewayRegionName }
 
     @Published private(set) var isSignedIn = false

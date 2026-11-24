@@ -65,28 +65,19 @@ struct ConnectionPopoverView: View {
 
     // MARK: - Sections
 
-    /// The CNSA 2.0 mode switch. While it is on, Connect and the region list use the
-    /// TLS 1.3 tunnel to the selected region's gateway, with no fallback to WireGuard.
+    /// What protects the connection. The CNSA 2.0 suite is the only mode; there is no switch.
     private var cnsa2Preview: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("CNSA 2.0 mode (preview)")
+                    Text("CNSA 2.0 suite")
                         .font(.system(size: inWindow ? 13 : 11, weight: .semibold))
-                    Text(connection.isCNSA2Mode
-                         ? "On. ML-KEM-1024, ML-DSA-87 and AES-256 over TLS 1.3, through the selected region. Never falls back to WireGuard."
-                         : "Off. Turn on to connect with ML-KEM-1024, ML-DSA-87 and AES-256 over TLS 1.3.")
+                    Text("ML-KEM-1024, ML-DSA-87 and AES-256 over TLS 1.3, through the selected region.")
                         .font(.system(size: inWindow ? 12 : 10))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
-                Toggle("CNSA 2.0 mode", isOn: Binding(
-                    get: { connection.isCNSA2Mode },
-                    set: { on in Task { await connection.setCNSA2Mode(on) } }))
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                    .disabled(connection.cnsa2Busy || connection.status.isBusy)
             }
             if let message = connection.cnsa2Message {
                 Text(message)

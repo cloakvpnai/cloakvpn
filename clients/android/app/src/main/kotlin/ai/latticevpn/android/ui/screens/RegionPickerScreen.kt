@@ -63,8 +63,8 @@ fun RegionPickerScreen(vm: LatticeViewModel) {
         ) {
             item {
                 Text(
-                    text = "All locations run the same post-quantum (ML-KEM-768) " +
-                        "key exchange. Pick the one closest to you for the best speed.",
+                    text = "All locations use the same CNSA 2.0 suite (ML-KEM-1024, ML-DSA-87, " +
+                        "AES-256). Pick the one closest to you for the best speed.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                     modifier = Modifier.padding(bottom = 6.dp),

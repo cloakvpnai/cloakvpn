@@ -88,7 +88,6 @@ struct ContentView: View {
     @State private var showingImport = false
     @State private var showingFileImporter = false
     @State private var errorMsg: String?
-    @State private var cnsa2Busy = false
 
     // Runtime smoke test for the post-quantum FFI. Pressing the button
     // calls into Rust, generates a Classic McEliece-460896 + ML-KEM-768
@@ -344,31 +343,6 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.25), value: orbState)
     }
 
-    /// Enroll this iPhone if needed and connect with the CNSA 2.0 suite.
-    /// To go back to WireGuard, pick a location.
-    private var cnsa2PreviewButton: some View {
-        Button {
-            guard !cnsa2Busy else { return }
-            cnsa2Busy = true
-            Task {
-                if tunnel.isCNSA2Mode {
-                    await tunnel.setCNSA2Mode(false)
-                } else if let failure = await tunnel.startCNSA2() {
-                    errorMsg = "CNSA 2.0 mode: \(failure)"
-                }
-                cnsa2Busy = false
-            }
-        } label: {
-            Text(cnsa2Busy ? "Working\u{2026}"
-                 : (tunnel.isCNSA2Mode ? "Switch back to WireGuard" : "Switch to CNSA 2.0 mode (preview)"))
-                .font(.system(size: 13, weight: .semibold))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .overlay(Capsule().stroke(LatticeTheme.muted.opacity(0.6)))
-        }
-        .disabled(cnsa2Busy)
-    }
-
     /// Post-quantum status as a capsule. Same truth table as the old
     /// one-line readout: ML-KEM-768 is only called active after a
     /// completed WireGuard handshake.
@@ -460,7 +434,7 @@ struct ContentView: View {
             if tunnel.regionSelectionInProgress {
                 ProgressView().controlSize(.small).tint(LatticeTheme.mint)
             } else {
-                Text(tunnel.isCNSA2Mode ? "CNSA 2.0 mode" : "\(CloakRegion.all.count) available")
+                Text("\(CloakRegion.all.count) available")
                     .font(.system(size: 12))
                     .foregroundStyle(LatticeTheme.muted)
             }
@@ -525,7 +499,6 @@ struct ContentView: View {
                 signalOrb
                     .padding(.top, 8)
                 signalPQChip
-                cnsa2PreviewButton
                 signalIPCard
                 signalRegionList
                     .padding(.top, 4)
@@ -544,7 +517,6 @@ struct ContentView: View {
                 Spacer(minLength: 0)
                 signalOrb
                 signalPQChip
-                cnsa2PreviewButton
                 signalIPCard
                 Spacer(minLength: 0)
             }
@@ -572,7 +544,7 @@ struct ContentView: View {
                     .tracking(1.4)
                     .foregroundStyle(CloakDesign.brandGreen)
                 Spacer()
-                Text(tunnel.isCNSA2Mode ? "CNSA 2.0 mode" : "\(CloakRegion.all.count) available")
+                Text("\(CloakRegion.all.count) available")
                     .font(CloakDesign.body(size: 12))
                     .foregroundStyle(.secondary)
             }
@@ -1249,7 +1221,7 @@ struct ContentView: View {
                 LabeledContent("Build", value: appBuildDisplay)
             }
             Section {
-                Text("LATTICE VPN combines WireGuard with an ML-KEM-768 post-quantum key exchange (NIST FIPS 203). Your traffic is protected against both classical and quantum-capable adversaries.")
+                Text("LATTICE VPN connects through a TLS 1.3 tunnel that uses the CNSA 2.0 algorithm suite: ML-KEM-1024 (FIPS 203), ML-DSA-87 (FIPS 204), AES-256 and SHA-384. There is no other connection mode.")
                     .font(.footnote)
             }
         }

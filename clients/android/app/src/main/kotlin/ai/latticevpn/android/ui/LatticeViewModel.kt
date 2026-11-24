@@ -80,16 +80,20 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     private val cnsa2Enroller = Cnsa2Enroller(app, accountClient)
     private var cnsa2Config: Cnsa2Config? = if (cnsa2 != null) Cnsa2Config.load(app) else null
 
-    /** True when this build has the engine. The device enrolls itself the first time the mode is used. */
+    /** True when this build has the engine. The device enrolls itself the first time it connects. */
     val cnsa2Available: Boolean = cnsa2 != null
 
-    private val _cnsa2Mode = MutableStateFlow(cnsa2Available && prefs.getBoolean(KEY_CNSA2_MODE, false))
+    // The CNSA 2.0 suite is the only way this app connects. There is no setting and no WireGuard fallback.
+    private val _cnsa2Mode = MutableStateFlow(true)
     val cnsa2Mode: StateFlow<Boolean> = _cnsa2Mode.asStateFlow()
     val cnsa2Detail: StateFlow<String?> = cnsa2?.detail ?: MutableStateFlow(null)
 
     init {
         // Keeps the daily renewal scheduled for a device that is already enrolled.
         if (cnsa2Available && Cnsa2Config.load(app) != null) Cnsa2RenewalWorker.schedule(app)
+        // A WireGuard tunnel left up by an older build of the app is taken down. The next
+        // connection is made with the CNSA 2.0 suite.
+        if (tm.tunnelState.value != TunnelState.DISCONNECTED && cnsa2?.state?.value == Cnsa2State.OFF) tm.disconnect()
     }
 
     private val _cnsa2Enrolling = MutableStateFlow(false)
@@ -97,16 +101,6 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     private val _cnsa2Error = MutableStateFlow<String?>(null)
     /** Why enrollment failed, if it did. Cleared on the next success. */
     val cnsa2Error: StateFlow<String?> = _cnsa2Error.asStateFlow()
-
-    /** Switching modes always drops the current tunnel first; there is no fallback between them. */
-    fun setCnsa2Mode(enabled: Boolean) {
-        if (!cnsa2Available || enabled == _cnsa2Mode.value) return
-        disconnect()
-        prefs.edit().putBoolean(KEY_CNSA2_MODE, enabled).apply()
-        _cnsa2Mode.value = enabled
-        _cnsa2Error.value = null
-        if (enabled) viewModelScope.launch { ensureCnsa2Enrolled() }
-    }
 
     /** Returns the gateway settings, enrolling the device first if it has no usable certificate. */
     private suspend fun ensureCnsa2Enrolled(): Cnsa2Config? {
@@ -241,8 +235,15 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun connect() {
-        if (_cnsa2Mode.value && cnsa2 != null) {
-            // never falls back to WireGuard: this mode connects with the CNSA 2.0 suite or not at all
+        val engine = cnsa2
+        if (engine == null) {
+            // The engine did not load on this device. Refuse; do not connect any other way.
+            tm.disconnect()
+            _cnsa2Error.value = "This device cannot run the CNSA 2.0 tunnel."
+            return
+        }
+        run {
+            // never falls back to WireGuard: the app connects with the CNSA 2.0 suite or not at all
             tm.disconnect()
             viewModelScope.launch {
                 ensureCnsa2Enrolled() ?: return@launch
@@ -255,18 +256,13 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 _cnsa2Error.value = null
                 cnsa2Config = config
-                cnsa2.connect(getApplication(), config)
+                engine.connect(getApplication(), config)
                 // Renew ahead of expiry with the same key. The live tunnel keeps its current certificate.
                 // The daily background job does the same when the app is not open.
                 accountStore.accountNumber()?.let { number ->
                     runCatching { cnsa2Enroller.renewIfDue(number) }
                 }
             }
-            return
-        }
-        viewModelScope.launch {
-            tm.rekeyForConnect()
-            tm.connect()
         }
     }
 
@@ -376,8 +372,6 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
         // Give up this device's CNSA 2.0 identity, so a signed-out phone cannot keep using the service.
         if (cnsa2 != null) {
             disconnect()
-            prefs.edit().putBoolean(KEY_CNSA2_MODE, false).apply()
-            _cnsa2Mode.value = false
             _cnsa2Error.value = null
             cnsa2Config = null
             androidx.work.WorkManager.getInstance(getApplication()).cancelUniqueWork(Cnsa2RenewalWorker.WORK_NAME)
@@ -521,7 +515,6 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val PREFS = "lattice"
         private const val KEY_AUTO_CONNECT = "pref_auto_connect"
-        private const val KEY_CNSA2_MODE = "cnsa2_mode"
 
         /** Public-IP lookup: attempts and the wait between them, to ride
          *  out the few seconds a freshly-connected tunnel needs to settle. */
