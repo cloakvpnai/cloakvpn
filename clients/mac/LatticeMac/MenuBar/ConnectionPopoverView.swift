@@ -70,7 +70,7 @@ struct ConnectionPopoverView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("CNSA 2.0 only")
+                    Text("CNSA 2.0")
                         .font(.system(size: inWindow ? 13 : 11, weight: .semibold))
                     Text("ML-KEM-1024, ML-DSA-87 and AES-256 over TLS 1.3, through the selected region.")
                         .font(.system(size: inWindow ? 12 : 10))
@@ -97,7 +97,7 @@ struct ConnectionPopoverView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Lattice VPN")
                     .font(.system(size: 14, weight: .semibold))
-                Text("CNSA 2.0 only")
+                Text("CNSA 2.0")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }

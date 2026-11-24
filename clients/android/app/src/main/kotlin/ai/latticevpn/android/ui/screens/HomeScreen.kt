@@ -381,15 +381,15 @@ private fun statusSubtitle(
 
 /** CNSA 2.0 mode offers one suite only, so connected means that suite is in use. */
 private fun cnsa2Line(state: TunnelState): String =
-    if (state == TunnelState.CONNECTED) "CNSA 2.0 only · active · ML-KEM-1024 · ML-DSA-87"
-    else "CNSA 2.0 only · ML-KEM-1024 · ML-DSA-87"
+    if (state == TunnelState.CONNECTED) "CNSA 2.0 · active · ML-KEM-1024 · ML-DSA-87"
+    else "CNSA 2.0 · ML-KEM-1024 · ML-DSA-87"
 
 private fun cnsa2Subtitle(state: TunnelState, detail: String?): String = when (state) {
     TunnelState.CONNECTED -> "Connected to the CNSA 2.0 gateway"
     TunnelState.CONNECTING -> "Connecting. Traffic waits for the tunnel."
     TunnelState.DISCONNECTING -> "Disconnecting"
     TunnelState.ERROR -> detail ?: "Could not connect"
-    TunnelState.DISCONNECTED -> "Tap the shield to connect. CNSA 2.0 only."
+    TunnelState.DISCONNECTED -> "Tap the shield to connect with CNSA 2.0"
 }
 
 private fun pqcLine(

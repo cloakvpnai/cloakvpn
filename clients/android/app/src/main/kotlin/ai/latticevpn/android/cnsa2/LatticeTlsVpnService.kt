@@ -410,7 +410,7 @@ class LatticeTlsVpnService : VpnService() {
         }
         val notification = builder
             .setSmallIcon(android.R.drawable.ic_lock_lock)
-            .setContentTitle("Lattice VPN: CNSA 2.0 only")
+            .setContentTitle("Lattice VPN: CNSA 2.0")
             .setContentText(text)
             .setOngoing(true)
             .build()

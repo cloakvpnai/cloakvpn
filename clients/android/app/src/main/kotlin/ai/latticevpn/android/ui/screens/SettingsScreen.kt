@@ -118,7 +118,7 @@ fun SettingsScreen(vm: LatticeViewModel) {
             SettingsCard {
                 InfoItem(
                     label = "Encryption",
-                    value = "CNSA 2.0 only (TLS 1.3 tunnel)",
+                    value = "CNSA 2.0 (TLS 1.3 tunnel)",
                 )
                 RowDivider()
                 InfoItem(label = "Algorithms", value = Cnsa2Suite.SUMMARY)
