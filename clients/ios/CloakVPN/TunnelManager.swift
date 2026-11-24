@@ -1293,6 +1293,9 @@ final class TunnelManager: ObservableObject {
         let lab = OSLog(subsystem: "ai.cloakvpn.CloakVPN", category: "cnsa2lab")
         func note(_ text: String) {
             os_log("cnsa2lab: %{public}s", log: lab, type: .default, text)
+            if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                try? Data(text.utf8).write(to: docs.appendingPathComponent("cnsa2-enroll.txt"))
+            }
             guard let url = container?.appendingPathComponent("cnsa2-enroll.txt") else { return }
             try? Data(text.utf8).write(to: url)
         }
@@ -1300,6 +1303,10 @@ final class TunnelManager: ObservableObject {
             do {
                 let request = try CNSA2Identity.certificateRequest(commonName: name)
                 if let url = container?.appendingPathComponent("cnsa2-request.der") { try request.write(to: url) }
+                // also in the app's own Documents folder, which development tools can read on iOS
+                if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                    try? request.write(to: docs.appendingPathComponent("cnsa2-request.der"))
+                }
                 // The request holds no secrets. It also goes to the log in pieces, because on
                 // macOS other processes cannot read an app's group container.
                 let b64 = request.base64EncodedString()
