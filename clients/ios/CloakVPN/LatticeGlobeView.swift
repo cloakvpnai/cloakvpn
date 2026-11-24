@@ -15,6 +15,11 @@ struct LatticeGlobeView: View {
 
     @State private var stats: CNSA2SessionStats?
     @State private var latency: TimeInterval?
+    @State private var latencySamples: [TimeInterval] = []
+    /// The tile that is popped out, if any. Only one can be open at a time.
+    @State private var open: Tile?
+
+    enum Tile: String { case session, traffic, latency, keys }
 
     /// Where each region's servers are, to the nearest city.
     static let coordinates: [String: CLLocationCoordinate2D] = [
@@ -39,16 +44,24 @@ struct LatticeGlobeView: View {
         ZStack {
             GlobeMap(selectedRegionID: selectedRegionID, isConnected: isConnected, onPick: onPick)
 
-            VStack(spacing: 0) {
-                HStack {
-                    header
-                    Spacer(minLength: 0)
+            VStack(spacing: 8) {
+                if open == nil {
+                    HStack {
+                        header
+                        Spacer(minLength: 0)
+                    }
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
                 }
                 Spacer(minLength: 0)
+                if let open {
+                    detail(open)
+                        .transition(.scale(scale: 0.88, anchor: .bottom).combined(with: .opacity))
+                }
                 facts
             }
             .padding(10)
-            .allowsHitTesting(false)
+            .animation(.spring(response: 0.32, dampingFraction: 0.84), value: open)
         }
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(LatticeTheme.border, lineWidth: 1))
@@ -57,14 +70,19 @@ struct LatticeGlobeView: View {
             // seconds, for as long as this panel is on screen and the tunnel is up.
             stats = nil
             latency = nil
+            latencySamples = []
             guard isConnected else { return }
             while !Task.isCancelled {
                 stats = await loadStats()
-                if let trip = await LatticePing.roundTrip(to: LatticePing.gatewayInTunnel) { latency = trip }
+                if let trip = await LatticePing.roundTrip(to: LatticePing.gatewayInTunnel) {
+                    latency = trip
+                    latencySamples.append(trip)
+                    if latencySamples.count > 20 { latencySamples.removeFirst() }
+                }
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
             }
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(liveRegion.map { "Globe. Connected through \($0.displayName)." } ?? "Globe of regions. Not connected.")
     }
 
@@ -94,30 +112,163 @@ struct LatticeGlobeView: View {
     private var facts: some View {
         HStack(spacing: 8) {
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                fact("SESSION", sessionText(at: context.date), lit: liveRegion != nil)
+                fact(.session, "SESSION", sessionText(at: context.date), lit: liveRegion != nil)
             }
-            fact("DOWN / UP", trafficText, lit: liveRegion != nil)
-            fact("LATENCY", latencyText, lit: liveRegion != nil)
-            fact("NEW KEYS", keysText, lit: liveRegion != nil)
+            fact(.traffic, "DOWN / UP", trafficText, lit: liveRegion != nil)
+            fact(.latency, "LATENCY", latencyText, lit: liveRegion != nil)
+            fact(.keys, "NEW KEYS", keysText, lit: liveRegion != nil)
         }
     }
 
-    private func fact(_ label: String, _ value: String, lit: Bool) -> some View {
+    /// A tile. Tapping it pops its detail out; tapping it again, or the detail, puts it away.
+    private func fact(_ tile: Tile, _ label: String, _ value: String, lit: Bool) -> some View {
+        let isOpen = open == tile
+        return Button {
+            open = isOpen ? nil : tile
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(isOpen ? LatticeTheme.mint : LatticeTheme.muted)
+                Text(value)
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(lit ? LatticeTheme.mintText : LatticeTheme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 10).fill(LatticeTheme.bg.opacity(isOpen ? 0.94 : 0.80)))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(isOpen ? LatticeTheme.mint.opacity(0.7) : Color.clear, lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(label), \(value)")
+        .accessibilityHint(isOpen ? "Closes the detail" : "Shows more detail")
+    }
+
+    // MARK: Popped-out detail
+
+    private func detail(_ tile: Tile) -> some View {
+        Button {
+            open = nil
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(detailTitle(tile))
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(1.0)
+                        .foregroundStyle(LatticeTheme.mint)
+                    Spacer()
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(LatticeTheme.muted)
+                }
+                switch tile {
+                case .session:
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        big(sessionText(at: context.date))
+                    }
+                    if let region = liveRegion {
+                        line("Exit", "\(region.countryFlag)  \(region.displayName)")
+                        line("Exit address", region.endpointIP)
+                        if let since = connectedSince {
+                            line("Connected at", since.formatted(date: .omitted, time: .shortened))
+                        }
+                    } else {
+                        note("Tap the power button, or a dot on the globe, to connect.")
+                    }
+                case .traffic:
+                    if liveRegion != nil, let s = stats {
+                        HStack(alignment: .firstTextBaseline, spacing: 18) {
+                            pair("DOWN", Self.bytes.string(fromByteCount: Int64(clamping: s.received)))
+                            pair("UP", Self.bytes.string(fromByteCount: Int64(clamping: s.sent)))
+                            pair("TOTAL", Self.bytes.string(fromByteCount: Int64(clamping: s.received &+ s.sent)))
+                        }
+                    } else {
+                        big("--")
+                    }
+                    note("Counted on this device for this session only. Not saved and not sent to Lattice.")
+                case .latency:
+                    big(latencyText)
+                    if liveRegion != nil, !latencySamples.isEmpty {
+                        let best = latencySamples.min() ?? 0
+                        let average = latencySamples.reduce(0, +) / Double(latencySamples.count)
+                        line("Best", "\(max(1, Int((best * 1000).rounded()))) ms")
+                        line("Average", "\(max(1, Int((average * 1000).rounded()))) ms")
+                    }
+                    note(liveRegion.map { "Round trip from this device to \($0.displayName) and back, through the tunnel." }
+                         ?? "Shown while connected.")
+                case .keys:
+                    big(liveRegion != nil ? "\(stats?.keyChanges ?? 0) so far" : "--")
+                    line("Replaced", "Every 10 minutes")
+                    line("Key exchange", "ML-KEM-1024")
+                    line("Signatures", "ML-DSA-87")
+                    line("Cipher", "AES-256-GCM")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 14).fill(LatticeTheme.bg.opacity(0.94)))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(LatticeTheme.mint.opacity(0.45), lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Closes the detail")
+    }
+
+    private func detailTitle(_ tile: Tile) -> String {
+        switch tile {
+        case .session: return "THIS SESSION"
+        case .traffic: return "DATA THIS SESSION"
+        case .latency: return "LATENCY TO THE EXIT"
+        case .keys: return "KEY CHANGES"
+        }
+    }
+
+    private func big(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 26, weight: .bold, design: .monospaced))
+            .foregroundStyle(liveRegion == nil ? LatticeTheme.text : LatticeTheme.mintText)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+    }
+
+    private func pair(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .tracking(0.8)
                 .foregroundStyle(LatticeTheme.muted)
             Text(value)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(lit ? LatticeTheme.mintText : LatticeTheme.text)
+                .font(.system(size: 19, weight: .bold, design: .monospaced))
+                .foregroundStyle(LatticeTheme.mintText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: 10).fill(LatticeTheme.bg.opacity(0.80)))
+    }
+
+    private func line(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundStyle(LatticeTheme.muted)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(LatticeTheme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundStyle(LatticeTheme.muted)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private static let bytes: ByteCountFormatter = {
