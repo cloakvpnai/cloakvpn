@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import NetworkExtension
 import os.log
 #if canImport(LatticeTLS)
@@ -28,6 +29,18 @@ final class CNSA2TunnelController {
     private var stopping = false
     private var config: [String: Any] = [:]
     private var host = ""
+    private var port = 1194
+    private var identity: TunnelIdentity?
+    private var rekeyInterval: TimeInterval = 300
+    /// Set once the tunnel has come up the first time. From then on a lost connection is
+    /// rebuilt here, with the routes left in place so traffic waits instead of leaking.
+    private var everConnected = false
+    private var appliedSettings: TunnelSettings?
+    private var retryDelay: TimeInterval = 1
+    private var retryPending = false
+    private var pumping = false
+    private var pathMonitor: NWPathMonitor?
+    private var lastPath: String?
 
     init(provider: NEPacketTunnelProvider) { self.provider = provider }
 
@@ -58,37 +71,47 @@ final class CNSA2TunnelController {
                                               privateKeyPKCS8: key, gatewayName: gatewayName)
                 self.config = cfg
                 self.host = host
+                self.port = port
+                self.identity = identity
+                self.rekeyInterval = rekey
                 self.startCompletion = completion
-                try self.openSocket(host: host, port: port)
-
-                let s = TunnelSession(identity: identity, rekeyInterval: rekey)
-                let fd = self.fd
-                s.send = { d in _ = d.withUnsafeBytes { Darwin.send(fd, $0.baseAddress, $0.count, 0) } }
-                s.onPacket = { [weak self] packet in
-                    self?.provider?.packetFlow.writePackets([packet], withProtocols: [NSNumber(value: AF_INET)])
-                }
-                s.log = { [weak self] line in
-                    guard let self else { return }
-                    os_log("cnsa2: %{public}s", log: self.log, type: .info, line)
-                }
-                s.onStateChange = { [weak self] state in self?.sessionChanged(state) }
-                self.session = s
-
-                let t = DispatchSource.makeTimerSource(queue: self.queue)
-                t.schedule(deadline: .now() + 0.2, repeating: 0.2)
-                t.setEventHandler { [weak self] in
-                    guard let self else { return }
-                    self.session?.tick(now: self.now())
-                }
-                t.resume()
-                self.timer = t
-                s.start(now: self.now())
+                try self.connect()
             } catch {
                 os_log("cnsa2: start failed: %{public}s", log: self.log, type: .error, String(describing: error))
                 self.teardown()
                 completion(error)
             }
         }
+    }
+
+    private func connect() throws {
+        guard let identity else { throw LatticeTunnelError("configuration") }
+        try openSocket(host: host, port: port)
+        let s = TunnelSession(identity: identity, rekeyInterval: rekeyInterval)
+        let fd = self.fd
+        s.send = { d in _ = d.withUnsafeBytes { Darwin.send(fd, $0.baseAddress, $0.count, 0) } }
+        s.onPacket = { [weak self] packet in
+            self?.provider?.packetFlow.writePackets([packet], withProtocols: [NSNumber(value: AF_INET)])
+        }
+        s.log = { [weak self] line in
+            guard let self else { return }
+            os_log("cnsa2: %{public}s", log: self.log, type: .info, line)
+        }
+        s.onStateChange = { [weak self, weak s] state in
+            guard let self, let s, self.session === s else { return }
+            self.sessionChanged(state)
+        }
+        session = s
+
+        let t = DispatchSource.makeTimerSource(queue: queue)
+        t.schedule(deadline: .now() + 0.2, repeating: 0.2)
+        t.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.session?.tick(now: self.now())
+        }
+        t.resume()
+        timer = t
+        s.start(now: now())
     }
 
     private func openSocket(host: String, port: Int) throws {
@@ -98,7 +121,7 @@ final class CNSA2TunnelController {
         guard getaddrinfo(host, String(port), &hints, &res) == 0, let info = res else { throw LatticeTunnelError("cannot resolve the gateway") }
         defer { freeaddrinfo(res) }
         let s = socket(info.pointee.ai_family, SOCK_DGRAM, 0)
-        guard s >= 0, connect(s, info.pointee.ai_addr, info.pointee.ai_addrlen) == 0 else {
+        guard s >= 0, Darwin.connect(s, info.pointee.ai_addr, info.pointee.ai_addrlen) == 0 else {
             if s >= 0 { close(s) }
             throw LatticeTunnelError("cannot reach the gateway")
         }
@@ -127,20 +150,75 @@ final class CNSA2TunnelController {
             applySettings(s.settings)
         case .failed(let reason):
             os_log("cnsa2: connection ended: %{public}s", log: log, type: .error, reason)
-            let error = LatticeTunnelError(reason)
             teardown()
             if let completion = startCompletion {
                 startCompletion = nil
-                completion(error)
-            } else if !stopping {
-                provider?.cancelTunnelWithError(error)
+                completion(LatticeTunnelError(reason))
+            } else if stopping {
+                return
+            } else if everConnected && !Self.permanent.contains(where: { reason.localizedCaseInsensitiveContains($0) }) {
+                scheduleRetry(reason)
+            } else {
+                provider?.cancelTunnelWithError(LatticeTunnelError(reason))
             }
         default:
             break
         }
     }
 
+    /// Failures that trying again cannot fix.
+    private static let permanent = ["certificate rejected", "refused this device", "outside the CNSA", "chose cipher",
+                                    "compression", "did not agree", "device certificate", "device key", "not enrolled"]
+
+    private func scheduleRetry(_ reason: String) {
+        guard !stopping, !retryPending else { return }
+        retryPending = true
+        let delay = retryDelay
+        retryDelay = min(retryDelay * 2, 30)
+        provider?.reasserting = true
+        os_log("cnsa2: down (%{public}s), retrying in %{public}.0f s; traffic is held", log: log, type: .error, reason, delay)
+        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, !self.stopping else { return }
+            self.retryPending = false
+            guard self.session == nil else { return }
+            do { try self.connect() } catch {
+                self.teardown()
+                self.scheduleRetry(String(describing: error))
+            }
+        }
+    }
+
+    /// The network under the tunnel changed: rebuild now instead of waiting for the keepalive to notice.
+    private func pathChanged(_ description: String) {
+        guard everConnected, !stopping, lastPath != nil, lastPath != description else { lastPath = lastPath ?? description; return }
+        lastPath = description
+        os_log("cnsa2: network changed, reconnecting", log: log, type: .info)
+        session?.close(now: now())
+        teardown()
+        retryDelay = 1
+        provider?.reasserting = true
+        if !retryPending { do { try connect() } catch { teardown(); scheduleRetry(String(describing: error)) } }
+    }
+
+    private func watchPath() {
+        guard pathMonitor == nil else { return }
+        let m = NWPathMonitor(prohibitedInterfaceTypes: [.other, .loopback])
+        m.pathUpdateHandler = { [weak self] path in
+            // identify the path by its usable physical interfaces, ignoring the tunnel itself
+            let names = path.status == .satisfied ? path.availableInterfaces.map { $0.name }.sorted().joined(separator: ",") : ""
+            self?.pathChanged(names)
+        }
+        m.start(queue: queue)
+        pathMonitor = m
+    }
+
     private func applySettings(_ assigned: TunnelSettings) {
+        if everConnected, appliedSettings == assigned {
+            // back up after a drop with the same address: nothing to change
+            retryDelay = 1
+            provider?.reasserting = false
+            return
+        }
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: host)
         let v4 = NEIPv4Settings(addresses: [assigned.address], subnetMasks: [assigned.netmask])
         if let routes = config["routes"] as? [String] {
@@ -173,7 +251,12 @@ final class CNSA2TunnelController {
                     completion?(error)
                     return
                 }
-                self.pump()
+                self.appliedSettings = assigned
+                self.everConnected = true
+                self.retryDelay = 1
+                self.provider?.reasserting = false
+                self.watchPath()
+                if !self.pumping { self.pumping = true; self.pump() }
                 completion?(nil)
             }
         }
@@ -190,6 +273,7 @@ final class CNSA2TunnelController {
     func stop(completion: @escaping () -> Void) {
         queue.async { [self] in
             stopping = true
+            pathMonitor?.cancel(); pathMonitor = nil
             session?.close(now: now())
             // let the exit notice leave before the socket closes
             queue.asyncAfter(deadline: .now() + 0.3) { [self] in
@@ -210,13 +294,17 @@ final class CNSA2TunnelController {
         }
     }
 
+    /// Reads outgoing packets for as long as the tunnel exists. While the connection is
+    /// down they are dropped here, so nothing leaves outside the tunnel.
     private func pump() {
         provider?.packetFlow.readPackets { [weak self] packets, protocols in
             guard let self else { return }
             self.queue.async {
-                guard let s = self.session else { return }
-                let t = self.now()
-                for (i, p) in packets.enumerated() where protocols[i].int32Value == AF_INET { s.sendPacket(p, now: t) }
+                guard !self.stopping else { return }
+                if let s = self.session {
+                    let t = self.now()
+                    for (i, p) in packets.enumerated() where protocols[i].int32Value == AF_INET { s.sendPacket(p, now: t) }
+                }
                 self.pump()
             }
         }
