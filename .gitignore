@@ -88,3 +88,6 @@ server/api/dist/
 _to_delete/
 server/cloak-rpd/.work/
 server/cloak-rpd/build.log
+
+# Swift package build output
+.build/
