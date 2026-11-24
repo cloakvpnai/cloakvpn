@@ -83,10 +83,10 @@ struct LatticeGlobeView: View {
         .onChange(of: selectedRegionID) { _, _ in focusOnLiveRegion(animated: true) }
         .onChange(of: isConnected) { _, _ in focusOnLiveRegion(animated: true) }
         .onReceive(turn) { _ in
-            // Turns while idle. Holds still on the exit while connected, and for a few
-            // seconds after the customer has moved the globe themselves.
-            guard !isConnected, Date().timeIntervalSince(lastTouch) > 6 else { return }
-            var longitude = center.longitude + 10
+            // Turns slowly whenever it is left alone, connected or not. It pauses for a few
+            // seconds after the customer moves it, and after it swings to a new exit region.
+            guard Date().timeIntervalSince(lastTouch) > 6 else { return }
+            var longitude = center.longitude + 6
             if longitude > 180 { longitude -= 360 }
             let next = CLLocationCoordinate2D(latitude: 18, longitude: longitude)
             center = next
@@ -99,6 +99,7 @@ struct LatticeGlobeView: View {
 
     private func focusOnLiveRegion(animated: Bool) {
         guard let region = liveRegion, let c = Self.coordinates[region.id] else { return }
+        lastTouch = Date()
         center = c
         let camera = MapCameraPosition.camera(MapCamera(centerCoordinate: c, distance: Self.altitude))
         if animated { withAnimation(.easeInOut(duration: 1.6)) { position = camera } } else { position = camera }
