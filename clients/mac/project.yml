@@ -80,6 +80,7 @@ targets:
       - path: ../ios/CloakVPN/TunnelManager.swift
       - path: ../ios/CloakVPN/AppGroupKeyStore.swift
       - path: ../ios/CloakVPN/CNSA2Identity.swift
+      - path: ../ios/CloakVPN/CNSA2Enrollment.swift
       - path: ../ios/CloakVPN/LatticeAPI.swift
       - path: ../ios/CloakVPN/LatticeAccountClient.swift
       # ML-KEM-768 exchange (CryptoKit, needs macOS 26)

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		06A8D73A5E1017556ACBD1A5 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CF941E9EA2FA5B0FE324BFE /* MenuBarController.swift */; };
+		12843FDFDAB4C97D40E92340 /* CNSA2Enrollment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00ABB9BDFF81E52035F6F80F /* CNSA2Enrollment.swift */; };
 		1310D17ECFB9880B7225AF99 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A891D2E5644988BC3B2347F3 /* PacketTunnelProvider.swift */; };
 		193371A69A8F22F5FE2D22C3 /* StatusItemIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF5A9BE1ACE81A2DD9B0E53C /* StatusItemIcon.swift */; };
 		19BF97C9AC9B5B02D7D6D054 /* AppGroupKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2B61018460812E8825BC010 /* AppGroupKeyStore.swift */; };
@@ -85,6 +86,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		00ABB9BDFF81E52035F6F80F /* CNSA2Enrollment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CNSA2Enrollment.swift; sourceTree = "<group>"; };
 		00BD704E8A34413253646D15 /* lattice_tls.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lattice_tls.h; sourceTree = "<group>"; };
 		0CF941E9EA2FA5B0FE324BFE /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		0DE105A1B7C2E33A3BC85485 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -262,6 +264,7 @@
 			isa = PBXGroup;
 			children = (
 				F2B61018460812E8825BC010 /* AppGroupKeyStore.swift */,
+				00ABB9BDFF81E52035F6F80F /* CNSA2Enrollment.swift */,
 				96D59D6045089D2946A9E0FB /* CNSA2Identity.swift */,
 				A104B36A4CB5B6AAB224E961 /* ConfigParser.swift */,
 				23A76637DAF36D4A08A21FEB /* LatticeAccountClient.swift */,
@@ -450,6 +453,7 @@
 			files = (
 				20AA99BB72332FFD78A8B74A /* AppDelegate.swift in Sources */,
 				19BF97C9AC9B5B02D7D6D054 /* AppGroupKeyStore.swift in Sources */,
+				12843FDFDAB4C97D40E92340 /* CNSA2Enrollment.swift in Sources */,
 				6E8118E16CD87273D4F93EB0 /* CNSA2Identity.swift in Sources */,
 				D34EFC80DEA3A7E7D79B3B8D /* ConfigParser.swift in Sources */,
 				CA56723BB3DCB0085A2F5EC8 /* ConnectionPopoverView.swift in Sources */,

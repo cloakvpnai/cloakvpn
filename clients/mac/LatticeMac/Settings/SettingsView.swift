@@ -44,8 +44,25 @@ struct SettingsView: View {
 // MARK: - General
 
 struct GeneralSettingsView: View {
+    #if DEBUG
+    @EnvironmentObject private var connection: ConnectionViewModel
+    #endif
+
     var body: some View {
         Form {
+            #if DEBUG
+            Section("CNSA 2.0 mode (preview)") {
+                Text("TLS 1.3 tunnel with ML-KEM-1024, ML-DSA-87, AES-256-GCM and SHA-384. This Mac enrolls itself the first time. Never falls back to WireGuard. To go back, pick a region in the menu bar.")
+                    .foregroundStyle(.secondary)
+                Button(connection.cnsa2Busy ? "Working\u{2026}" : "Connect in CNSA 2.0 mode") {
+                    Task { await connection.connectCNSA2() }
+                }
+                .disabled(connection.cnsa2Busy)
+                if let message = connection.cnsa2Message {
+                    Text(message)
+                }
+            }
+            #endif
             Section("Lattice VPN") {
                 Text("Lattice lives in your menu bar. Click the shield icon at the top of the screen to choose a region and connect.")
                 Text("Every connection is protected with WireGuard and an ML-KEM-768 post-quantum key exchange. All traffic goes through the tunnel while you are connected.")

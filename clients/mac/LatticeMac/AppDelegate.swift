@@ -28,6 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Combine subscriptions kept alive for the app's lifetime.
     private var cancellables = Set<AnyCancellable>()
 
+    #if DEBUG
+    private var cnsa2RenewalTimer: Timer?
+    #endif
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Wire up the menu bar. The MenuBarController owns the
         // NSStatusItem and NSPopover; we hand it our shared model so the
@@ -43,6 +47,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         TunnelManager.runCNSA2LabEnrollment()
         if let blob = UserDefaults.standard.string(forKey: "LatticeCNSA2Lab") {
             Task { @MainActor in await self.connection.startCNSA2Lab(blob) }
+        }
+        // `-LatticeCNSA2Connect full` enrolls through the account API and connects;
+        // `-LatticeCNSA2Connect split` does the same but routes only the tunnel's own
+        // subnet, for testing on a Mac that must stay reachable.
+        if let mode = UserDefaults.standard.string(forKey: "LatticeCNSA2Connect") {
+            Task { @MainActor in
+                await self.connection.bootstrap()
+                await self.connection.connectCNSA2(routes: mode == "split" ? ["10.88.0.0/24"] : nil)
+            }
+        }
+        // Renew the CNSA 2.0 certificate when due: shortly after launch, then once a day
+        // for as long as the app runs (it lives in the menu bar).
+        cnsa2RenewalTimer = Timer.scheduledTimer(withTimeInterval: 24 * 60 * 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.connection.renewCNSA2IfDue() }
+        }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 20_000_000_000)
+            await self.connection.renewCNSA2IfDue()
         }
         #endif
 

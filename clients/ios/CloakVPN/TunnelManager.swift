@@ -1340,25 +1340,66 @@ final class TunnelManager: ObservableObject {
             return
         }
         do {
-            let existing = try await NETunnelProviderManager.loadAllFromPreferences()
-            let m = existing.first ?? NETunnelProviderManager()
-            let proto = NETunnelProviderProtocol()
-            proto.providerBundleIdentifier = Self.providerBundleIdentifier
-            proto.serverAddress = (cfg["host"] as? String) ?? "cnsa2-lab"
-            proto.providerConfiguration = ["cnsa2": cfg]
-            proto.includeAllNetworks = false
-            m.protocolConfiguration = proto
-            m.localizedDescription = "LATTICE VPN"
-            m.isEnabled = true
-            try await m.saveToPreferences()
-            try await m.loadFromPreferences()
-            manager = m
-            observeStatus(m.connection)
-            try m.connection.startVPNTunnel()
+            try await startCNSA2Tunnel(cfg)
             debugLog("cnsa2 lab: tunnel start requested")
         } catch {
             debugLog("cnsa2 lab: failed: \(error)")
         }
+    }
+
+    /// Debug builds only for now. Connects in CNSA 2.0 mode through the production
+    /// account API: enrolls this device if it has no usable certificate, then starts
+    /// the TLS 1.3 tunnel to the gateway the server named. Never falls back to
+    /// WireGuard. `routes` overrides what the gateway assigns (used for testing).
+    /// Returns a message for the user on failure, nil on success.
+    func startCNSA2(routes: [String]? = nil) async -> String? {
+        guard let number = accountNumber, !number.isEmpty else {
+            return "Sign in with your account number to use CNSA 2.0 mode."
+        }
+        do {
+            var cfg = try await CNSA2Enroller.shared.configuration(accountNumber: number)
+            if let routes { cfg["routes"] = routes }
+            try await startCNSA2Tunnel(cfg)
+            debugLog("cnsa2: tunnel start requested")
+            // Renew ahead of expiry with the same key. The live tunnel keeps its current certificate.
+            _ = try? await CNSA2Enroller.shared.renewIfDue(accountNumber: number)
+            return nil
+        } catch let error as AccountError {
+            return error.userMessage
+        } catch {
+            debugLog("cnsa2: failed: \(error)")
+            return error.localizedDescription
+        }
+    }
+
+    /// Renews the CNSA 2.0 certificate if it is in its last 10 days. Safe to call often.
+    func renewCNSA2IfDue() async {
+        guard let number = accountNumber, !number.isEmpty else { return }
+        do {
+            if try await CNSA2Enroller.shared.renewIfDue(accountNumber: number) {
+                debugLog("cnsa2: certificate renewed")
+            }
+        } catch {
+            debugLog("cnsa2: renewal failed: \(error)")
+        }
+    }
+
+    private func startCNSA2Tunnel(_ cfg: [String: Any]) async throws {
+        let existing = try await NETunnelProviderManager.loadAllFromPreferences()
+        let m = existing.first ?? NETunnelProviderManager()
+        let proto = NETunnelProviderProtocol()
+        proto.providerBundleIdentifier = Self.providerBundleIdentifier
+        proto.serverAddress = (cfg["host"] as? String) ?? "cnsa2"
+        proto.providerConfiguration = ["cnsa2": cfg]
+        proto.includeAllNetworks = false
+        m.protocolConfiguration = proto
+        m.localizedDescription = "LATTICE VPN"
+        m.isEnabled = true
+        try await m.saveToPreferences()
+        try await m.loadFromPreferences()
+        manager = m
+        observeStatus(m.connection)
+        try m.connection.startVPNTunnel()
     }
     #endif
 

@@ -244,6 +244,40 @@ struct LatticeAccountClient {
         return Self.renderConfigINI(cfg, mlkem768PSKB64: psk)
     }
 
+    // MARK: - POST /v1/device/cnsa2/enroll
+
+    /// Enroll this device for CNSA 2.0 mode, or renew its certificate. Only the
+    /// certificate request (public key) is sent; the private key never leaves the device.
+    func enrollCNSA2(accountNumber: String, request: Data) async throws -> CNSA2EnrollmentReply {
+        guard let url = URL(string: "\(LatticeAPI.baseURL)/v1/device/cnsa2/enroll") else {
+            throw AccountError.other("Bad API URL.")
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue(bearer(accountNumber), forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: ["request": request.base64EncodedString()])
+
+        let body = try await execute(req)
+        guard let obj = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let certificate = (obj["certificate"] as? String).flatMap({ Data(base64Encoded: $0) }),
+              let root = (obj["root"] as? String).flatMap({ Data(base64Encoded: $0) }),
+              let notAfter = obj["not_after"] as? String
+        else {
+            throw AccountError.other("The server sent an enrollment reply we couldn't read.")
+        }
+        let device = obj["device"] as? [String: Any]
+        let gateways = ((obj["gateways"] as? [[String: Any]]) ?? []).compactMap { g -> CNSA2Gateway? in
+            guard let host = g["host"] as? String, let name = g["name"] as? String else { return nil }
+            return CNSA2Gateway(id: g["id"] as? String ?? "", host: host, port: g["port"] as? Int ?? 1194, name: name)
+        }
+        return CNSA2EnrollmentReply(
+            certificate: certificate, root: root, notAfter: notAfter,
+            deviceID: (device?["id"] as? NSNumber)?.int64Value ?? 0,
+            deviceUID: device?["uid"] as? String ?? "",
+            gateways: gateways)
+    }
+
     // MARK: - DELETE /v1/device
 
     /// Release a device slot so a customer at their device limit can free
@@ -287,6 +321,8 @@ struct LatticeAccountClient {
         case 402: throw AccountError.noSubscription
         case 403: throw AccountError.deviceLimit
         case 400: throw AccountError.badRegion
+        case 409: throw AccountError.other("This device is already registered to a different account.")
+        case 429: throw AccountError.other("Too many requests. Please try again in a little while.")
         default:
             throw AccountError.other("Lattice server error (\(http.statusCode)). Please try again in a moment.")
         }

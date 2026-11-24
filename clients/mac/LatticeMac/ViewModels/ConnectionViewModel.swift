@@ -68,6 +68,21 @@ final class ConnectionViewModel: ObservableObject {
     #if DEBUG
     /// Lab only: start the CNSA 2.0 tunnel against a development gateway.
     func startCNSA2Lab(_ blob: String) async { await tunnel?.startCNSA2Lab(blob) }
+
+    @Published private(set) var cnsa2Busy = false
+    @Published private(set) var cnsa2Message: String?
+
+    /// Preview: enroll this Mac if needed and connect in CNSA 2.0 mode.
+    func connectCNSA2(routes: [String]? = nil) async {
+        guard let tunnel, !cnsa2Busy else { return }
+        cnsa2Busy = true
+        cnsa2Message = "Enrolling this Mac if needed, then connecting\u{2026}"
+        let failure = await tunnel.startCNSA2(routes: routes)
+        cnsa2Message = failure.map { "Could not connect: \($0)" }
+        cnsa2Busy = false
+    }
+
+    func renewCNSA2IfDue() async { await tunnel?.renewCNSA2IfDue() }
     #endif
 
     @Published private(set) var isSignedIn = false

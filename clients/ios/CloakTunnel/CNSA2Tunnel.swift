@@ -254,6 +254,13 @@ final class CNSA2TunnelController {
             v4.includedRoutes = routes
         }
         settings.ipv4Settings = v4
+        if v4.includedRoutes?.contains(where: { $0.destinationAddress == "0.0.0.0" }) == true {
+            // The gateway carries IPv4 only. Capture IPv6 too so it cannot leave outside
+            // the tunnel; the gateway discards it and apps fall back to IPv4.
+            let v6 = NEIPv6Settings(addresses: ["fd42:88::2"], networkPrefixLengths: [128])
+            v6.includedRoutes = [NEIPv6Route.default()]
+            settings.ipv6Settings = v6
+        }
         settings.mtu = 1280
         let dns = assigned.dns.isEmpty ? ((config["dns"] as? [String]) ?? []) : assigned.dns
         if !dns.isEmpty { settings.dnsSettings = NEDNSSettings(servers: dns) }
