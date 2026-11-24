@@ -1147,6 +1147,22 @@ final class TunnelManager: ObservableObject {
     /// When the running tunnel came up, for the session clock. Nil when not connected.
     var connectedSince: Date? { manager?.connection.connectedDate }
 
+    /// Traffic and key changes for the running session, asked of the tunnel extension.
+    func cnsa2SessionStats() async -> CNSA2SessionStats? {
+        guard status == .connected,
+              let data = try? await Self.sendProviderMessageAsync(Data([0x00]), manager: manager),
+              let text = String(data: data, encoding: .utf8) else { return nil }
+        var values: [String: String] = [:]
+        for line in text.split(separator: "\n") {
+            let parts = line.split(separator: "=", maxSplits: 1)
+            if parts.count == 2 { values[String(parts[0])] = String(parts[1]) }
+        }
+        guard values["mode"] == "cnsa2" else { return nil }
+        return CNSA2SessionStats(received: UInt64(values["cnsa2_rx_bytes"] ?? "") ?? 0,
+                                 sent: UInt64(values["cnsa2_tx_bytes"] ?? "") ?? 0,
+                                 keyChanges: Int(values["cnsa2_rekeys"] ?? "") ?? 0)
+    }
+
     /// Seconds since the running tunnel last completed a WireGuard handshake,
     /// or nil if it has not completed one (or the provider can't be asked).
     /// "Connected" from NetworkExtension only means the interface is up; this
@@ -1750,3 +1766,10 @@ final class TunnelManager: ObservableObject {
 // `TunnelError` lives in ConfigParser.swift so the NetworkExtension
 // target (which compiles ConfigParser.swift but NOT this file) can see
 // it too. Don't redeclare it here.
+
+/// What the tunnel extension reports about the running session.
+struct CNSA2SessionStats: Equatable {
+    let received: UInt64
+    let sent: UInt64
+    let keyChanges: Int
+}

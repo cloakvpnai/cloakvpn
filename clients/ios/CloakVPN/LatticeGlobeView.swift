@@ -10,7 +10,11 @@ struct LatticeGlobeView: View {
     let selectedRegionID: String?
     let isConnected: Bool
     let connectedSince: Date?
+    let loadStats: () async -> CNSA2SessionStats?
     let onPick: (CloakRegion) -> Void
+
+    @State private var stats: CNSA2SessionStats?
+    @State private var latency: TimeInterval?
 
     /// Where each region's servers are, to the nearest city.
     static let coordinates: [String: CLLocationCoordinate2D] = [
@@ -48,6 +52,18 @@ struct LatticeGlobeView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(LatticeTheme.border, lineWidth: 1))
+        .task(id: isConnected) {
+            // Ask the tunnel for its counters and time one echo to the exit, every few
+            // seconds, for as long as this panel is on screen and the tunnel is up.
+            stats = nil
+            latency = nil
+            guard isConnected else { return }
+            while !Task.isCancelled {
+                stats = await loadStats()
+                if let trip = await LatticePing.roundTrip(to: LatticePing.gatewayInTunnel) { latency = trip }
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(liveRegion.map { "Globe. Connected through \($0.displayName)." } ?? "Globe of regions. Not connected.")
     }
@@ -80,9 +96,9 @@ struct LatticeGlobeView: View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 fact("SESSION", sessionText(at: context.date), lit: liveRegion != nil)
             }
-            fact("NEW KEYS", "Every 10 min", lit: liveRegion != nil)
-            fact("KEY EXCHANGE", "ML-KEM-1024", lit: liveRegion != nil)
-            fact("CIPHER", "AES-256-GCM", lit: liveRegion != nil)
+            fact("DOWN / UP", trafficText, lit: liveRegion != nil)
+            fact("LATENCY", latencyText, lit: liveRegion != nil)
+            fact("NEW KEYS", keysText, lit: liveRegion != nil)
         }
     }
 
@@ -102,6 +118,29 @@ struct LatticeGlobeView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(RoundedRectangle(cornerRadius: 10).fill(LatticeTheme.bg.opacity(0.80)))
+    }
+
+    private static let bytes: ByteCountFormatter = {
+        let f = ByteCountFormatter()
+        f.countStyle = .file
+        f.allowedUnits = [.useKB, .useMB, .useGB]
+        return f
+    }()
+
+    private var trafficText: String {
+        guard liveRegion != nil, let s = stats else { return "--" }
+        return "\(Self.bytes.string(fromByteCount: Int64(clamping: s.received))) / \(Self.bytes.string(fromByteCount: Int64(clamping: s.sent)))"
+    }
+
+    private var latencyText: String {
+        guard liveRegion != nil, let l = latency else { return "--" }
+        return "\(max(1, Int((l * 1000).rounded()))) ms"
+    }
+
+    /// The keys are replaced every 10 minutes; the count is how many times so far.
+    private var keysText: String {
+        guard liveRegion != nil, let s = stats else { return "Every 10 min" }
+        return s.keyChanges == 0 ? "Every 10 min" : "\(s.keyChanges) so far"
     }
 
     private func sessionText(at now: Date) -> String {

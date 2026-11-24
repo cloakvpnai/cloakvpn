@@ -44,6 +44,10 @@ final class CNSA2TunnelController {
     private var lastPath: String?
     private var pendingPath: String?
     private var currentPath = ""
+    /// Bytes carried through the tunnel since it was started, for the app's session panel.
+    /// Counted here in memory only; nothing is written to disk or sent anywhere.
+    private var receivedBytes: UInt64 = 0
+    private var sentBytes: UInt64 = 0
 
     init(provider: NEPacketTunnelProvider) { self.provider = provider }
 
@@ -123,6 +127,7 @@ final class CNSA2TunnelController {
         let fd = self.fd
         s.send = { d in _ = d.withUnsafeBytes { Darwin.send(fd, $0.baseAddress, $0.count, 0) } }
         s.onPacket = { [weak self] packet in
+            self?.receivedBytes &+= UInt64(packet.count)
             self?.provider?.packetFlow.writePackets([packet], withProtocols: [NSNumber(value: AF_INET)])
         }
         s.log = { [weak self] line in
@@ -343,10 +348,11 @@ final class CNSA2TunnelController {
     /// were last established (connect or the most recent re-key).
     var statusReport: String {
         queue.sync {
-            guard let s = session else { return "mode=cnsa2\n" }
+            let traffic = "cnsa2_rx_bytes=\(receivedBytes)\ncnsa2_tx_bytes=\(sentBytes)\n"
+            guard let s = session else { return "mode=cnsa2\n" + traffic }
             let age = max(0, now() - s.lastKeyTime)
             let t = Int(Date().timeIntervalSince1970 - age)
-            return "mode=cnsa2\nlast_handshake_time_sec=\(t)\ncnsa2_rekeys=\(s.rekeyCount)\ncnsa2_suite=\(s.suite)\n"
+            return "mode=cnsa2\nlast_handshake_time_sec=\(t)\ncnsa2_rekeys=\(s.rekeyCount)\ncnsa2_suite=\(s.suite)\n" + traffic
         }
     }
 
@@ -359,7 +365,10 @@ final class CNSA2TunnelController {
                 guard !self.stopping else { return }
                 if let s = self.session {
                     let t = self.now()
-                    for (i, p) in packets.enumerated() where protocols[i].int32Value == AF_INET { s.sendPacket(p, now: t) }
+                    for (i, p) in packets.enumerated() where protocols[i].int32Value == AF_INET {
+                        s.sendPacket(p, now: t)
+                        self.sentBytes &+= UInt64(p.count)
+                    }
                 }
                 self.pump()
             }

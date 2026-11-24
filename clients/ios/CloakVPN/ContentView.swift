@@ -548,6 +548,7 @@ struct ContentView: View {
                         selectedRegionID: tunnel.selectedRegion?.id,
                         isConnected: tunnel.status == .connected,
                         connectedSince: tunnel.connectedSince,
+                        loadStats: { await tunnel.cnsa2SessionStats() },
                         onPick: { region in Task { await tunnel.selectRegion(region) } })
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .frame(minHeight: 150)
