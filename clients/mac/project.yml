@@ -79,6 +79,7 @@ targets:
       # Shared from iOS (target-membership cross-cut, no file copying)
       - path: ../ios/CloakVPN/TunnelManager.swift
       - path: ../ios/CloakVPN/AppGroupKeyStore.swift
+      - path: ../ios/CloakVPN/CNSA2Identity.swift
       - path: ../ios/CloakVPN/LatticeAPI.swift
       - path: ../ios/CloakVPN/LatticeAccountClient.swift
       # ML-KEM-768 exchange (CryptoKit, needs macOS 26)
@@ -204,6 +205,7 @@ targets:
       # project does it the same way). Adding both to one target
       # produces "invalid redeclaration of 'errorDescription'".
       - path: ../ios/CloakVPN/AppGroupKeyStore.swift
+      - path: ../ios/CloakVPN/CNSA2Identity.swift
       - path: ../ios/CloakVPN/ConfigParser.swift
       - path: ../ios/CloakVPN/Region.swift
       - path: ../ios/CloakVPN/rosenpassffi.swift

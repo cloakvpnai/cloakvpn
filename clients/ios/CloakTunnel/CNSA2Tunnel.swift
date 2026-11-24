@@ -9,7 +9,8 @@ import LatticeTLS
 /// extension, as an alternative to the WireGuard path. Selected when the provider
 /// configuration carries a "cnsa2" dictionary:
 ///   host, port, gatewayID                    strings / number (gatewayID is the name in the gateway certificate)
-///   caDER, clientCertDER, clientKeyPKCS8     base64
+///   caDER                                    base64
+///   clientCertDER, clientKeyPKCS8            base64, lab only; normally the device's own enrolled identity is used
 ///   routes                                   optional ["10.88.0.0/24"] or ["0.0.0.0/0"]; default is what the gateway assigns
 ///   dns                                      optional ["1.1.1.1"], used when the gateway sends none
 ///   rekeySeconds                             optional, default 300
@@ -45,8 +46,16 @@ final class CNSA2TunnelController {
                 let port = (cfg["port"] as? NSNumber)?.intValue ?? 1194
                 var rekey: TimeInterval = 300
                 if let r = (cfg["rekeySeconds"] as? NSNumber)?.doubleValue, r >= 10 { rekey = r }
-                let identity = TunnelIdentity(caDER: try b64("caDER"), certificateDER: try b64("clientCertDER"),
-                                              privateKeyPKCS8: try b64("clientKeyPKCS8"), gatewayName: gatewayName)
+                // The device's own enrolled identity, unless a lab configuration supplies one.
+                let certificate: Data, key: Data
+                if cfg["clientKeyPKCS8"] != nil {
+                    certificate = try b64("clientCertDER"); key = try b64("clientKeyPKCS8")
+                } else {
+                    guard let stored = CNSA2Identity.certificate() else { throw LatticeTunnelError("this device is not enrolled") }
+                    certificate = stored; key = try CNSA2Identity.privateKeyPKCS8()
+                }
+                let identity = TunnelIdentity(caDER: try b64("caDER"), certificateDER: certificate,
+                                              privateKeyPKCS8: key, gatewayName: gatewayName)
                 self.config = cfg
                 self.host = host
                 self.startCompletion = completion

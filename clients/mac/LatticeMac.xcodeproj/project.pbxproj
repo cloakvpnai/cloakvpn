@@ -22,6 +22,7 @@
 		59E4D3CD18A7AEABF5D20141 /* LatticeMacTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8927E4ACEA21E973CD56CE9E /* LatticeMacTunnelProvider.swift */; };
 		5BBB5A5836B21CED710AC400 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = CCA0020F0B2A8EB30F0B7E29 /* PrivacyInfo.xcprivacy */; };
 		63DECF939F2C8716FFF1465E /* RosenpassBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F5AC903F93485FEF3A202DC /* RosenpassBridge.swift */; };
+		6E8118E16CD87273D4F93EB0 /* CNSA2Identity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96D59D6045089D2946A9E0FB /* CNSA2Identity.swift */; };
 		7C15BFD12E672C91FF0F9930 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9718F30ACF02DE97C1304779 /* Assets.xcassets */; };
 		7CAF4DEC3DDD1D5CC6821B63 /* StoreManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE382357D5C5383A99245BC /* StoreManager.swift */; };
 		7CF153DA4831FF32CCBD1DD5 /* Wire.swift in Sources */ = {isa = PBXBuildFile; fileRef = 837A3C21740DA4B4915CFDE7 /* Wire.swift */; };
@@ -38,6 +39,7 @@
 		BD7E11B34B2390845C974194 /* LatticeAccountClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A76637DAF36D4A08A21FEB /* LatticeAccountClient.swift */; };
 		C37A889191C3205FB7469E68 /* AppGroupKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2B61018460812E8825BC010 /* AppGroupKeyStore.swift */; };
 		C6BFD28B72372E2B251C638E /* CNSA2Tunnel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7289A77B75DD3546663850F /* CNSA2Tunnel.swift */; };
+		C96351945856B40902022D1C /* CNSA2Identity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96D59D6045089D2946A9E0FB /* CNSA2Identity.swift */; };
 		CA56723BB3DCB0085A2F5EC8 /* ConnectionPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F16C55A4580D4F594F8FC03 /* ConnectionPopoverView.swift */; };
 		CBC890E0A4F62154200B3DCD /* Region.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53012357CF1AF36AA615A567 /* Region.swift */; };
 		D198FCCAF2CBFB76EB563E2F /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3C0F849BCC964CB369C2C52 /* SettingsView.swift */; };
@@ -98,6 +100,7 @@
 		837A3C21740DA4B4915CFDE7 /* Wire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Wire.swift; sourceTree = "<group>"; };
 		85D3071AF77DC39693600E08 /* MLKEM768Exchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLKEM768Exchange.swift; sourceTree = "<group>"; };
 		8927E4ACEA21E973CD56CE9E /* LatticeMacTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticeMacTunnelProvider.swift; sourceTree = "<group>"; };
+		96D59D6045089D2946A9E0FB /* CNSA2Identity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CNSA2Identity.swift; sourceTree = "<group>"; };
 		9718F30ACF02DE97C1304779 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A104B36A4CB5B6AAB224E961 /* ConfigParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigParser.swift; sourceTree = "<group>"; };
 		A7289A77B75DD3546663850F /* CNSA2Tunnel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CNSA2Tunnel.swift; sourceTree = "<group>"; };
@@ -259,6 +262,7 @@
 			isa = PBXGroup;
 			children = (
 				F2B61018460812E8825BC010 /* AppGroupKeyStore.swift */,
+				96D59D6045089D2946A9E0FB /* CNSA2Identity.swift */,
 				A104B36A4CB5B6AAB224E961 /* ConfigParser.swift */,
 				23A76637DAF36D4A08A21FEB /* LatticeAccountClient.swift */,
 				2AAC0F6409163575246BDDF9 /* LatticeAPI.swift */,
@@ -446,6 +450,7 @@
 			files = (
 				20AA99BB72332FFD78A8B74A /* AppDelegate.swift in Sources */,
 				19BF97C9AC9B5B02D7D6D054 /* AppGroupKeyStore.swift in Sources */,
+				6E8118E16CD87273D4F93EB0 /* CNSA2Identity.swift in Sources */,
 				D34EFC80DEA3A7E7D79B3B8D /* ConfigParser.swift in Sources */,
 				CA56723BB3DCB0085A2F5EC8 /* ConnectionPopoverView.swift in Sources */,
 				A848AFC600E98731ECADE270 /* ConnectionViewModel.swift in Sources */,
@@ -470,6 +475,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C37A889191C3205FB7469E68 /* AppGroupKeyStore.swift in Sources */,
+				C96351945856B40902022D1C /* CNSA2Identity.swift in Sources */,
 				C6BFD28B72372E2B251C638E /* CNSA2Tunnel.swift in Sources */,
 				84700939DE8F4738607EA2DA /* ConfigParser.swift in Sources */,
 				59E4D3CD18A7AEABF5D20141 /* LatticeMacTunnelProvider.swift in Sources */,

@@ -58,6 +58,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				AppGroupKeyStore.swift,
+				CNSA2Identity.swift,
 				ConfigParser.swift,
 				rosenpassffi.swift,
 			);

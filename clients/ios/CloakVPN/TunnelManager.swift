@@ -1,6 +1,7 @@
 import Combine
 import CryptoKit
 import Foundation
+import os.log
 import NetworkExtension
 import SwiftUI
 
@@ -1283,6 +1284,40 @@ final class TunnelManager: ObservableObject {
     // MARK: - Status observation
 
     #if DEBUG
+    /// Lab only. `-LatticeCNSA2Enroll <device name>` makes this device's key if needed and
+    /// leaves a certificate request in the shared container; `-LatticeCNSA2Certificate
+    /// <base64 DER>` stores the certificate issued for it.
+    static func runCNSA2LabEnrollment() {
+        let defaults = UserDefaults.standard
+        let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.ai.cloakvpn.CloakVPN")
+        let lab = OSLog(subsystem: "ai.cloakvpn.CloakVPN", category: "cnsa2lab")
+        func note(_ text: String) {
+            os_log("cnsa2lab: %{public}s", log: lab, type: .default, text)
+            guard let url = container?.appendingPathComponent("cnsa2-enroll.txt") else { return }
+            try? Data(text.utf8).write(to: url)
+        }
+        if let name = defaults.string(forKey: "LatticeCNSA2Enroll") {
+            do {
+                let request = try CNSA2Identity.certificateRequest(commonName: name)
+                if let url = container?.appendingPathComponent("cnsa2-request.der") { try request.write(to: url) }
+                // The request holds no secrets. It also goes to the log in pieces, because on
+                // macOS other processes cannot read an app's group container.
+                let b64 = request.base64EncodedString()
+                let size = 600
+                let count = (b64.count + size - 1) / size
+                for i in 0..<count {
+                    let start = b64.index(b64.startIndex, offsetBy: i * size)
+                    let end = b64.index(start, offsetBy: min(size, b64.count - i * size))
+                    os_log("cnsa2lab: request %{public}d/%{public}d %{public}s", log: lab, type: .default, i + 1, count, String(b64[start..<end]))
+                }
+                note("request written for \(name)")
+            } catch { note("enroll failed: \(error)") }
+        }
+        if let b64 = defaults.string(forKey: "LatticeCNSA2Certificate"), let der = Data(base64Encoded: b64) {
+            do { try CNSA2Identity.storeCertificate(der); note("certificate stored") } catch { note("certificate refused: \(error)") }
+        }
+    }
+
     /// Lab only (debug builds): point the tunnel at a CNSA 2.0 (TLS 1.3) gateway
     /// described by a base64 JSON blob (see CNSA2TunnelController) and start it.
     /// Replaces the saved VPN configuration until a region is selected again.
