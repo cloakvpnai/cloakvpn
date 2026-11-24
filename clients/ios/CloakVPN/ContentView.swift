@@ -248,7 +248,7 @@ struct ContentView: View {
             return .working
         default:
             if tunnel.regionSelectionInProgress { return .working }
-            return tunnel.config == nil ? .noRegion : .off
+            return (tunnel.config == nil && !tunnel.isCNSA2Mode) ? .noRegion : .off
         }
     }
 
@@ -281,14 +281,30 @@ struct ContentView: View {
         }
     }
 
+    /// The main button. A CNSA 2.0 profile has no WireGuard config, so it is handled
+    /// on its own: it must always be possible to disconnect, and reconnecting stays
+    /// in CNSA 2.0 mode until a location is picked.
+    private func toggleTunnel() async throws {
+        if tunnel.status == .connected {
+            try await tunnel.disconnect()
+            return
+        }
+        #if DEBUG
+        if tunnel.isCNSA2Mode {
+            if let failure = await tunnel.startCNSA2() { errorMsg = "CNSA 2.0 mode: \(failure)" }
+            return
+        }
+        #endif
+        try await tunnel.connect()
+    }
+
     private var signalOrb: some View {
         let lit = orbState != .off && orbState != .noRegion
         return VStack(spacing: 22) {
             Button {
                 Task {
                     do {
-                        if tunnel.status == .connected { try await tunnel.disconnect() }
-                        else { try await tunnel.connect() }
+                        try await toggleTunnel()
                     } catch {
                         errorMsg = error.localizedDescription
                     }
@@ -317,7 +333,7 @@ struct ContentView: View {
                 .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .disabled(tunnel.config == nil || orbState == .working)
+            .disabled((tunnel.config == nil && !tunnel.isCNSA2Mode) || orbState == .working)
             .accessibilityLabel(tunnel.status == .connected ? "Disconnect" : "Connect")
 
             VStack(spacing: 4) {
@@ -700,8 +716,7 @@ struct ContentView: View {
         Button(action: {
             Task {
                 do {
-                    if tunnel.status == .connected { try await tunnel.disconnect() }
-                    else { try await tunnel.connect() }
+                    try await toggleTunnel()
                 } catch {
                     errorMsg = error.localizedDescription
                 }
@@ -725,7 +740,7 @@ struct ContentView: View {
                     radius: 10, x: 0, y: 0
                 )
         }
-        .disabled(tunnel.config == nil)
+        .disabled(tunnel.config == nil && !tunnel.isCNSA2Mode)
     }
 
     /// Holo-glass background for the Connect button — same visual
