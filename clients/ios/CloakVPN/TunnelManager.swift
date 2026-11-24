@@ -1099,6 +1099,12 @@ final class TunnelManager: ObservableObject {
         rosenpass.startStatusPolling()
     }
 
+    /// Display name of the region whose CNSA 2.0 gateway was last used, for the UI.
+    var cnsa2GatewayRegionName: String? {
+        guard let id = UserDefaults.standard.string(forKey: "cnsa2.gateway.current") else { return nil }
+        return CloakRegion.byID(id)?.displayName ?? id
+    }
+
     /// True when the saved VPN configuration is the CNSA 2.0 (TLS 1.3) tunnel, not WireGuard.
     var isCNSA2Mode: Bool {
         ((manager?.protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration?["cnsa2"]) != nil
@@ -1359,12 +1365,14 @@ final class TunnelManager: ObservableObject {
     /// the TLS 1.3 tunnel to the gateway the server named. Never falls back to
     /// WireGuard. `routes` overrides what the gateway assigns (used for testing).
     /// Returns a message for the user on failure, nil on success.
-    func startCNSA2(routes: [String]? = nil) async -> String? {
+    func startCNSA2(routes: [String]? = nil, regionID: String? = nil) async -> String? {
         guard let number = accountNumber, !number.isEmpty else {
             return "Sign in with your account number to use CNSA 2.0 mode."
         }
         do {
-            var cfg = try await CNSA2Enroller.shared.configuration(accountNumber: number)
+            // The gateway follows the region the user has selected.
+            var cfg = try await CNSA2Enroller.shared.configuration(
+                accountNumber: number, regionID: regionID ?? selectedRegion?.id)
             if let routes { cfg["routes"] = routes }
             try await startCNSA2Tunnel(cfg)
             debugLog("cnsa2: tunnel start requested")

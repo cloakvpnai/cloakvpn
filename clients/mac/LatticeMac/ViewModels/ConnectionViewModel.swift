@@ -73,16 +73,20 @@ final class ConnectionViewModel: ObservableObject {
     @Published private(set) var cnsa2Message: String?
 
     /// Preview: enroll this Mac if needed and connect in CNSA 2.0 mode.
-    func connectCNSA2(routes: [String]? = nil) async {
+    func connectCNSA2(routes: [String]? = nil, regionID: String? = nil) async {
         guard let tunnel, !cnsa2Busy else { return }
         cnsa2Busy = true
         cnsa2Message = "Enrolling this Mac if needed, then connecting\u{2026}"
-        let failure = await tunnel.startCNSA2(routes: routes)
+        let failure = await tunnel.startCNSA2(routes: routes, regionID: regionID ?? selectedRegion?.id)
         cnsa2Message = failure.map { "Could not connect: \($0)" }
         cnsa2Busy = false
     }
 
     func renewCNSA2IfDue() async { await tunnel?.renewCNSA2IfDue() }
+
+    /// True when the saved VPN profile is the CNSA 2.0 one.
+    var isCNSA2Mode: Bool { tunnel?.isCNSA2Mode ?? false }
+    var cnsa2GatewayRegionName: String? { tunnel?.cnsa2GatewayRegionName }
     #endif
 
     @Published private(set) var isSignedIn = false

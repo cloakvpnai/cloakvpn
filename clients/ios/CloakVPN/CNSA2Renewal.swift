@@ -126,13 +126,34 @@ enum CNSA2Renewal {
             throw Failure(status: 0, message: "The server sent a certificate this device cannot use (\(error)).")
         }
         let device = obj["device"] as? [String: Any]
-        let gateways = ((obj["gateways"] as? [[String: Any]]) ?? []).compactMap { g -> CNSA2Gateway? in
-            guard let host = g["host"] as? String, let name = g["name"] as? String else { return nil }
-            return CNSA2Gateway(id: g["id"] as? String ?? "", host: host, port: g["port"] as? Int ?? 1194, name: name)
-        }
+        let gateways = parseGateways(obj["gateways"])
         return Reply(root: root, notAfter: notAfter,
                      deviceID: (device?["id"] as? NSNumber)?.int64Value ?? 0,
                      deviceUID: device?["uid"] as? String ?? "", gateways: gateways)
+    }
+
+    /// The gateways a signed-in app may use, without asking for a certificate.
+    static func fetchGateways(accountNumber: String) async throws -> [CNSA2Gateway] {
+        guard let url = URL(string: "\(LatticeAPI.baseURL)/v1/cnsa2/gateways") else {
+            throw Failure(status: 0, message: "Bad API URL.")
+        }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 15
+        req.setValue("Bearer " + LatticeAPI.format(accountNumber), forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession(configuration: .ephemeral).data(for: req)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200...299).contains(status) else { throw Failure(status: status, message: message(for: status)) }
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw Failure(status: 0, message: "The server sent a gateway list we couldn't read.")
+        }
+        return parseGateways(obj["gateways"])
+    }
+
+    static func parseGateways(_ value: Any?) -> [CNSA2Gateway] {
+        ((value as? [[String: Any]]) ?? []).compactMap { g -> CNSA2Gateway? in
+            guard let host = g["host"] as? String, let name = g["name"] as? String else { return nil }
+            return CNSA2Gateway(id: g["id"] as? String ?? "", host: host, port: g["port"] as? Int ?? 1194, name: name)
+        }
     }
 
     private static func message(for status: Int) -> String {

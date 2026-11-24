@@ -245,7 +245,16 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
             // never falls back to WireGuard: this mode connects with the CNSA 2.0 suite or not at all
             tm.disconnect()
             viewModelScope.launch {
-                val config = ensureCnsa2Enrolled() ?: return@launch
+                ensureCnsa2Enrolled() ?: return@launch
+                // The gateway follows the selected region. Refreshing the list is best effort.
+                accountStore.accountNumber()?.let { number -> runCatching { cnsa2Enroller.refreshGateways(number) } }
+                val config = cnsa2Enroller.configFor(tm.selectedRegion.value?.id)
+                if (config == null) {
+                    _cnsa2Error.value = "CNSA 2.0 mode is not available in that region yet. Pick another region."
+                    return@launch
+                }
+                _cnsa2Error.value = null
+                cnsa2Config = config
                 cnsa2.connect(getApplication(), config)
                 // Renew ahead of expiry with the same key. The live tunnel keeps its current certificate.
                 // The daily background job does the same when the app is not open.

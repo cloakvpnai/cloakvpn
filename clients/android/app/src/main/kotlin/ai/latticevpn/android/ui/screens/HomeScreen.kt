@@ -52,6 +52,7 @@ fun HomeScreen(
     val realIp by vm.realIp.collectAsState()
     val cnsa2Mode by vm.cnsa2Mode.collectAsState()
     val cnsa2Detail by vm.cnsa2Detail.collectAsState()
+    val cnsa2Error by vm.cnsa2Error.collectAsState()
 
     val onControlTap: () -> Unit = {
         when (state) {
@@ -112,7 +113,7 @@ fun HomeScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = if (cnsa2Mode) cnsa2Subtitle(state, cnsa2Detail) else statusSubtitle(state, config != null, region),
+                    text = if (cnsa2Mode) (cnsa2Error?.takeIf { state == TunnelState.DISCONNECTED } ?: cnsa2Subtitle(state, cnsa2Detail)) else statusSubtitle(state, config != null, region),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center,
@@ -127,7 +128,7 @@ fun HomeScreen(
                     publicIp = ipState,
                     realIp = realIp,
                     connected = state == TunnelState.CONNECTED,
-                    regionName = if (cnsa2Mode) "CNSA 2.0 gateway" else region?.displayName,
+                    regionName = region?.displayName,
                     onRetry = { vm.refreshPublicIp() },
                 )
                 Spacer(Modifier.height(10.dp))

@@ -287,13 +287,7 @@ class AccountClient(private val context: Context) {
                 .post(payload.toRequestBody(JSON))
                 .build()
             val j = jsonOf(execute(request))
-            val gateways = mutableListOf<Cnsa2Gateway>()
-            j.optJSONArray("gateways")?.let { arr ->
-                for (i in 0 until arr.length()) {
-                    val g = arr.optJSONObject(i) ?: continue
-                    gateways += Cnsa2Gateway(g.optString("id"), g.optString("host"), g.optInt("port", 1194), g.optString("name"))
-                }
-            }
+            val gateways = parseCnsa2Gateways(j)
             val device = j.optJSONObject("device")
             try {
                 Cnsa2Enrollment(
@@ -308,6 +302,33 @@ class AccountClient(private val context: Context) {
                 throw AccountException("The server sent an enrollment reply we couldn't read.")
             }
         }
+
+    /**
+     * GET /v1/cnsa2/gateways: the CNSA 2.0 gateways a signed-in app may use,
+     * so new regions show up without asking for a certificate.
+     */
+    suspend fun fetchCnsa2Gateways(accountNumber: String): List<Cnsa2Gateway> =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url("${LatticeApi.BASE_URL}/v1/cnsa2/gateways")
+                .header("Authorization", bearer(accountNumber))
+                .get()
+                .build()
+            parseCnsa2Gateways(jsonOf(execute(request)))
+        }
+
+    private fun parseCnsa2Gateways(j: JSONObject): List<Cnsa2Gateway> {
+        val gateways = mutableListOf<Cnsa2Gateway>()
+        j.optJSONArray("gateways")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val g = arr.optJSONObject(i) ?: continue
+                val host = g.optString("host"); val name = g.optString("name")
+                if (host.isEmpty() || name.isEmpty()) continue
+                gateways += Cnsa2Gateway(g.optString("id"), host, g.optInt("port", 1194), name)
+            }
+        }
+        return gateways
+    }
 
     // ---- internals ------------------------------------------------------
 

@@ -461,7 +461,7 @@ struct ContentView: View {
             if tunnel.regionSelectionInProgress {
                 ProgressView().controlSize(.small).tint(LatticeTheme.mint)
             } else {
-                Text(tunnel.isCNSA2Mode ? "CNSA 2.0: Mexico gateway" : "\(CloakRegion.all.count) available")
+                Text(tunnel.isCNSA2Mode ? "CNSA 2.0: \(tunnel.cnsa2GatewayRegionName ?? "gateway")" : "\(CloakRegion.all.count) available")
                     .font(.system(size: 12))
                     .foregroundStyle(LatticeTheme.muted)
             }
@@ -579,7 +579,7 @@ struct ContentView: View {
                     .tracking(1.4)
                     .foregroundStyle(CloakDesign.brandGreen)
                 Spacer()
-                Text(tunnel.isCNSA2Mode ? "CNSA 2.0: Mexico gateway" : "\(CloakRegion.all.count) available")
+                Text(tunnel.isCNSA2Mode ? "CNSA 2.0: \(tunnel.cnsa2GatewayRegionName ?? "gateway")" : "\(CloakRegion.all.count) available")
                     .font(CloakDesign.body(size: 12))
                     .foregroundStyle(.secondary)
             }

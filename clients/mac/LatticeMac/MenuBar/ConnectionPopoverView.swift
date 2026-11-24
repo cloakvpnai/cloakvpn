@@ -68,22 +68,29 @@ struct ConnectionPopoverView: View {
     // MARK: - Sections
 
     #if DEBUG
-    /// Preview builds only: connect with the CNSA 2.0 suite instead of WireGuard.
+    /// Preview builds only. From WireGuard mode: a button that switches to the CNSA 2.0
+    /// suite, using the gateway of the selected region. In CNSA 2.0 mode: a status line
+    /// only, because the main button connects and disconnects.
     private var cnsa2Preview: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("CNSA 2.0 mode (preview)")
+                    Text(connection.isCNSA2Mode ? "CNSA 2.0 mode" : "CNSA 2.0 mode (preview)")
                         .font(.system(size: inWindow ? 13 : 11, weight: .semibold))
-                    Text("ML-KEM-1024, ML-DSA-87, AES-256. Mexico gateway.")
+                    Text(connection.isCNSA2Mode
+                         ? "ML-KEM-1024, ML-DSA-87, AES-256. Gateway: \(connection.cnsa2GatewayRegionName ?? "not chosen"). Pick a region to return to WireGuard."
+                         : "ML-KEM-1024, ML-DSA-87, AES-256. Uses the selected region.")
                         .font(.system(size: inWindow ? 12 : 10))
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
-                Button(connection.cnsa2Busy ? "Working\u{2026}" : "Connect in CNSA 2.0 mode") {
-                    Task { await connection.connectCNSA2() }
+                if !connection.isCNSA2Mode {
+                    Button(connection.cnsa2Busy ? "Working\u{2026}" : "Switch to CNSA 2.0 mode") {
+                        Task { await connection.connectCNSA2() }
+                    }
+                    .disabled(connection.cnsa2Busy)
                 }
-                .disabled(connection.cnsa2Busy)
             }
             if let message = connection.cnsa2Message {
                 Text(message)
@@ -186,6 +193,10 @@ struct ConnectionPopoverView: View {
                 if connection.status.isConnected {
                     await connection.disconnect()
                 } else {
+                    #if DEBUG
+                    // In CNSA 2.0 mode the main button stays in that mode.
+                    if connection.isCNSA2Mode { await connection.connectCNSA2(); return }
+                    #endif
                     await connection.connect()
                 }
             }
@@ -253,7 +264,7 @@ struct ConnectionPopoverView: View {
     }
 
     private func regionRow(_ region: RegionSummary) -> some View {
-        let isSelected = (connection.selectedRegion?.id == region.id)
+        let isSelected = !connection.isCNSA2Mode && (connection.selectedRegion?.id == region.id)
         return Button {
             Task { await connection.connect(to: region) }
         } label: {

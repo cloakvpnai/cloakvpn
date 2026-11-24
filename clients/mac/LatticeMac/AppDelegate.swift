@@ -54,7 +54,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let mode = UserDefaults.standard.string(forKey: "LatticeCNSA2Connect") {
             Task { @MainActor in
                 await self.connection.bootstrap()
-                await self.connection.connectCNSA2(routes: mode == "split" ? ["10.88.0.0/24"] : nil)
+                // `-LatticeCNSA2Region <region id>` picks the gateway; default is the selected region.
+                await self.connection.connectCNSA2(
+                    routes: mode == "split" ? ["10.88.0.0/24"] : nil,
+                    regionID: UserDefaults.standard.string(forKey: "LatticeCNSA2Region"))
             }
         }
         // Renew the CNSA 2.0 certificate when due: shortly after launch, then once a day

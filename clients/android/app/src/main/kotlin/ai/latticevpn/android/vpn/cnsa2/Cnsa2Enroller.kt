@@ -4,6 +4,8 @@ import ai.latticevpn.android.data.AccountClient
 import android.content.Context
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import ai.latticevpn.android.data.Cnsa2Gateway
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
@@ -93,9 +95,54 @@ class Cnsa2Enroller(context: Context, private val api: AccountClient) {
                 .put("device_id", reply.deviceId)
                 .put("uid", reply.deviceUid)
                 .put("gateway", gateway.id)
+                .put("gateways", toJson(reply.gateways))
                 .toString()
         )
         return config
+    }
+
+    /** The gateways the server offered last time it was asked. */
+    fun gateways(): List<Cnsa2Gateway> {
+        val arr = state()?.optJSONArray("gateways") ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            val g = arr.optJSONObject(i) ?: return@mapNotNull null
+            Cnsa2Gateway(g.optString("id"), g.optString("host"), g.optInt("port", 1194), g.optString("name"))
+                .takeIf { it.host.isNotEmpty() && it.name.isNotEmpty() }
+        }
+    }
+
+    /** Asks the server for the current gateway list. Nothing else about the enrollment changes. */
+    suspend fun refreshGateways(accountNumber: String) {
+        val fresh = api.fetchCnsa2Gateways(accountNumber)
+        if (fresh.isEmpty()) return
+        lock.withLock {
+            val current = state() ?: return@withLock
+            stateFile.writeText(current.put("gateways", toJson(fresh)).toString())
+        }
+    }
+
+    /**
+     * Settings for the gateway of [regionId], or null when that region has none.
+     * With no region chosen, or before the gateway list has ever been fetched, the
+     * gateway saved at enrollment is used. There is no silent substitute otherwise.
+     */
+    fun configFor(regionId: String?): Cnsa2Config? {
+        val base = Cnsa2Config.load(context) ?: return null
+        val offered = gateways()
+        if (offered.isEmpty()) return base
+        val gateway = choose(offered, regionId) ?: return null
+        return Cnsa2Config(
+            host = gateway.host,
+            port = gateway.port,
+            gatewayId = gateway.name,
+            clientId = base.clientId,
+            caDer = base.caDer,
+            rekeySeconds = base.rekeySeconds,
+        )
+    }
+
+    private fun toJson(list: List<Cnsa2Gateway>): JSONArray = JSONArray().apply {
+        list.forEach { put(JSONObject().put("id", it.id).put("host", it.host).put("port", it.port).put("name", it.name)) }
     }
 
     /** The server's id for this device, needed to remove it from the account. */
@@ -117,6 +164,10 @@ class Cnsa2Enroller(context: Context, private val api: AccountClient) {
 
         /** One at a time across the app and the background job. */
         private val lock = Mutex()
+
+        /** The gateway for a region; with no region chosen, the first one offered. */
+        fun choose(gateways: List<Cnsa2Gateway>, regionId: String?): Cnsa2Gateway? =
+            if (regionId == null) gateways.firstOrNull() else gateways.firstOrNull { it.id == regionId }
 
         fun isDue(expiryMillis: Long?, nowMillis: Long): Boolean =
             expiryMillis != null && nowMillis >= expiryMillis - RENEW_BEFORE_MILLIS

@@ -1,5 +1,6 @@
 package ai.latticevpn.android.vpn.cnsa2
 
+import ai.latticevpn.android.data.Cnsa2Gateway
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -43,5 +44,16 @@ class Cnsa2EnrollerTest {
         assertTrue(Cnsa2Enroller.isDue(expiry, 20 * day))
         assertTrue(Cnsa2Enroller.isDue(expiry, 29 * day))
         assertTrue("an expired certificate is still renewed", Cnsa2Enroller.isDue(expiry, 31 * day))
+    }
+
+    @Test fun gatewayFollowsTheRegion() {
+        val mx = Cnsa2Gateway("mx1", "198.51.100.1", 1194, "mx1.gw.example")
+        val dallas = Cnsa2Gateway("us-central-1", "198.51.100.2", 1194, "us-central-1.gw.example")
+        val all = listOf(mx, dallas)
+        assertEquals(dallas, Cnsa2Enroller.choose(all, "us-central-1"))
+        assertEquals(mx, Cnsa2Enroller.choose(all, "mx1"))
+        assertEquals("no region chosen: first offered", mx, Cnsa2Enroller.choose(all, null))
+        assertNull("a region without a gateway gets none, not a substitute", Cnsa2Enroller.choose(all, "fi1"))
+        assertNull(Cnsa2Enroller.choose(emptyList(), null))
     }
 }
