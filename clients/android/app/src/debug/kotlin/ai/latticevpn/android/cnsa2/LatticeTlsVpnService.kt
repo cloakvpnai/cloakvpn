@@ -379,7 +379,12 @@ class LatticeTlsVpnService : VpnService() {
     private fun showNotification(text: String) {
         val manager = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            manager.createNotificationChannel(NotificationChannel(CHANNEL, "VPN connection", NotificationManager.IMPORTANCE_LOW))
+            // The connection status is always showing while the tunnel is up, so it must
+            // not put an unread badge on the app icon. A channel's badge setting cannot be
+            // changed once created, hence the new channel id and removal of the old one.
+            manager.deleteNotificationChannel(OLD_CHANNEL)
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL, "VPN connection", NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) })
         }
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL)
@@ -416,7 +421,8 @@ class LatticeTlsVpnService : VpnService() {
         const val EXTRA_CONFIG = "config"
         const val STATUS_FILE = "cnsa2-status.txt"
         private const val TAG = "LatticeCNSA2"
-        private const val CHANNEL = "cnsa2"
+        private const val CHANNEL = "cnsa2_status"
+        private const val OLD_CHANNEL = "cnsa2"
         private const val NOTIFICATION_ID = 7702
         private const val RETRY_FIRST_MS = 1000L
         private const val RETRY_MAX_MS = 30000L
