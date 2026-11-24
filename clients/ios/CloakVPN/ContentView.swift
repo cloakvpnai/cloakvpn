@@ -360,7 +360,7 @@ struct ContentView: View {
                 cnsa2Busy = false
             }
         } label: {
-            Text(cnsa2Busy ? "Working\u{2026}" : "Connect in CNSA 2.0 mode (preview)")
+            Text(cnsa2Busy ? "Working\u{2026}" : "Switch to CNSA 2.0 mode (preview)")
                 .font(.system(size: 13, weight: .semibold))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
@@ -461,7 +461,7 @@ struct ContentView: View {
             if tunnel.regionSelectionInProgress {
                 ProgressView().controlSize(.small).tint(LatticeTheme.mint)
             } else {
-                Text("\(CloakRegion.all.count) available")
+                Text(tunnel.isCNSA2Mode ? "CNSA 2.0: Mexico gateway" : "\(CloakRegion.all.count) available")
                     .font(.system(size: 12))
                     .foregroundStyle(LatticeTheme.muted)
             }
@@ -470,7 +470,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private func signalRegionRow(_ region: CloakRegion) -> some View {
-        let isSelected = tunnel.selectedRegion?.id == region.id
+        let isSelected = !tunnel.isCNSA2Mode && tunnel.selectedRegion?.id == region.id
         let isLive = isSelected && tunnel.status == .connected
         Button {
             Task { await tunnel.selectRegion(region) }
@@ -527,7 +527,8 @@ struct ContentView: View {
                     .padding(.top, 8)
                 signalPQChip
                 #if DEBUG
-                cnsa2PreviewButton
+                // Only offered from WireGuard mode. In CNSA 2.0 mode the main button connects.
+                if !tunnel.isCNSA2Mode { cnsa2PreviewButton }
                 #endif
                 signalIPCard
                 signalRegionList
@@ -548,7 +549,8 @@ struct ContentView: View {
                 signalOrb
                 signalPQChip
                 #if DEBUG
-                cnsa2PreviewButton
+                // Only offered from WireGuard mode. In CNSA 2.0 mode the main button connects.
+                if !tunnel.isCNSA2Mode { cnsa2PreviewButton }
                 #endif
                 signalIPCard
                 Spacer(minLength: 0)
@@ -577,7 +579,7 @@ struct ContentView: View {
                     .tracking(1.4)
                     .foregroundStyle(CloakDesign.brandGreen)
                 Spacer()
-                Text("\(CloakRegion.all.count) available")
+                Text(tunnel.isCNSA2Mode ? "CNSA 2.0: Mexico gateway" : "\(CloakRegion.all.count) available")
                     .font(CloakDesign.body(size: 12))
                     .foregroundStyle(.secondary)
             }
@@ -602,7 +604,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private func regionRow(_ region: CloakRegion) -> some View {
-        let isSelected = tunnel.selectedRegion?.id == region.id
+        let isSelected = !tunnel.isCNSA2Mode && tunnel.selectedRegion?.id == region.id
         Button {
             Task { await tunnel.selectRegion(region) }
         } label: {
@@ -862,7 +864,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private func regionTile(_ region: CloakRegion) -> some View {
-        let isSelected = tunnel.selectedRegion?.id == region.id
+        let isSelected = !tunnel.isCNSA2Mode && tunnel.selectedRegion?.id == region.id
         Button {
             Task { await tunnel.selectRegion(region) }
         } label: {
