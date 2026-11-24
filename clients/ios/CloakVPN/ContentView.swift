@@ -371,7 +371,7 @@ struct ContentView: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(active ? LatticeTheme.mintText : LatticeTheme.muted)
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .minimumScaleFactor(0.6)
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 34)
@@ -522,11 +522,34 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity)
 
-            ScrollView {
-                signalRegionList
-                    .padding(.vertical, 4)
+            // Regions scroll in their own section; the globe sits under it and takes
+            // whatever height is left, so the column is filled in both orientations.
+            GeometryReader { geo in
+                let rows = CGFloat(CloakRegion.all.count)
+                let listNeeds = rows * 60 + 8
+                let listHeight = min(listNeeds, max(170, geo.size.height * 0.52))
+                VStack(spacing: 14) {
+                    signalRegionHeader
+                    ScrollView {
+                        VStack(spacing: 8) {
+                            ForEach(CloakRegion.all) { region in
+                                signalRegionRow(region)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .scrollIndicators(.visible)
+                    .frame(height: listHeight)
+
+                    LatticeGlobeView(
+                        selectedRegionID: tunnel.selectedRegion?.id,
+                        isConnected: tunnel.status == .connected,
+                        onPick: { region in Task { await tunnel.selectRegion(region) } })
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(minHeight: 150)
+                }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
             }
-            .scrollIndicators(.hidden)
             .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 28)
