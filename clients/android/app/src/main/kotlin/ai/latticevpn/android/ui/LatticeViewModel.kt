@@ -107,7 +107,7 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
         cnsa2Config?.takeIf { !cnsa2Enroller.needsEnrollment() }?.let { return it }
         val number = accountStore.accountNumber()
         if (number == null) {
-            _cnsa2Error.value = "Sign in with your account number to use CNSA 2.0 mode."
+            _cnsa2Error.value = "Sign in with your account number to connect."
             return null
         }
         if (_cnsa2Enrolling.value) return null
@@ -251,7 +251,7 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
                 accountStore.accountNumber()?.let { number -> runCatching { cnsa2Enroller.refreshGateways(number) } }
                 val config = cnsa2Enroller.configFor(tm.selectedRegion.value?.id)
                 if (config == null) {
-                    _cnsa2Error.value = "CNSA 2.0 mode is not available in that region yet. Pick another region."
+                    _cnsa2Error.value = "That region has no CNSA 2.0 gateway yet. Pick another region."
                     return@launch
                 }
                 _cnsa2Error.value = null

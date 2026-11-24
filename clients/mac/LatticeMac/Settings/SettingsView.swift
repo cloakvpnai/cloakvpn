@@ -326,7 +326,7 @@ struct AboutSettingsView: View {
             Section("Lattice VPN") {
                 LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
                 LabeledContent("Build", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "")
-                LabeledContent("Encryption", value: "TLS 1.3, CNSA 2.0 suite")
+                LabeledContent("Encryption", value: "CNSA 2.0 only (TLS 1.3)")
             }
             Section("Support") {
                 Button("support@latticevpn.ai") {

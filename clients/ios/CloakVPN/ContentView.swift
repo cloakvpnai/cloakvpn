@@ -287,7 +287,7 @@ struct ContentView: View {
             return
         }
         if tunnel.isCNSA2Mode {
-            if let failure = await tunnel.startCNSA2() { errorMsg = "CNSA 2.0 mode: \(failure)" }
+            if let failure = await tunnel.startCNSA2() { errorMsg = "CNSA 2.0: \(failure)" }
             return
         }
         try await tunnel.connect()
@@ -352,8 +352,8 @@ struct ContentView: View {
         let text: String = {
             if tunnel.isCNSA2Mode {
                 return tunnel.status == .connected
-                    ? "CNSA 2.0 suite active · ML-KEM-1024 · ML-DSA-87"
-                    : "CNSA 2.0 mode · ML-KEM-1024 · ML-DSA-87"
+                    ? "CNSA 2.0 only · active · ML-KEM-1024 · ML-DSA-87"
+                    : "CNSA 2.0 only · ML-KEM-1024 · ML-DSA-87"
             }
             if legacy { return tunnel.rosenpass.status.description }
             if tunnel.status == .connected {
@@ -879,17 +879,17 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             } else if tunnel.status == .connected && tunnel.handshakeVerified {
                 Image(systemName: "lock.shield.fill").foregroundStyle(.green)
-                Text("ML-KEM-768 key exchange active")
+                Text("CNSA 2.0 only · active")
                     .font(.system(.footnote, design: .monospaced))
                     .foregroundStyle(.secondary)
             } else if tunnel.status == .connected {
                 Image(systemName: "lock.shield").foregroundStyle(.orange)
-                Text("ML-KEM-768: verifying tunnel…")
+                Text("CNSA 2.0 only · connecting")
                     .font(.system(.footnote, design: .monospaced))
                     .foregroundStyle(.secondary)
             } else {
                 Image(systemName: "lock.shield").foregroundStyle(.secondary)
-                Text("ML-KEM-768 post-quantum key exchange")
+                Text("CNSA 2.0 only · ML-KEM-1024 · ML-DSA-87")
                     .font(.system(.footnote, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
