@@ -35,6 +35,12 @@ struct ConnectionPopoverView: View {
             statusBlock
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
+            #if DEBUG
+            Divider().padding(.horizontal, -16)
+            cnsa2Preview
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+            #endif
             Divider().padding(.horizontal, -16)
             regionSection
                 .padding(.horizontal, 16)
@@ -60,6 +66,33 @@ struct ConnectionPopoverView: View {
     }
 
     // MARK: - Sections
+
+    #if DEBUG
+    /// Preview builds only: connect with the CNSA 2.0 suite instead of WireGuard.
+    private var cnsa2Preview: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("CNSA 2.0 mode (preview)")
+                        .font(.system(size: inWindow ? 13 : 11, weight: .semibold))
+                    Text("ML-KEM-1024, ML-DSA-87, AES-256. Mexico gateway.")
+                        .font(.system(size: inWindow ? 12 : 10))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(connection.cnsa2Busy ? "Working\u{2026}" : "Connect in CNSA 2.0 mode") {
+                    Task { await connection.connectCNSA2() }
+                }
+                .disabled(connection.cnsa2Busy)
+            }
+            if let message = connection.cnsa2Message {
+                Text(message)
+                    .font(.system(size: inWindow ? 12 : 10))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+    #endif
 
     private var header: some View {
         HStack(spacing: 10) {
