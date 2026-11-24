@@ -23,6 +23,7 @@ import (
 //
 //	POST   /v1/device/cnsa2/enroll        enroll a device, or renew its certificate
 //	DELETE /v1/device/cnsa2?id=<id>       remove a device; its certificates are refused from then on
+//	GET    /v1/cnsa2/gateways             gateways a signed-in app may use (account number)
 //	GET    /v1/internal/cnsa2/denylist    for gateways: serials to refuse (internal secret)
 //
 // The device makes its own ML-DSA-87 key and sends a certificate request.
@@ -94,6 +95,27 @@ type cnsa2EnrollResp struct {
 	NotAfter    string          `json:"not_after"`
 	Device      cnsa2DeviceInfo `json:"device"`
 	Gateways    []cnsa2.Gateway `json:"gateways"`
+}
+
+// Gateways handles GET /v1/cnsa2/gateways: the gateways a signed-in app may
+// connect to, so it can follow new regions without asking for a certificate.
+func (h *CNSA2Handler) Gateways(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if acct := h.authAccount(w, r); acct == nil {
+		return
+	}
+	gateways := h.gateways
+	if gateways == nil {
+		gateways = []cnsa2.Gateway{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(struct {
+		Gateways []cnsa2.Gateway `json:"gateways"`
+	}{gateways})
 }
 
 // Enroll handles POST /v1/device/cnsa2/enroll.

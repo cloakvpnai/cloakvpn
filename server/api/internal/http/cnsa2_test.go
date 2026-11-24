@@ -385,3 +385,33 @@ func TestCNSA2LapsedSubscriptionIsDenied(t *testing.T) {
 		t.Fatalf("after renewal: denied %v", got)
 	}
 }
+
+func TestCNSA2GatewaysNeedsAnAccount(t *testing.T) {
+	f := newCNSA2Fixture(t)
+	number := f.account("txn-gw", 3, f.now.Add(24*time.Hour))
+	get := func(bearer string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/v1/cnsa2/gateways", nil)
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		rec := httptest.NewRecorder()
+		f.h.Gateways(rec, req)
+		return rec
+	}
+	if rec := get(""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("no account: %d", rec.Code)
+	}
+	if rec := get("00000-00000-00000-00000-00000"); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unknown account: %d", rec.Code)
+	}
+	rec := get(number)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("signed in: %d %s", rec.Code, rec.Body)
+	}
+	var out struct {
+		Gateways []cnsa2.Gateway `json:"gateways"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || len(out.Gateways) != 1 || out.Gateways[0].ID != "lab" {
+		t.Fatalf("gateways: %v %+v", err, out)
+	}
+}

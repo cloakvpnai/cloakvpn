@@ -137,6 +137,7 @@ func main() {
 			cfg.RegionInternalSecret, envOr("CNSA2_DEVICE_NAME_SUFFIX", "dev.latticevpn.ai"), gateways)
 		mux.HandleFunc("/v1/device/cnsa2/enroll", ch.Enroll)
 		mux.HandleFunc("/v1/device/cnsa2", ch.Device)
+		mux.HandleFunc("/v1/cnsa2/gateways", ch.Gateways)
 		mux.HandleFunc("/v1/internal/cnsa2/denylist", ch.DenyList)
 		log.Printf("cnsa2 enrollment enabled (%d gateways)", len(gateways))
 	} else {
