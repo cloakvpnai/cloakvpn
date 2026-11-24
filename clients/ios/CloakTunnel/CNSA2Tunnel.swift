@@ -128,7 +128,8 @@ final class CNSA2TunnelController {
         s.send = { d in _ = d.withUnsafeBytes { Darwin.send(fd, $0.baseAddress, $0.count, 0) } }
         s.onPacket = { [weak self] packet in
             self?.receivedBytes &+= UInt64(packet.count)
-            self?.provider?.packetFlow.writePackets([packet], withProtocols: [NSNumber(value: AF_INET)])
+            let family = (packet.first ?? 0) >> 4 == 6 ? AF_INET6 : AF_INET
+            self?.provider?.packetFlow.writePackets([packet], withProtocols: [NSNumber(value: family)])
         }
         s.log = { [weak self] line in
             guard let self else { return }
@@ -290,9 +291,12 @@ final class CNSA2TunnelController {
         }
         settings.ipv4Settings = v4
         if v4.includedRoutes?.contains(where: { $0.destinationAddress == "0.0.0.0" }) == true {
-            // The gateway carries IPv4 only. Capture IPv6 too so it cannot leave outside
-            // the tunnel; the gateway discards it and apps fall back to IPv4.
-            let v6 = NEIPv6Settings(addresses: ["fd42:88::2"], networkPrefixLengths: [128])
+            // IPv6 always goes into the tunnel so it cannot leave outside it. A gateway that
+            // carries IPv6 hands out an address and the traffic flows; one that does not gets a
+            // placeholder address here, the packets are dropped, and apps fall back to IPv4.
+            let carried = !assigned.address6.isEmpty
+            let v6 = NEIPv6Settings(addresses: [carried ? assigned.address6 : "fd42:88::2"],
+                                    networkPrefixLengths: [NSNumber(value: carried ? assigned.prefix6 : 128)])
             v6.includedRoutes = [NEIPv6Route.default()]
             settings.ipv6Settings = v6
         }
@@ -365,7 +369,9 @@ final class CNSA2TunnelController {
                 guard !self.stopping else { return }
                 if let s = self.session {
                     let t = self.now()
-                    for (i, p) in packets.enumerated() where protocols[i].int32Value == AF_INET {
+                    let carriesIPv6 = !(self.appliedSettings?.address6.isEmpty ?? true)
+                    for (i, p) in packets.enumerated()
+                    where protocols[i].int32Value == AF_INET || (carriesIPv6 && protocols[i].int32Value == AF_INET6) {
                         s.sendPacket(p, now: t)
                         self.sentBytes &+= UInt64(p.count)
                     }

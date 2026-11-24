@@ -4,6 +4,9 @@ import Foundation
 public struct TunnelSettings: Equatable {
     public var address = ""
     public var netmask = ""
+    /// IPv6 address inside the tunnel, when the gateway carries IPv6. Empty when it does not.
+    public var address6 = ""
+    public var prefix6 = 64
     public var gateway = ""
     public var dns: [String] = []
     public var routes: [String] = []
@@ -336,6 +339,11 @@ public final class TunnelSession {
             guard let name = parts.first else { continue }
             switch name {
             case "ifconfig" where parts.count >= 3: s.address = parts[1]; s.netmask = parts[2]
+            case "ifconfig-ipv6" where parts.count >= 2:
+                // "fd42:88::1000/64 fd42:88::1"
+                let pieces = parts[1].split(separator: "/").map(String.init)
+                s.address6 = pieces.first ?? ""
+                s.prefix6 = pieces.count > 1 ? (Int(pieces[1]) ?? 64) : 64
             case "route-gateway" where parts.count >= 2: s.gateway = parts[1]
             case "route" where parts.count >= 2: s.routes.append(parts.dropFirst().joined(separator: " "))
             case "redirect-gateway": s.redirectGateway = true

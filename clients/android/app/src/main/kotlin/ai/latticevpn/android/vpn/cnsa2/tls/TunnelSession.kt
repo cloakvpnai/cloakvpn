@@ -6,6 +6,9 @@ import java.io.ByteArrayOutputStream
 data class TunnelSettings(
     var address: String = "",
     var netmask: String = "",
+    /** IPv6 address inside the tunnel, when the gateway carries IPv6. Empty when it does not. */
+    var address6: String = "",
+    var prefix6: Int = 64,
     var gateway: String = "",
     val dns: MutableList<String> = ArrayList(),
     val routes: MutableList<String> = ArrayList(),
@@ -355,6 +358,12 @@ class TunnelSession(
             val parts = option.trim().split(" ").filter { it.isNotEmpty() }
             when (parts.firstOrNull()) {
                 "ifconfig" -> if (parts.size >= 3) { s.address = parts[1]; s.netmask = parts[2] }
+                "ifconfig-ipv6" -> if (parts.size >= 2) {
+                    // "fd42:88::1000/64 fd42:88::1"
+                    val pieces = parts[1].split("/")
+                    s.address6 = pieces[0]
+                    s.prefix6 = pieces.getOrNull(1)?.toIntOrNull() ?: 64
+                }
                 "route-gateway" -> if (parts.size >= 2) s.gateway = parts[1]
                 "route" -> if (parts.size >= 2) s.routes.add(parts.drop(1).joinToString(" "))
                 "redirect-gateway" -> s.redirectGateway = true

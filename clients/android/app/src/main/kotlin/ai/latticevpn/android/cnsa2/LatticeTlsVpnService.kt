@@ -266,9 +266,10 @@ class LatticeTlsVpnService : VpnService() {
             b.addAddress(s.address, prefix)
             if (s.redirectGateway) {
                 b.addRoute("0.0.0.0", 0)
-                // The gateway carries IPv4 only. Capture IPv6 too so it cannot leave outside the
-                // tunnel; the gateway discards it and apps fall back to IPv4.
-                b.addAddress("fd42:88::2", 128)
+                // IPv6 always goes into the tunnel so it cannot leave outside it. A gateway that
+                // carries IPv6 hands out an address and the traffic flows; one that does not gets a
+                // placeholder address here, the packets are dropped, and apps fall back to IPv4.
+                if (s.address6.isNotEmpty()) b.addAddress(s.address6, s.prefix6) else b.addAddress("fd42:88::2", 128)
                 b.addRoute("::", 0)
             } else {
                 b.addRoute(network(s.address, prefix), prefix)
