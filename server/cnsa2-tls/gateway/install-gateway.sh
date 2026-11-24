@@ -6,7 +6,7 @@
 #   install-gateway.sh finish  <gateway name>      # expects gateway.der, issuing-ca.pem, root-ca.pem in $D; configures and starts
 #
 # WireGuard, the key daemon and the provisioning service are not touched.
-# Adds: one service, UDP 1194 in ufw, one forward rule and one NAT rule for 10.88.0.0/24.
+# Adds: one service, UDP 1194 in ufw, one forward rule and one NAT rule for 10.88.0.0/19.
 set -eu
 MODE=$1; NAME=$2
 D=/etc/openvpn/server/lattice-cnsa2
@@ -48,7 +48,9 @@ mode server
 tls-server
 dh none
 topology subnet
-server 10.88.0.0 255.255.255.0
+server 10.88.0.0 255.255.224.0
+# The default limit of 1,024 clients would cap the address block first.
+max-clients 5000
 # full tunnel: all IPv4 traffic and DNS go through the gateway
 push "redirect-gateway def1"
 push "dhcp-option DNS 9.9.9.9"
@@ -83,10 +85,10 @@ chmod 600 /etc/openvpn/server/lattice-cnsa2.conf
 install -d /etc/systemd/system/openvpn-server@lattice-cnsa2.service.d
 cat > /etc/systemd/system/openvpn-server@lattice-cnsa2.service.d/lattice-nat.conf <<UNIT
 [Service]
-ExecStartPre=/bin/sh -c 'iptables -t nat -C POSTROUTING -s 10.88.0.0/24 -o $WAN -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s 10.88.0.0/24 -o $WAN -j MASQUERADE'
+ExecStartPre=/bin/sh -c 'iptables -t nat -C POSTROUTING -s 10.88.0.0/19 -o $WAN -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s 10.88.0.0/19 -o $WAN -j MASQUERADE'
 ExecStartPre=/bin/sh -c 'iptables -t mangle -C FORWARD -i tun-cnsa2 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || iptables -t mangle -A FORWARD -i tun-cnsa2 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu'
 ExecStartPre=/bin/sh -c 'iptables -t mangle -C FORWARD -o tun-cnsa2 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || iptables -t mangle -A FORWARD -o tun-cnsa2 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu'
-ExecStopPost=-/bin/sh -c 'iptables -t nat -D POSTROUTING -s 10.88.0.0/24 -o $WAN -j MASQUERADE'
+ExecStopPost=-/bin/sh -c 'iptables -t nat -D POSTROUTING -s 10.88.0.0/19 -o $WAN -j MASQUERADE'
 ExecStopPost=-/bin/sh -c 'iptables -t mangle -D FORWARD -i tun-cnsa2 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu'
 ExecStopPost=-/bin/sh -c 'iptables -t mangle -D FORWARD -o tun-cnsa2 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu'
 UNIT
@@ -121,5 +123,5 @@ systemctl enable -q --now openvpn-server@lattice-cnsa2
 sleep 4
 echo "gateway: $(systemctl is-active openvpn-server@lattice-cnsa2) | listening udp 1194: $(ss -lunH | grep -c ':1194 ') | tunnel: $(ip -4 -o addr show tun-cnsa2 | awk '{print $4}')"
 journalctl -u openvpn-server@lattice-cnsa2 --no-pager -n 6 | grep -iE "error|Initialization|fatal|cannot|denied" | sed 's/^.*openvpn\[[0-9]*\]: //' | cut -c1-140
-echo "nat rules for 10.88: $(iptables -t nat -S POSTROUTING | grep -c '10.88.0.0/24') | wg0 nat still present: $(iptables -t nat -S POSTROUTING | grep -c '10.99.0.0/24')"
+echo "nat rules for 10.88: $(iptables -t nat -S POSTROUTING | grep -c '10.88.0.0/19') | wg0 nat still present: $(iptables -t nat -S POSTROUTING | grep -c '10.99.0.0/24')"
 echo "untouched: wg0 $(systemctl is-active wg-quick@wg0), peers $(wg show wg0 | grep -c '^peer'), regionsvc $(systemctl is-active regionsvc), rpd $(systemctl is-active cloak-rpd), healthz $(curl -s -o /dev/null -w %{http_code} --max-time 5 http://127.0.0.1:8090/healthz)"

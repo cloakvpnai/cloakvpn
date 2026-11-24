@@ -54,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await self.connection.bootstrap()
                 // `-LatticeCNSA2Region <region id>` picks the gateway; default is the selected region.
                 await self.connection.connectCNSA2(
-                    routes: mode == "split" ? ["10.88.0.0/24"] : nil,
+                    routes: mode == "split" ? ["10.88.0.0/19"] : nil,
                     regionID: UserDefaults.standard.string(forKey: "LatticeCNSA2Region"))
                 // Test options: `-LatticeCNSA2SwitchTo <region id>` picks another region 15 seconds
                 // later, as a click in the list would; `-LatticeCNSA2ModeOff YES` then turns the mode off.

@@ -12,7 +12,7 @@ import LatticeTLS
 ///   host, port, gatewayID                    strings / number (gatewayID is the name in the gateway certificate)
 ///   caDER                                    base64
 ///   clientCertDER, clientKeyPKCS8            base64, lab only; normally the device's own enrolled identity is used
-///   routes                                   optional ["10.88.0.0/24"] or ["0.0.0.0/0"]; default is what the gateway assigns
+///   routes                                   optional ["10.88.0.0/19"] or ["0.0.0.0/0"]; default is what the gateway assigns
 ///   dns                                      optional ["1.1.1.1"], used when the gateway sends none
 ///   rekeySeconds                             optional, default 300
 /// There is no fallback: if the suite cannot be negotiated the tunnel does not come up.
