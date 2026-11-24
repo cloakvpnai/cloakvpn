@@ -39,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         #if DEBUG
         // Lab only: `-LatticeCNSA2Lab <base64 JSON>` starts the CNSA 2.0
-        // (IKEv2/IPsec) tunnel against a development gateway.
+        // (TLS 1.3) tunnel against a development gateway.
         if let blob = UserDefaults.standard.string(forKey: "LatticeCNSA2Lab") {
             Task { @MainActor in await self.connection.startCNSA2Lab(blob) }
         }

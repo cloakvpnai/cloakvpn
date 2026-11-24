@@ -1,112 +1,223 @@
-import CryptoKit
 import Foundation
 import NetworkExtension
 import os.log
-#if canImport(LatticeIKE)
-import LatticeIKE
+#if canImport(LatticeTLS)
+import LatticeTLS
 #endif
 
-/// Runs the CNSA 2.0 (IKEv2/IPsec) tunnel inside the packet tunnel extension, as an
-/// alternative to the WireGuard path. Selected when the provider configuration carries a
-/// "cnsa2" dictionary:
-///   host, port, gatewayID, clientID      strings / number
-///   caDER, clientCertDER, clientKeySeed  base64
-///   routes                               ["10.99.0.0/24"] or ["0.0.0.0/0"]
-///   dns                                  optional ["1.1.1.1"], used when the gateway sends none
-///   rekeySeconds                         optional, default 300
-/// There is no fallback: if the profile cannot be negotiated the tunnel does not come up.
+/// Runs the CNSA 2.0 tunnel (TLS 1.3, see clients/apple-tls) inside the packet tunnel
+/// extension, as an alternative to the WireGuard path. Selected when the provider
+/// configuration carries a "cnsa2" dictionary:
+///   host, port, gatewayID                    strings / number (gatewayID is the name in the gateway certificate)
+///   caDER, clientCertDER, clientKeyPKCS8     base64
+///   routes                                   optional ["10.88.0.0/24"] or ["0.0.0.0/0"]; default is what the gateway assigns
+///   dns                                      optional ["1.1.1.1"], used when the gateway sends none
+///   rekeySeconds                             optional, default 300
+/// There is no fallback: if the suite cannot be negotiated the tunnel does not come up.
 final class CNSA2TunnelController {
     private let log = OSLog(subsystem: "ai.cloakvpn.CloakVPN.tunnel", category: "cnsa2")
     private weak var provider: NEPacketTunnelProvider?
-    private var runtime: IKETunnelRuntime?
+    /// Every call into the session happens on this queue.
+    private let queue = DispatchQueue(label: "ai.cloakvpn.cnsa2")
+    private var session: TunnelSession?
+    private var fd: Int32 = -1
+    private var reader: DispatchSourceRead?
+    private var timer: DispatchSourceTimer?
+    private var startCompletion: ((Error?) -> Void)?
     private var stopping = false
+    private var config: [String: Any] = [:]
+    private var host = ""
 
     init(provider: NEPacketTunnelProvider) { self.provider = provider }
 
+    private func now() -> TimeInterval { ProcessInfo.processInfo.systemUptime }
+
     func start(_ cfg: [String: Any], completion: @escaping (Error?) -> Void) {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
+        queue.async { [self] in
             do {
                 func b64(_ k: String) throws -> Data {
-                    guard let s = cfg[k] as? String, let d = Data(base64Encoded: s) else { throw IKEError.malformed("configuration value \(k)") }
+                    guard let s = cfg[k] as? String, let d = Data(base64Encoded: s) else { throw LatticeTunnelError("configuration value \(k)") }
                     return d
                 }
-                guard let host = cfg["host"] as? String, let gatewayID = cfg["gatewayID"] as? String,
-                      let clientID = cfg["clientID"] as? String else { throw IKEError.malformed("configuration") }
-                let port = UInt16((cfg["port"] as? NSNumber)?.intValue ?? 4500)
-                let key = try MLDSA87.PrivateKey(seedRepresentation: try b64("clientKeySeed"), publicKey: nil)
-                var options = IKETunnelRuntime.Options()
-                if let r = (cfg["rekeySeconds"] as? NSNumber)?.doubleValue, r >= 10 { options.rekeyInterval = r }
-                let rt = try IKETunnelRuntime(host: host, port: port,
-                                              config: .init(gatewayID: gatewayID, clientID: clientID,
-                                                            ca: try MLDSACertificate(der: try b64("caDER")),
-                                                            clientCertificateDER: try b64("clientCertDER"), clientKey: key),
-                                              options: options)
-                let est = try rt.connect()
-                guard let vip = est.virtualIP else { throw IKEError.policy("gateway assigned no address") }
-                os_log("cnsa2: established, IKE %{public}s, ESP %{public}s, auth %{public}s", log: self.log, type: .info,
-                       est.ikeSuite, est.espSuite, est.authentication)
-
-                let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: host)
-                let v4 = NEIPv4Settings(addresses: [vip.map(String.init).joined(separator: ".")], subnetMasks: ["255.255.255.255"])
-                v4.includedRoutes = ((cfg["routes"] as? [String]) ?? ["0.0.0.0/0"]).compactMap(Self.route)
-                settings.ipv4Settings = v4
-                settings.mtu = 1280
-                var dns = est.dnsServers.map { $0.map(String.init).joined(separator: ".") }
-                if dns.isEmpty { dns = (cfg["dns"] as? [String]) ?? [] }
-                if !dns.isEmpty { settings.dnsSettings = NEDNSSettings(servers: dns) }
-
-                self.provider?.setTunnelNetworkSettings(settings) { [weak self] error in
-                    guard let self else { return }
-                    if let error { rt.stop(); completion(error); return }
-                    self.runtime = rt
-                    rt.onPacket = { [weak self] packet in
-                        self?.provider?.packetFlow.writePackets([packet], withProtocols: [NSNumber(value: AF_INET)])
-                    }
-                    rt.onStopped = { [weak self] error in
-                        guard let self, !self.stopping else { return }
-                        os_log("cnsa2: connection ended: %{public}s", log: self.log, type: .error, String(describing: error))
-                        self.provider?.cancelTunnelWithError(error)
-                    }
-                    rt.start()
-                    self.pump()
-                    completion(nil)
+                guard let host = cfg["host"] as? String, let gatewayName = cfg["gatewayID"] as? String else {
+                    throw LatticeTunnelError("configuration")
                 }
+                let port = (cfg["port"] as? NSNumber)?.intValue ?? 1194
+                var rekey: TimeInterval = 300
+                if let r = (cfg["rekeySeconds"] as? NSNumber)?.doubleValue, r >= 10 { rekey = r }
+                let identity = TunnelIdentity(caDER: try b64("caDER"), certificateDER: try b64("clientCertDER"),
+                                              privateKeyPKCS8: try b64("clientKeyPKCS8"), gatewayName: gatewayName)
+                self.config = cfg
+                self.host = host
+                self.startCompletion = completion
+                try self.openSocket(host: host, port: port)
+
+                let s = TunnelSession(identity: identity, rekeyInterval: rekey)
+                let fd = self.fd
+                s.send = { d in _ = d.withUnsafeBytes { Darwin.send(fd, $0.baseAddress, $0.count, 0) } }
+                s.onPacket = { [weak self] packet in
+                    self?.provider?.packetFlow.writePackets([packet], withProtocols: [NSNumber(value: AF_INET)])
+                }
+                s.log = { [weak self] line in
+                    guard let self else { return }
+                    os_log("cnsa2: %{public}s", log: self.log, type: .info, line)
+                }
+                s.onStateChange = { [weak self] state in self?.sessionChanged(state) }
+                self.session = s
+
+                let t = DispatchSource.makeTimerSource(queue: self.queue)
+                t.schedule(deadline: .now() + 0.2, repeating: 0.2)
+                t.setEventHandler { [weak self] in
+                    guard let self else { return }
+                    self.session?.tick(now: self.now())
+                }
+                t.resume()
+                self.timer = t
+                s.start(now: self.now())
             } catch {
                 os_log("cnsa2: start failed: %{public}s", log: self.log, type: .error, String(describing: error))
+                self.teardown()
                 completion(error)
             }
         }
     }
 
-    /// Tells the gateway the connection is over, then calls `completion`. Waits at most
-    /// 1.5 seconds so a dead network cannot hold up the system's stop request.
+    private func openSocket(host: String, port: Int) throws {
+        var hints = addrinfo()
+        hints.ai_socktype = SOCK_DGRAM
+        var res: UnsafeMutablePointer<addrinfo>?
+        guard getaddrinfo(host, String(port), &hints, &res) == 0, let info = res else { throw LatticeTunnelError("cannot resolve the gateway") }
+        defer { freeaddrinfo(res) }
+        let s = socket(info.pointee.ai_family, SOCK_DGRAM, 0)
+        guard s >= 0, connect(s, info.pointee.ai_addr, info.pointee.ai_addrlen) == 0 else {
+            if s >= 0 { close(s) }
+            throw LatticeTunnelError("cannot reach the gateway")
+        }
+        _ = fcntl(s, F_SETFL, fcntl(s, F_GETFL) | O_NONBLOCK)
+        fd = s
+        let r = DispatchSource.makeReadSource(fileDescriptor: s, queue: queue)
+        r.setEventHandler { [weak self] in
+            guard let self else { return }
+            var buffer = [UInt8](repeating: 0, count: 65536)
+            while true {
+                let n = recv(s, &buffer, buffer.count, 0)
+                if n <= 0 { break }
+                self.session?.receive(Data(buffer[0..<n]), now: self.now())
+            }
+        }
+        r.setCancelHandler { close(s) }
+        r.resume()
+        reader = r
+    }
+
+    private func sessionChanged(_ state: TunnelSession.State) {
+        switch state {
+        case .connected:
+            guard let s = session else { return }
+            os_log("cnsa2: established, %{public}s", log: log, type: .info, s.suite)
+            applySettings(s.settings)
+        case .failed(let reason):
+            os_log("cnsa2: connection ended: %{public}s", log: log, type: .error, reason)
+            let error = LatticeTunnelError(reason)
+            teardown()
+            if let completion = startCompletion {
+                startCompletion = nil
+                completion(error)
+            } else if !stopping {
+                provider?.cancelTunnelWithError(error)
+            }
+        default:
+            break
+        }
+    }
+
+    private func applySettings(_ assigned: TunnelSettings) {
+        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: host)
+        let v4 = NEIPv4Settings(addresses: [assigned.address], subnetMasks: [assigned.netmask])
+        if let routes = config["routes"] as? [String] {
+            v4.includedRoutes = routes.compactMap(Self.route)
+        } else if assigned.redirectGateway {
+            v4.includedRoutes = [NEIPv4Route.default()]
+        } else {
+            var routes = [Self.subnetRoute(address: assigned.address, netmask: assigned.netmask)].compactMap { $0 }
+            for r in assigned.routes {
+                let parts = r.split(separator: " ").map(String.init)
+                if let first = parts.first {
+                    routes.append(NEIPv4Route(destinationAddress: first, subnetMask: parts.count > 1 ? parts[1] : "255.255.255.255"))
+                }
+            }
+            v4.includedRoutes = routes
+        }
+        settings.ipv4Settings = v4
+        settings.mtu = 1280
+        let dns = assigned.dns.isEmpty ? ((config["dns"] as? [String]) ?? []) : assigned.dns
+        if !dns.isEmpty { settings.dnsSettings = NEDNSSettings(servers: dns) }
+
+        provider?.setTunnelNetworkSettings(settings) { [weak self] error in
+            guard let self else { return }
+            self.queue.async {
+                let completion = self.startCompletion
+                self.startCompletion = nil
+                if let error {
+                    self.session?.close(now: self.now())
+                    self.teardown()
+                    completion?(error)
+                    return
+                }
+                self.pump()
+                completion?(nil)
+            }
+        }
+    }
+
+    private func teardown() {
+        timer?.cancel(); timer = nil
+        reader?.cancel(); reader = nil   // closes the socket
+        fd = -1
+        session = nil
+    }
+
+    /// Tells the gateway the connection is over, then calls `completion`.
     func stop(completion: @escaping () -> Void) {
-        stopping = true
-        guard let rt = runtime else { completion(); return }
-        runtime = nil
-        let once = NSLock()
-        var done = false
-        let finish = { once.lock(); let first = !done; done = true; once.unlock(); if first { completion() } }
-        rt.onStopped = { _ in finish() }
-        rt.stop()
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1.5, execute: finish)
+        queue.async { [self] in
+            stopping = true
+            session?.close(now: now())
+            // let the exit notice leave before the socket closes
+            queue.asyncAfter(deadline: .now() + 0.3) { [self] in
+                teardown()
+                completion()
+            }
+        }
     }
 
     /// Answer to the app's status query. `last_handshake_time_sec` is when the keys in use
     /// were last established (connect or the most recent re-key).
     var statusReport: String {
-        let rekeys = runtime?.childRekeys ?? 0
-        let t = Int((runtime?.lastKeyTime ?? Date()).timeIntervalSince1970)
-        return "mode=cnsa2\nlast_handshake_time_sec=\(t)\ncnsa2_rekeys=\(rekeys)\n"
+        queue.sync {
+            guard let s = session else { return "mode=cnsa2\n" }
+            let age = max(0, now() - s.lastKeyTime)
+            let t = Int(Date().timeIntervalSince1970 - age)
+            return "mode=cnsa2\nlast_handshake_time_sec=\(t)\ncnsa2_rekeys=\(s.rekeyCount)\ncnsa2_suite=\(s.suite)\n"
+        }
     }
 
     private func pump() {
         provider?.packetFlow.readPackets { [weak self] packets, protocols in
-            guard let self, let rt = self.runtime else { return }
-            for (i, p) in packets.enumerated() where protocols[i].int32Value == AF_INET { rt.send(p) }
-            self.pump()
+            guard let self else { return }
+            self.queue.async {
+                guard let s = self.session else { return }
+                let t = self.now()
+                for (i, p) in packets.enumerated() where protocols[i].int32Value == AF_INET { s.sendPacket(p, now: t) }
+                self.pump()
+            }
         }
+    }
+
+    private static func subnetRoute(address: String, netmask: String) -> NEIPv4Route? {
+        let a = address.split(separator: ".").compactMap { UInt8($0) }, m = netmask.split(separator: ".").compactMap { UInt8($0) }
+        guard a.count == 4, m.count == 4 else { return nil }
+        let net = zip(a, m).map { String($0 & $1) }.joined(separator: ".")
+        return NEIPv4Route(destinationAddress: net, subnetMask: netmask)
     }
 
     private static func route(_ cidr: String) -> NEIPv4Route? {

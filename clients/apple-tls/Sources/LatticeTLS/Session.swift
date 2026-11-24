@@ -167,13 +167,13 @@ public final class TunnelSession {
 
     private func receiveControl(_ packet: ControlPacket, now: TimeInterval) throws {
         if let known = remoteSessionID {
-            guard packet.sessionID == known else { throw TunnelError("wrong session") }
+            guard packet.sessionID == known else { throw LatticeTunnelError("wrong session") }
         } else {
-            guard packet.opcode == .hardResetServer else { throw TunnelError("unexpected first packet") }
+            guard packet.opcode == .hardResetServer else { throw LatticeTunnelError("unexpected first packet") }
             remoteSessionID = packet.sessionID
         }
         if !packet.acks.isEmpty {
-            guard packet.remoteSessionID == sessionID else { throw TunnelError("acknowledgement for another session") }
+            guard packet.remoteSessionID == sessionID else { throw LatticeTunnelError("acknowledgement for another session") }
         }
         lastReceived = now
 
@@ -181,7 +181,7 @@ public final class TunnelSession {
         if ks == nil {
             // the gateway is asking for new keys
             guard packet.opcode == .softReset, state == .connected, pending == nil,
-                  packet.keyID != 0, packet.packetID == 0 else { throw TunnelError("no such negotiation") }
+                  packet.keyID != 0, packet.packetID == 0 else { throw LatticeTunnelError("no such negotiation") }
             ks = try KeyState(keyID: packet.keyID, resetOpcode: .softReset, identity: identity, now: now)
             pending = ks
             log("gateway requested new keys (key \(packet.keyID))")
@@ -220,10 +220,10 @@ public final class TunnelSession {
         case .hardResetServer, .softReset:
             ks.peerResetSeen = true
         case .control:
-            guard ks.peerResetSeen else { throw TunnelError("data before reset") }
+            guard ks.peerResetSeen else { throw LatticeTunnelError("data before reset") }
             try ks.tls.feed(payload)
         default:
-            throw TunnelError("unexpected control packet")
+            throw LatticeTunnelError("unexpected control packet")
         }
     }
 
@@ -309,7 +309,7 @@ public final class TunnelSession {
 
     private func parseKeyExchange(_ record: Data) throws {
         var r = Reader(record)
-        guard try r.uint32() == 0, try r.byte() == 2 else { throw TunnelError("unexpected key exchange message") }
+        guard try r.uint32() == 0, try r.byte() == 2 else { throw LatticeTunnelError("unexpected key exchange message") }
         _ = try r.take(64)
         let length = Int(try r.uint16())
         _ = try r.take(length)
@@ -322,7 +322,7 @@ public final class TunnelSession {
             try applyPushReply(text)
             pushReplySeen = true
         } else if text.hasPrefix("AUTH_FAILED") {
-            throw TunnelError("gateway refused this device")
+            throw LatticeTunnelError("gateway refused this device")
         } else if text.hasPrefix("RESTART") || text.hasPrefix("HALT") || text.hasPrefix("EXIT") {
             fail("gateway ended the session")
         }
@@ -345,18 +345,18 @@ public final class TunnelSession {
             case "ping-restart" where parts.count >= 2: s.pingRestart = TimeInterval(parts[1]) ?? 60
             case "peer-id" where parts.count >= 2: s.peerID = UInt32(parts[1]) ?? 0
             case "cipher" where parts.count >= 2:
-                guard parts[1] == "AES-256-GCM" else { throw TunnelError("gateway chose cipher \(parts[1])") }
+                guard parts[1] == "AES-256-GCM" else { throw LatticeTunnelError("gateway chose cipher \(parts[1])") }
             case "key-derivation" where parts.count >= 2: exportedKeys = exportedKeys || parts[1] == "tls-ekm"
             case "protocol-flags":
                 exportedKeys = exportedKeys || parts.contains("tls-ekm")
                 exitNotify = parts.contains("cc-exit")
             case "comp-lzo", "compress":
-                throw TunnelError("gateway asked for compression")
+                throw LatticeTunnelError("gateway asked for compression")
             default: break
             }
         }
-        guard exportedKeys else { throw TunnelError("gateway did not agree to TLS-exported keys") }
-        guard !s.address.isEmpty else { throw TunnelError("gateway assigned no address") }
+        guard exportedKeys else { throw LatticeTunnelError("gateway did not agree to TLS-exported keys") }
+        guard !s.address.isEmpty else { throw LatticeTunnelError("gateway assigned no address") }
         settings = s
     }
 

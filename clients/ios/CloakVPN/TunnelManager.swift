@@ -1283,7 +1283,7 @@ final class TunnelManager: ObservableObject {
     // MARK: - Status observation
 
     #if DEBUG
-    /// Lab only (debug builds): point the tunnel at a CNSA 2.0 IKEv2 gateway
+    /// Lab only (debug builds): point the tunnel at a CNSA 2.0 (TLS 1.3) gateway
     /// described by a base64 JSON blob (see CNSA2TunnelController) and start it.
     /// Replaces the saved VPN configuration until a region is selected again.
     func startCNSA2Lab(_ base64JSON: String) async {

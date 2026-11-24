@@ -30,7 +30,7 @@ struct Reader {
     var remaining: Int { bytes.count - offset }
 
     mutating func byte() throws -> UInt8 {
-        guard remaining >= 1 else { throw TunnelError("truncated packet") }
+        guard remaining >= 1 else { throw LatticeTunnelError("truncated packet") }
         defer { offset += 1 }
         return bytes[offset]
     }
@@ -46,7 +46,7 @@ struct Reader {
     }
 
     mutating func take(_ count: Int) throws -> [UInt8] {
-        guard count >= 0, remaining >= count else { throw TunnelError("truncated packet") }
+        guard count >= 0, remaining >= count else { throw LatticeTunnelError("truncated packet") }
         defer { offset += count }
         return Array(bytes[offset..<offset + count])
     }
@@ -83,11 +83,11 @@ struct ControlPacket {
         var r = Reader(datagram)
         let first = try r.byte()
         guard let op = Opcode(rawValue: first >> 3), op != .dataV1, op != .dataV2 else {
-            throw TunnelError("unknown packet type")
+            throw LatticeTunnelError("unknown packet type")
         }
         var p = ControlPacket(opcode: op, keyID: first & 7, sessionID: Data(try r.take(8)))
         let count = Int(try r.byte())
-        guard count <= maxAcks else { throw TunnelError("too many acknowledgements") }
+        guard count <= maxAcks else { throw LatticeTunnelError("too many acknowledgements") }
         for _ in 0..<count { p.acks.append(try r.uint32()) }
         if count > 0 { p.remoteSessionID = Data(try r.take(8)) }
         if op != .ack {
@@ -110,7 +110,7 @@ struct DataKeys {
     /// AES-256-GCM uses the first 32 cipher bytes, and the first 8 HMAC bytes
     /// as the fixed part of the nonce. The client sends with the first key.
     init(exported: Data) throws {
-        guard exported.count == DataKeys.exporterLength else { throw TunnelError("bad key material") }
+        guard exported.count == DataKeys.exporterLength else { throw LatticeTunnelError("bad key material") }
         let b = [UInt8](exported)
         sealKey = Data(b[0..<32]); sealIV = Data(b[64..<72])
         openKey = Data(b[128..<160]); openIV = Data(b[192..<200])

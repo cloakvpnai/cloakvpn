@@ -1,0 +1,4 @@
+module CLatticeTLS {
+    header "lattice_tls.h"
+    export *
+}

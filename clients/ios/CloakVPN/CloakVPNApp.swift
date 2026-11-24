@@ -10,7 +10,7 @@ struct CloakVPNApp: App {
                 .environmentObject(tunnel)
                 #if DEBUG
                 // Lab only: `-LatticeCNSA2Lab <base64 JSON>` starts the CNSA 2.0
-                // (IKEv2/IPsec) tunnel against a development gateway.
+                // (TLS 1.3) tunnel against a development gateway.
                 .task {
                     if let blob = UserDefaults.standard.string(forKey: "LatticeCNSA2Lab") {
                         try? await Task.sleep(nanoseconds: 2_000_000_000)

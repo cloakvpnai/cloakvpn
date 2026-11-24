@@ -66,7 +66,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     /// but a fresh preshared key, then call adapter.update().
     private var currentConfig: TunnelConfiguration?
 
-    /// Set while the tunnel is running in CNSA 2.0 (IKEv2/IPsec) mode.
+    /// Set while the tunnel is running in CNSA 2.0 (TLS 1.3) mode.
     private var cnsa2: CNSA2TunnelController?
 
     /// PSK from a SET_PSK message that arrived before adapter.start
@@ -262,7 +262,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
-        // CNSA 2.0 mode: an IKEv2/IPsec tunnel run by LatticeIKE instead of
+        // CNSA 2.0 mode: a TLS 1.3 tunnel run by LatticeTLS instead of
         // WireGuard. Selected only by an explicit "cnsa2" configuration and
         // never used as a fallback in either direction.
         if let cnsa2Config = dict["cnsa2"] as? [String: Any] {

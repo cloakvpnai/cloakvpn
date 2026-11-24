@@ -1,7 +1,7 @@
 import CLatticeTLS
 import Foundation
 
-public struct TunnelError: Error, CustomStringConvertible {
+public struct LatticeTunnelError: Error, CustomStringConvertible {
     public let description: String
     public init(_ description: String) { self.description = description }
 }
@@ -37,18 +37,18 @@ final class TLSSession {
                 }
             }
         }
-        guard let made else { throw TunnelError(String(cString: err)) }
+        guard let made else { throw LatticeTunnelError(String(cString: err)) }
         handle = made
     }
 
     deinit { ltls_free(handle) }
 
     var summary: String { String(cString: ltls_describe(handle)) }
-    private var lastError: TunnelError { TunnelError(String(cString: ltls_error(handle))) }
+    private var lastError: LatticeTunnelError { LatticeTunnelError(String(cString: ltls_error(handle))) }
 
     func feed(_ data: Data) throws {
         let r = data.withUnsafeBytes { ltls_feed(handle, $0.bindMemory(to: UInt8.self).baseAddress, $0.count) }
-        if r != 0 { throw TunnelError("TLS input failed") }
+        if r != 0 { throw LatticeTunnelError("TLS input failed") }
     }
 
     /// True once the handshake is complete and the negotiated suite has been checked.
@@ -73,7 +73,7 @@ final class TLSSession {
 
     func write(_ data: Data) throws {
         let r = data.withUnsafeBytes { ltls_write(handle, $0.bindMemory(to: UInt8.self).baseAddress, $0.count) }
-        if r != 0 { throw TunnelError("TLS write failed") }
+        if r != 0 { throw LatticeTunnelError("TLS write failed") }
     }
 
     /// Application data, one element per TLS record (the gateway sends one message per record).
@@ -91,7 +91,7 @@ final class TLSSession {
 
     func export(label: String, length: Int) throws -> Data {
         var out = [UInt8](repeating: 0, count: length)
-        guard ltls_export(handle, label, &out, length) == 0 else { throw TunnelError("key export failed") }
+        guard ltls_export(handle, label, &out, length) == 0 else { throw LatticeTunnelError("key export failed") }
         return Data(out)
     }
 }
@@ -106,7 +106,7 @@ enum GCM {
                           a.bindMemory(to: UInt8.self).baseAddress, a.count,
                           p.bindMemory(to: UInt8.self).baseAddress, p.count, &out, &tag)
         } } } }
-        guard r == 0 else { throw TunnelError("encryption failed") }
+        guard r == 0 else { throw LatticeTunnelError("encryption failed") }
         return (Data(out[0..<plaintext.count]), Data(tag))
     }
 

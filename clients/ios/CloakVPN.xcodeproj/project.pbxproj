@@ -82,10 +82,16 @@
 			path = CloakTunnel;
 			sourceTree = "<group>";
 		};
-		80C5A20001F0C0DE00A1B2C3 /* LatticeIKE */ = {
+		80C5A20001F0C0DE00A1B2C3 /* LatticeTLS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			name = LatticeIKE;
-			path = "../apple-ike/Sources/LatticeIKE";
+			name = LatticeTLS;
+			path = "../apple-tls/Sources/LatticeTLS";
+			sourceTree = "<group>";
+		};
+		80C5A20001F0C0DE00A1B2C4 /* CLatticeTLS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			name = CLatticeTLS;
+			path = "../apple-tls/Sources/CLatticeTLS";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -125,7 +131,8 @@
 			children = (
 				80B604C82F9C898E007EE8C3 /* CloakVPN */,
 				80F31E1E2F9C911500E4B598 /* CloakTunnel */,
-				80C5A20001F0C0DE00A1B2C3 /* LatticeIKE */,
+				80C5A20001F0C0DE00A1B2C3 /* LatticeTLS */,
+				80C5A20001F0C0DE00A1B2C4 /* CLatticeTLS */,
 				80F31E1B2F9C911500E4B598 /* Frameworks */,
 				80B604C72F9C898E007EE8C3 /* Products */,
 				808981FD2FA88B59004F6E9C /* Recovered References */,
@@ -192,7 +199,8 @@
 			);
 			fileSystemSynchronizedGroups = (
 				80F31E1E2F9C911500E4B598 /* CloakTunnel */,
-				80C5A20001F0C0DE00A1B2C3 /* LatticeIKE */,
+				80C5A20001F0C0DE00A1B2C3 /* LatticeTLS */,
+				80C5A20001F0C0DE00A1B2C4 /* CLatticeTLS */,
 			);
 			name = CloakTunnel;
 			packageProductDependencies = (
@@ -545,7 +553,20 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.1.0;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../apple-tls/Sources/CLatticeTLS/include",
+					"$(SRCROOT)/../apple-tls/Vendor/openssl-ios/include",
+				);
+				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = "$(SRCROOT)/../apple-tls/Vendor/openssl-ios/lib";
+				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = "$(SRCROOT)/../apple-tls/Vendor/openssl-iossimulator/lib";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lssl",
+					"-lcrypto",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = ai.cloakvpn.CloakVPN.CloakTunnel;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../apple-tls/Sources/CLatticeTLS/include";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -581,7 +602,20 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.1.0;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../apple-tls/Sources/CLatticeTLS/include",
+					"$(SRCROOT)/../apple-tls/Vendor/openssl-ios/include",
+				);
+				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = "$(SRCROOT)/../apple-tls/Vendor/openssl-ios/lib";
+				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = "$(SRCROOT)/../apple-tls/Vendor/openssl-iossimulator/lib";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lssl",
+					"-lcrypto",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = ai.cloakvpn.CloakVPN.CloakTunnel;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../apple-tls/Sources/CLatticeTLS/include";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
