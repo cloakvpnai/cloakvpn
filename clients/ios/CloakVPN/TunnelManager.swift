@@ -1144,6 +1144,9 @@ final class TunnelManager: ObservableObject {
 
     var isCNSA2Mode: Bool { cnsa2Mode }
 
+    /// When the running tunnel came up, for the session clock. Nil when not connected.
+    var connectedSince: Date? { manager?.connection.connectedDate }
+
     /// Seconds since the running tunnel last completed a WireGuard handshake,
     /// or nil if it has not completed one (or the provider can't be asked).
     /// "Connected" from NetworkExtension only means the interface is up; this

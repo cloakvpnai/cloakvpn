@@ -1,24 +1,16 @@
 import SwiftUI
 import MapKit
-import Combine
+import QuartzCore
 
-/// A slowly turning globe with one dot per region, shown on wide screens (the open
-/// iPhone Duo and iPad). The dot for the region in use is lit; tapping a dot picks
-/// that region. It shows this device's own connection only. Nothing about other
-/// customers is fetched or drawn.
+/// The panel under the region list on wide screens (the open iPhone Duo and iPad):
+/// a globe that turns continuously, one dot per region, the exit in use lit, and a
+/// strip of facts about the current session. It shows this device's own connection
+/// only. Nothing about other customers is fetched or drawn.
 struct LatticeGlobeView: View {
     let selectedRegionID: String?
     let isConnected: Bool
+    let connectedSince: Date?
     let onPick: (CloakRegion) -> Void
-
-    @State private var position: MapCameraPosition = .camera(
-        MapCamera(centerCoordinate: CLLocationCoordinate2D(latitude: 18, longitude: -100), distance: LatticeGlobeView.altitude))
-    @State private var center = CLLocationCoordinate2D(latitude: 18, longitude: -100)
-    @State private var lastTouch = Date.distantPast
-    @State private var pulse = false
-
-    private static let altitude: CLLocationDistance = 24_000_000
-    private let turn = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     /// Where each region's servers are, to the nearest city.
     static let coordinates: [String: CLLocationCoordinate2D] = [
@@ -40,96 +32,311 @@ struct LatticeGlobeView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            Map(position: $position, interactionModes: [.pan, .zoom, .rotate]) {
-                ForEach(CloakRegion.all) { region in
-                    if let c = Self.coordinates[region.id] {
-                        Annotation(region.shortLabel, coordinate: c, anchor: .center) {
-                            dot(for: region)
-                        }
-                        .annotationTitles(.hidden)
-                    }
-                }
-            }
-            .mapStyle(.imagery(elevation: .realistic))
-            .mapControlVisibility(.hidden)
-            .onMapCameraChange(frequency: .onEnd) { context in
-                center = context.camera.centerCoordinate
-            }
-            .simultaneousGesture(DragGesture(minimumDistance: 2).onChanged { _ in lastTouch = Date() })
+        ZStack {
+            GlobeMap(selectedRegionID: selectedRegionID, isConnected: isConnected, onPick: onPick)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("LIVE CONNECTION")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(1.0)
-                    .foregroundStyle(LatticeTheme.muted)
-                Text(liveRegion.map { "Exit: \($0.displayName)" } ?? "Not connected. Tap a dot to pick a region.")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(liveRegion == nil ? LatticeTheme.text : LatticeTheme.mintText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+            VStack(spacing: 0) {
+                HStack {
+                    header
+                    Spacer(minLength: 0)
+                }
+                Spacer(minLength: 0)
+                facts
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 10).fill(LatticeTheme.bg.opacity(0.78)))
             .padding(10)
+            .allowsHitTesting(false)
         }
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(LatticeTheme.border, lineWidth: 1))
-        .onAppear {
-            pulse = true
-            focusOnLiveRegion(animated: false)
-        }
-        .onChange(of: selectedRegionID) { _, _ in focusOnLiveRegion(animated: true) }
-        .onChange(of: isConnected) { _, _ in focusOnLiveRegion(animated: true) }
-        .onReceive(turn) { _ in
-            // Turns slowly whenever it is left alone, connected or not. It pauses for a few
-            // seconds after the customer moves it, and after it swings to a new exit region.
-            guard Date().timeIntervalSince(lastTouch) > 6 else { return }
-            var longitude = center.longitude + 6
-            if longitude > 180 { longitude -= 360 }
-            let next = CLLocationCoordinate2D(latitude: 18, longitude: longitude)
-            center = next
-            withAnimation(.linear(duration: 2)) {
-                position = .camera(MapCamera(centerCoordinate: next, distance: Self.altitude))
-            }
-        }
+        .accessibilityElement(children: .combine)
         .accessibilityLabel(liveRegion.map { "Globe. Connected through \($0.displayName)." } ?? "Globe of regions. Not connected.")
     }
 
-    private func focusOnLiveRegion(animated: Bool) {
-        guard let region = liveRegion, let c = Self.coordinates[region.id] else { return }
-        lastTouch = Date()
-        center = c
-        let camera = MapCameraPosition.camera(MapCamera(centerCoordinate: c, distance: Self.altitude))
-        if animated { withAnimation(.easeInOut(duration: 1.6)) { position = camera } } else { position = camera }
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(liveRegion == nil ? LatticeTheme.muted : LatticeTheme.mint)
+                    .frame(width: 6, height: 6)
+                Text(liveRegion == nil ? "REGIONS" : "LIVE CONNECTION")
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(1.0)
+                    .foregroundStyle(LatticeTheme.muted)
+            }
+            Text(liveRegion.map { "\($0.countryFlag)  \($0.displayName)" } ?? "Tap a dot to pick a region")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(liveRegion == nil ? LatticeTheme.text : LatticeTheme.mintText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 10).fill(LatticeTheme.bg.opacity(0.80)))
     }
 
-    private func dot(for region: CloakRegion) -> some View {
-        let isLive = liveRegion?.id == region.id
-        let isSelected = selectedRegionID == region.id
-        return Button {
-            lastTouch = Date()
-            onPick(region)
-        } label: {
-            ZStack {
-                if isLive {
-                    Circle()
-                        .stroke(LatticeTheme.mint.opacity(0.7), lineWidth: 2)
-                        .frame(width: 34, height: 34)
-                        .scaleEffect(pulse ? 1.0 : 0.45)
-                        .opacity(pulse ? 0.0 : 0.9)
-                        .animation(.easeOut(duration: 1.6).repeatForever(autoreverses: false), value: pulse)
-                }
-                Circle()
-                    .fill(isLive ? LatticeTheme.mint : (isSelected ? LatticeTheme.mintText : Color.white.opacity(0.85)))
-                    .frame(width: isLive ? 14 : 10, height: isLive ? 14 : 10)
-                    .overlay(Circle().stroke(Color.black.opacity(0.55), lineWidth: 1.5))
+    /// Facts that are true of every session in this app, plus the session clock.
+    private var facts: some View {
+        HStack(spacing: 8) {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                fact("SESSION", sessionText(at: context.date), lit: liveRegion != nil)
             }
-            .frame(width: 44, height: 44)
-            .contentShape(Rectangle())
+            fact("NEW KEYS", "Every 10 min", lit: liveRegion != nil)
+            fact("KEY EXCHANGE", "ML-KEM-1024", lit: liveRegion != nil)
+            fact("CIPHER", "AES-256-GCM", lit: liveRegion != nil)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(isLive ? "\(region.displayName), connected" : region.displayName)
+    }
+
+    private func fact(_ label: String, _ value: String, lit: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 9, weight: .semibold))
+                .tracking(0.8)
+                .foregroundStyle(LatticeTheme.muted)
+            Text(value)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(lit ? LatticeTheme.mintText : LatticeTheme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(RoundedRectangle(cornerRadius: 10).fill(LatticeTheme.bg.opacity(0.80)))
+    }
+
+    private func sessionText(at now: Date) -> String {
+        guard isConnected, let start = connectedSince else { return "Not connected" }
+        let s = max(0, Int(now.timeIntervalSince(start)))
+        return String(format: "%02d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60)
+    }
+}
+
+// MARK: - The map itself
+
+/// MKMapView driven by a display link, so the turn is one continuous motion and not
+/// a chain of short animations.
+private struct GlobeMap: UIViewRepresentable {
+    let selectedRegionID: String?
+    let isConnected: Bool
+    let onPick: (CloakRegion) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
+
+    func makeUIView(context: Context) -> MKMapView {
+        let map = MKMapView(frame: .zero)
+        map.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: .realistic)
+        map.showsCompass = false
+        map.showsScale = false
+        map.isPitchEnabled = false
+        map.showsUserLocation = false
+        map.delegate = context.coordinator
+        map.register(RegionDotView.self, forAnnotationViewWithReuseIdentifier: RegionDotView.reuseID)
+        map.camera = MKMapCamera(lookingAtCenter: CLLocationCoordinate2D(latitude: 18, longitude: -100),
+                                 fromDistance: Coordinator.altitude, pitch: 0, heading: 0)
+        for region in CloakRegion.all {
+            guard let c = LatticeGlobeView.coordinates[region.id] else { continue }
+            map.addAnnotation(RegionAnnotation(region: region, coordinate: c))
+        }
+        for recognizer in [UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.touched)),
+                           UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.touched)),
+                           UIRotationGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.touched))] as [UIGestureRecognizer] {
+            recognizer.delegate = context.coordinator
+            recognizer.cancelsTouchesInView = false
+            map.addGestureRecognizer(recognizer)
+        }
+        context.coordinator.attach(map)
+        context.coordinator.apply(selectedRegionID: selectedRegionID, isConnected: isConnected, animated: false)
+        return map
+    }
+
+    func updateUIView(_ map: MKMapView, context: Context) {
+        context.coordinator.onPick = onPick
+        context.coordinator.apply(selectedRegionID: selectedRegionID, isConnected: isConnected, animated: true)
+    }
+
+    static func dismantleUIView(_ map: MKMapView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
+    final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
+        static let altitude: CLLocationDistance = 24_000_000
+        /// One full turn in about two minutes.
+        private static let degreesPerSecond = 3.0
+        private static let restAfterTouch: CFTimeInterval = 5
+
+        var onPick: (CloakRegion) -> Void
+        private weak var map: MKMapView?
+        private var link: CADisplayLink?
+        private var lastFrame: CFTimeInterval = 0
+        private var holdUntil: CFTimeInterval = 0
+        private var selectedRegionID: String?
+        private var isConnected = false
+        private var applied = false
+
+        init(onPick: @escaping (CloakRegion) -> Void) { self.onPick = onPick }
+
+        func attach(_ map: MKMapView) {
+            self.map = map
+            let link = CADisplayLink(target: self, selector: #selector(frame(_:)))
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+            link.add(to: .main, forMode: .common)
+            self.link = link
+        }
+
+        func detach() {
+            link?.invalidate()
+            link = nil
+        }
+
+        @objc private func frame(_ link: CADisplayLink) {
+            defer { lastFrame = link.timestamp }
+            guard let map, lastFrame > 0, link.timestamp >= holdUntil, map.window != nil else { return }
+            if UIAccessibility.isReduceMotionEnabled { return }
+            let dt = min(link.timestamp - lastFrame, 0.1)
+            guard let camera = map.camera.copy() as? MKMapCamera else { return }
+            var c = camera.centerCoordinate
+            c.longitude += Self.degreesPerSecond * dt
+            if c.longitude > 180 { c.longitude -= 360 }
+            // Drift back toward a latitude that keeps most regions in view.
+            c.latitude += (18 - c.latitude) * min(1, dt * 0.4)
+            camera.centerCoordinate = c
+            camera.heading = 0
+            map.camera = camera
+        }
+
+        @objc func touched() {
+            holdUntil = CACurrentMediaTime() + Self.restAfterTouch
+        }
+
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+
+        func apply(selectedRegionID: String?, isConnected: Bool, animated: Bool) {
+            let changed = !applied || selectedRegionID != self.selectedRegionID || isConnected != self.isConnected
+            self.selectedRegionID = selectedRegionID
+            self.isConnected = isConnected
+            applied = true
+            guard changed, let map else { return }
+            for annotation in map.annotations {
+                guard let a = annotation as? RegionAnnotation, let view = map.view(for: a) as? RegionDotView else { continue }
+                view.show(live: isConnected && a.region.id == selectedRegionID, selected: a.region.id == selectedRegionID)
+            }
+            // Swing to the exit when a connection comes up, rest on it, then carry on turning.
+            if isConnected, let id = selectedRegionID, let c = LatticeGlobeView.coordinates[id] {
+                let distance = map.camera.centerCoordinateDistance
+                map.setCamera(MKMapCamera(lookingAtCenter: c, fromDistance: distance, pitch: 0, heading: 0), animated: animated)
+                holdUntil = CACurrentMediaTime() + 6
+            }
+        }
+
+        func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            guard let a = annotation as? RegionAnnotation else { return nil }
+            let view = mapView.dequeueReusableAnnotationView(withIdentifier: RegionDotView.reuseID, for: a) as? RegionDotView
+            view?.show(live: isConnected && a.region.id == selectedRegionID, selected: a.region.id == selectedRegionID)
+            return view
+        }
+
+        func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
+            mapView.deselectAnnotation(annotation, animated: false)
+            guard let a = annotation as? RegionAnnotation else { return }
+            touched()
+            onPick(a.region)
+        }
+    }
+}
+
+private final class RegionAnnotation: NSObject, MKAnnotation {
+    let region: CloakRegion
+    let coordinate: CLLocationCoordinate2D
+    var title: String? { region.displayName }
+    init(region: CloakRegion, coordinate: CLLocationCoordinate2D) {
+        self.region = region
+        self.coordinate = coordinate
+    }
+}
+
+/// A dot for one region. The region in use is larger, mint, and sends out a ring.
+private final class RegionDotView: MKAnnotationView {
+    static let reuseID = "lattice.region.dot"
+    private let dot = CAShapeLayer()
+    private let ring = CAShapeLayer()
+
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        frame = CGRect(x: 0, y: 0, width: 44, height: 44)
+        centerOffset = .zero
+        canShowCallout = false
+        displayPriority = .required
+        collisionMode = .none
+        backgroundColor = .clear
+        ring.fillColor = UIColor.clear.cgColor
+        ring.lineWidth = 2
+        ring.frame = bounds
+        ring.path = UIBezierPath(ovalIn: bounds.insetBy(dx: 5, dy: 5)).cgPath
+        ring.opacity = 0
+        layer.addSublayer(ring)
+        dot.strokeColor = UIColor.black.withAlphaComponent(0.55).cgColor
+        dot.lineWidth = 1.5
+        dot.frame = bounds
+        layer.addSublayer(dot)
+        isAccessibilityElement = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func show(live: Bool, selected: Bool) {
+        let mint = UIColor(LatticeTheme.mint)
+        let size: CGFloat = live ? 15 : 10
+        let rect = CGRect(x: (bounds.width - size) / 2, y: (bounds.height - size) / 2, width: size, height: size)
+        dot.path = UIBezierPath(ovalIn: rect).cgPath
+        dot.fillColor = (live ? mint : (selected ? UIColor(LatticeTheme.mintText) : UIColor.white.withAlphaComponent(0.88))).cgColor
+        ring.strokeColor = mint.cgColor
+        ring.removeAllAnimations()
+        ring.opacity = 0
+        if live && !UIAccessibility.isReduceMotionEnabled {
+            let scale = CABasicAnimation(keyPath: "transform.scale")
+            scale.fromValue = 0.4
+            scale.toValue = 1.0
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0.9
+            fade.toValue = 0.0
+            let group = CAAnimationGroup()
+            group.animations = [scale, fade]
+            group.duration = 1.8
+            group.repeatCount = .infinity
+            group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            group.isRemovedOnCompletion = false
+            ring.add(group, forKey: "pulse")
+        }
+        if let a = annotation as? RegionAnnotation {
+            accessibilityLabel = live ? "\(a.region.displayName), connected" : a.region.displayName
+        }
+    }
+}
+
+// MARK: - The power button's pulse
+
+/// Rings that travel outward from the power button while the tunnel is protecting traffic.
+struct OrbPulse: View {
+    let color: Color
+    let diameter: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var out = false
+
+    var body: some View {
+        ZStack {
+            ring(delay: 0)
+            ring(delay: 1.1)
+        }
+        .onAppear { out = true }
+        .allowsHitTesting(false)
+    }
+
+    private func ring(delay: Double) -> some View {
+        Circle()
+            .stroke(color, lineWidth: 2)
+            .frame(width: diameter, height: diameter)
+            .scaleEffect(reduceMotion ? 1 : (out ? 1.30 : 1.0))
+            .opacity(reduceMotion ? 0 : (out ? 0 : 0.75))
+            .animation(.easeOut(duration: 2.2).repeatForever(autoreverses: false).delay(delay), value: out)
     }
 }

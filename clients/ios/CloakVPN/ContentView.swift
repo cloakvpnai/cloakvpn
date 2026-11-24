@@ -306,6 +306,9 @@ struct ContentView: View {
                 }
             } label: {
                 ZStack {
+                    if orbState == .protected {
+                        OrbPulse(color: LatticeTheme.mint, diameter: 176)
+                    }
                     Circle().fill(orbAccent.opacity(lit ? 0.05 : 0)).frame(width: 224, height: 224)
                     Circle().fill(orbAccent.opacity(lit ? 0.10 : 0)).frame(width: 200, height: 200)
                     Circle()
@@ -544,6 +547,7 @@ struct ContentView: View {
                     LatticeGlobeView(
                         selectedRegionID: tunnel.selectedRegion?.id,
                         isConnected: tunnel.status == .connected,
+                        connectedSince: tunnel.connectedSince,
                         onPick: { region in Task { await tunnel.selectRegion(region) } })
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .frame(minHeight: 150)
