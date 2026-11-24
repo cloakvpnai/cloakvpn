@@ -134,6 +134,9 @@ dependencies {
     // (AccountClient) and the public-IP lookup (IpAddressClient).
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
+    // WorkManager: daily renewal of the CNSA 2.0 device certificate
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
+
     // Google Play Billing — in-app subscription purchases (BillingManager,
     // PaywallScreen). v8.0.0+ is required by Google Play policy (Aug 2026); we
     // ship v9.0.0, the latest; the -ktx artifact adds the coroutine extensions. The purchase

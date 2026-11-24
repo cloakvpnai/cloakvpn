@@ -33,4 +33,15 @@ class Cnsa2EnrollerTest {
         der[der.size - 1] = (der[der.size - 1].toInt() xor 1).toByte()
         assertFalse(Cnsa2Enroller.isLatticeRoot(der))
     }
+
+    @Test fun renewalWindowIsTheLastTenDays() {
+        val day = 24L * 60 * 60 * 1000
+        val expiry = 30 * day
+        assertFalse(Cnsa2Enroller.isDue(null, expiry))
+        assertFalse(Cnsa2Enroller.isDue(expiry, 0))
+        assertFalse(Cnsa2Enroller.isDue(expiry, 20 * day - 1))
+        assertTrue(Cnsa2Enroller.isDue(expiry, 20 * day))
+        assertTrue(Cnsa2Enroller.isDue(expiry, 29 * day))
+        assertTrue("an expired certificate is still renewed", Cnsa2Enroller.isDue(expiry, 31 * day))
+    }
 }

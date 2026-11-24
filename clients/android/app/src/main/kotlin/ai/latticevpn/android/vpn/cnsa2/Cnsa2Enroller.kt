@@ -2,6 +2,8 @@ package ai.latticevpn.android.vpn.cnsa2
 
 import ai.latticevpn.android.data.AccountClient
 import android.content.Context
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
@@ -41,7 +43,25 @@ class Cnsa2Enroller(context: Context, private val api: AccountClient) {
      * Enrolls, or renews with the existing key. Stores the certificate and the
      * gateway to use, and returns that gateway's settings.
      */
-    suspend fun enroll(accountNumber: String): Cnsa2Config {
+    suspend fun enroll(accountNumber: String): Cnsa2Config = lock.withLock { enrollLocked(accountNumber) }
+
+    /** True when a certificate exists and is inside the renewal window or past its expiry. */
+    fun renewalDue(nowMillis: Long = System.currentTimeMillis()): Boolean {
+        if (identity.certificate() == null) return false
+        return isDue(expiryMillis(), nowMillis)
+    }
+
+    /**
+     * Renews if still due once it holds the lock, so the daily job and the app
+     * cannot both renew at the same moment. Returns true if a new certificate was stored.
+     */
+    suspend fun renewIfDue(accountNumber: String): Boolean = lock.withLock {
+        if (!renewalDue()) return@withLock false
+        enrollLocked(accountNumber)
+        true
+    }
+
+    private suspend fun enrollLocked(accountNumber: String): Cnsa2Config {
         // The name in the request is ignored by the server, which names the device itself.
         val request = identity.certificateRequest("lattice-device")
         val reply = api.enrollCnsa2(accountNumber, request)
@@ -94,6 +114,12 @@ class Cnsa2Enroller(context: Context, private val api: AccountClient) {
         const val ROOT_SHA256 = "03f0a61239af18dcacf6753422c004d04674e324d7b10baa1b4f9eb49150f5bc"
         const val REKEY_SECONDS = 600
         const val RENEW_BEFORE_MILLIS = 10L * 24 * 60 * 60 * 1000
+
+        /** One at a time across the app and the background job. */
+        private val lock = Mutex()
+
+        fun isDue(expiryMillis: Long?, nowMillis: Long): Boolean =
+            expiryMillis != null && nowMillis >= expiryMillis - RENEW_BEFORE_MILLIS
 
         fun isLatticeRoot(der: ByteArray): Boolean {
             val digest = MessageDigest.getInstance("SHA-256").digest(der)

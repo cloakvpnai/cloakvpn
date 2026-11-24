@@ -25,6 +25,7 @@ import kotlinx.coroutines.launch
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2Backend
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2Config
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2Enroller
+import ai.latticevpn.android.vpn.cnsa2.Cnsa2RenewalWorker
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2Provider
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2State
 import kotlinx.coroutines.flow.SharingStarted
@@ -86,6 +87,11 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     val cnsa2Mode: StateFlow<Boolean> = _cnsa2Mode.asStateFlow()
     val cnsa2Detail: StateFlow<String?> = cnsa2?.detail ?: MutableStateFlow(null)
 
+    init {
+        // Keeps the daily renewal scheduled for a device that is already enrolled.
+        if (cnsa2Available && Cnsa2Config.load(app) != null) Cnsa2RenewalWorker.schedule(app)
+    }
+
     private val _cnsa2Enrolling = MutableStateFlow(false)
     val cnsa2Enrolling: StateFlow<Boolean> = _cnsa2Enrolling.asStateFlow()
     private val _cnsa2Error = MutableStateFlow<String?>(null)
@@ -116,6 +122,7 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
             cnsa2Enroller.enroll(number).also {
                 cnsa2Config = it
                 _cnsa2Error.value = null
+                Cnsa2RenewalWorker.schedule(getApplication())
             }
         } catch (e: Exception) {
             _cnsa2Error.value = e.message ?: "Could not enroll this device."
@@ -241,10 +248,9 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
                 val config = ensureCnsa2Enrolled() ?: return@launch
                 cnsa2.connect(getApplication(), config)
                 // Renew ahead of expiry with the same key. The live tunnel keeps its current certificate.
-                if (cnsa2Enroller.shouldRenew()) {
-                    accountStore.accountNumber()?.let { number ->
-                        runCatching { cnsa2Enroller.enroll(number) }.onSuccess { cnsa2Config = it }
-                    }
+                // The daily background job does the same when the app is not open.
+                accountStore.accountNumber()?.let { number ->
+                    runCatching { cnsa2Enroller.renewIfDue(number) }
                 }
             }
             return
