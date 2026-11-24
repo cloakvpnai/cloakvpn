@@ -19,7 +19,7 @@
  */
 import Layout from '@/layouts/Layout.astro';
 
-const EFFECTIVE_DATE   = '2026-05-26';
+const EFFECTIVE_DATE   = '2026-11-24';
 const LEGAL_ENTITY     = 'KRYPTOKNIGHTZ LLC';
 const REGISTERED_ADDR  = '87-154a Maipalaoa Road, Waianae, HI 96792, USA';
 const GOVERNING_LAW    = 'the State of Hawaii, United States of America';
@@ -40,8 +40,8 @@ const SUPPORT_EMAIL    = 'support@latticevpn.ai';
         Privacy policy
       </h1>
       <p class="text-sm text-slate-500 font-mono">
-        Effective {EFFECTIVE_DATE} · Applies to the Lattice VPN Android application
-        (<code>ai.latticevpn.android</code>) and the Lattice VPN service.
+        Effective {EFFECTIVE_DATE} · Applies to the Lattice VPN apps for Android
+        (<code>ai.latticevpn.android</code>), iPhone and Mac, and the Lattice VPN service.
       </p>
       <p class="text-sm text-slate-500 font-mono mt-1">
         Provider: {LEGAL_ENTITY} ("Lattice", "we", "us") · Contact: <a href={`mailto:${LEGAL_EMAIL}`} class="text-mint-700 underline">{LEGAL_EMAIL}</a>
@@ -92,16 +92,16 @@ const SUPPORT_EMAIL    = 'support@latticevpn.ai';
           select a location, the app contacts our provisioning API and
           registers your device as a VPN peer. This request includes the
           public keys your device generates locally (its WireGuard public
-          key and its Rosenpass post-quantum public key) and the account
-          number you entered when you subscribed. It does <strong>not</strong>
+          key and a post-quantum public key) and your account
+          number. It does <strong>not</strong>
           include your name, email address, or phone number. The
           corresponding private keys are generated on your device and
           never leave it.
         </li>
         <li>
           <strong class="font-semibold">Account number.</strong> When you
-          subscribe on latticevpn.ai, we generate a random account number
-          that you enter into the app. This is the only credential the
+          subscribe, on latticevpn.ai or in the app, we generate a random
+          account number that you use to sign in to the app. This is the only credential the
           VPN service knows about you. It is not derived from any
           personal information.
         </li>
@@ -145,11 +145,15 @@ const SUPPORT_EMAIL    = 'support@latticevpn.ai';
         </li>
         <li>
           <strong class="font-semibold">Payments.</strong> Subscriptions
-          are purchased on our website (<code>latticevpn.ai</code>),
-          where payments are processed by Stripe, Inc. Stripe handles
-          your payment details under its own privacy policy; we do not
-          receive or store full payment card numbers. No payment is
-          taken inside the Android app.
+          can be purchased on our website (<code>latticevpn.ai</code>),
+          where payments are processed by Stripe, Inc.; in the iPhone and
+          Mac apps, through Apple's in-app purchase; and in the Android
+          app, through Google Play Billing. Stripe, Apple and Google
+          handle your payment details under their own privacy policies.
+          We receive confirmation of the purchase (a transaction
+          identifier and the subscription's status and dates) so we can
+          activate your subscription; we do not receive or store full
+          payment card numbers.
         </li>
       </ul>
     </section>
@@ -187,9 +191,9 @@ const SUPPORT_EMAIL    = 'support@latticevpn.ai';
       </p>
       <p class="text-slate-700 leading-relaxed">
         <strong class="font-semibold">Billing records.</strong> Records
-        associated with your Stripe subscription (account number,
-        subscription dates, payment confirmations, never your card
-        details, which Stripe holds) are retained for the lifetime of
+        associated with your subscription (account number,
+        subscription dates, purchase confirmations, never your card
+        details, which Stripe, Apple or Google hold) are retained for the lifetime of
         the subscription and for a period required by United States tax
         and accounting law (typically seven years) thereafter, after
         which they are deleted.
@@ -201,9 +205,9 @@ const SUPPORT_EMAIL    = 'support@latticevpn.ai';
       <h2 class="font-display font-semibold text-xl text-slate-900 mb-3">Security</h2>
       <p class="text-slate-700 leading-relaxed">
         Traffic between your device and our servers is encrypted with
-        WireGuard and additionally protected by Rosenpass post-quantum
-        key exchange, which refreshes the tunnel's pre-shared key every
-        few minutes. No method of transmission or storage is perfectly
+        WireGuard and additionally protected by a post-quantum key
+        exchange (ML-KEM-768, or Rosenpass in earlier versions), so each
+        connection is protected by fresh post-quantum key material. No method of transmission or storage is perfectly
         secure, but we design the service to minimize the data that
         exists to be exposed in the first place.
       </p>
