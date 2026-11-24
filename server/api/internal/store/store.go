@@ -119,6 +119,9 @@ func Open(path string) (*DB, error) {
 	if err := migrateGooglePlayToken(db); err != nil {
 		return nil, fmt.Errorf("migrate google_play_purchase_token: %w", err)
 	}
+	if err := migrateCNSA2(db); err != nil {
+		return nil, fmt.Errorf("migrate cnsa2: %w", err)
+	}
 	return &DB{db}, nil
 }
 

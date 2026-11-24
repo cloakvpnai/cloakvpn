@@ -5,6 +5,7 @@
 #   lab-enroll.sh <device name, e.g. a16.tls.lattice.lab> <gateway host> <rekey seconds> [adb options, e.g. -e or -s SERIAL]
 #   LAB_CA=local (default)  throwaway lab authority
 #   LAB_CA=kms              certificate from the signing service (AWS KMS issuing key)
+#   LAB_CA=api              through the account API, as the apps will (see server/cnsa2-ca/lab-api-enroll.sh)
 set -eu
 NAME="$1"; HOST="$2"; REKEY="$3"; shift 3
 HERE="$(cd "$(dirname "$0")" && pwd)"; PKI="$HERE/../../../server/cnsa2-tls/lab/pki"; CA_DIR="$HERE/../../../server/cnsa2-ca"
@@ -13,7 +14,10 @@ W="$HOME/src/cnsa2-enroll.$$"; mkdir -p "$W"; trap 'rm -rf "$W"' EXIT
 "$ADB" "$@" shell am start -n $ACT --es enroll "$NAME" >/dev/null
 sleep 4
 "$ADB" "$@" exec-out run-as $PKG cat files/cnsa2/request.der > "$W/request.der"
-if [ "${LAB_CA:-local}" = kms ]; then
+if [ "${LAB_CA:-local}" = api ]; then
+  "$CA_DIR/lab-api-enroll.sh" "$W/request.der" "$W/client.der"
+  CA="$CA_DIR/certs/root-ca.pem"; GATEWAY="${GATEWAY_NAME:-lab.gw.latticevpn.ai}"
+elif [ "${LAB_CA:-local}" = kms ]; then
   "$CA_DIR/lab-issue.sh" device "$NAME" "$W/request.der" "$W/client.der"
   CA="$CA_DIR/certs/root-ca.pem"; GATEWAY="${GATEWAY_NAME:-lab.gw.latticevpn.ai}"
 else

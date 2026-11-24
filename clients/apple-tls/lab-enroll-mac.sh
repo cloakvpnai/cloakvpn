@@ -5,6 +5,7 @@
 #   lab-enroll-mac.sh <device name, e.g. macmini.tls.lattice.lab> <rekey seconds>
 #   LAB_CA=local (default)  throwaway lab authority
 #   LAB_CA=kms              certificate from the signing service (AWS KMS issuing key)
+#   LAB_CA=api              through the account API, as the apps will (see server/cnsa2-ca/lab-api-enroll.sh)
 set -eu
 NAME="$1"; REKEY="${2:-300}"
 HERE="$(cd "$(dirname "$0")" && pwd)"; PKI="$HERE/../../server/cnsa2-tls/lab/pki"; CA_DIR="$HERE/../../server/cnsa2-ca"
@@ -16,7 +17,10 @@ open -a "$APP" --args -LatticeCNSA2Enroll "$NAME"
 sleep 8
 /usr/bin/log show --last 30s --predicate 'subsystem == "ai.cloakvpn.CloakVPN" AND category == "cnsa2lab"' 2>/dev/null \
   | sed -n 's/.*cnsa2lab: request \([0-9]*\)\/[0-9]* \(.*\)$/\1 \2/p' | sort -n -u -k1,1 | cut -d' ' -f2 | tr -d '\n' | base64 -D > "$W/request.der"
-if [ "${LAB_CA:-local}" = kms ]; then
+if [ "${LAB_CA:-local}" = api ]; then
+  "$CA_DIR/lab-api-enroll.sh" "$W/request.der" "$W/client.der"
+  CA="$CA_DIR/certs/root-ca.pem"; GATEWAY="${GATEWAY_NAME:-lab.gw.latticevpn.ai}"
+elif [ "${LAB_CA:-local}" = kms ]; then
   "$CA_DIR/lab-issue.sh" device "$NAME" "$W/request.der" "$W/client.der"
   CA="$CA_DIR/certs/root-ca.pem"; GATEWAY="${GATEWAY_NAME:-lab.gw.latticevpn.ai}"
 else

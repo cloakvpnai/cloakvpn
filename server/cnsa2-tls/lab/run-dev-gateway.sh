@@ -10,7 +10,13 @@ set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"; IMG=lattice-cnsa2-tls-lab
 CA_DIR="$HERE/../../cnsa2-ca"; GATEWAY_NAME="${GATEWAY_NAME:-lab.gw.latticevpn.ai}"
 if [ "${LAB_CA:-local}" = kms ]; then
-  PKI="$HERE/pki-kms"; mkdir -p "$PKI"; CAFILE=ca-chain.pem; EXTRA="extra-certs /pki/issuing-ca.pem"
+  PKI="$HERE/pki-kms"; mkdir -p "$PKI"; CAFILE=ca-chain.pem
+  # Same deny-list hook a real gateway runs. The list lives in pki-kms/denylist;
+  # fill it with ../gateway/cnsa2-denylist-sync.sh or by hand.
+  cp "$HERE/../gateway/cnsa2-tls-verify.sh" "$PKI/cnsa2-tls-verify.sh"; [ -f "$PKI/denylist" ] || printf '# end 0\n' > "$PKI/denylist"
+  EXTRA="extra-certs /pki/issuing-ca.pem
+script-security 2
+tls-verify \"/pki/cnsa2-tls-verify.sh /pki/denylist\""
   cat "$CA_DIR/certs/root-ca.pem" "$CA_DIR/certs/issuing-ca.pem" > "$PKI/ca-chain.pem"
   cp "$CA_DIR/certs/issuing-ca.pem" "$PKI/issuing-ca.pem"
   if [ ! -f "$PKI/gateway.pem" ] || ! openssl x509 -in "$PKI/gateway.pem" -noout -checkend 604800 >/dev/null 2>&1; then

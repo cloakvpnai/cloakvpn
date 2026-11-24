@@ -19,6 +19,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -29,6 +30,7 @@ import (
 	"time"
 
 	"github.com/cloakvpn/api/internal/appleiap"
+	"github.com/cloakvpn/api/internal/cnsa2"
 	"github.com/cloakvpn/api/internal/googleplay"
 	httpx "github.com/cloakvpn/api/internal/http"
 	"github.com/cloakvpn/api/internal/regions"
@@ -114,6 +116,31 @@ func main() {
 		log.Printf("google play billing enabled (package %s)", cfg.GooglePlayPackageName)
 	} else {
 		log.Printf("google play billing disabled (set GOOGLE_PLAY_SERVICE_ACCOUNT_JSON to enable)")
+	}
+
+	// CNSA 2.0 mode enrollment: registered only when a signing service is
+	// configured (CNSA2_SIGNER_URL). Without it these routes do not exist and
+	// the server runs exactly as before.
+	if url := os.Getenv("CNSA2_SIGNER_URL"); url != "" {
+		token := mustEnv("CNSA2_SIGNER_TOKEN")
+		var gateways []cnsa2.Gateway
+		if path := os.Getenv("CNSA2_GATEWAYS"); path != "" {
+			raw, rerr := os.ReadFile(path)
+			if rerr != nil {
+				log.Fatalf("cnsa2: read gateways %q: %v", path, rerr)
+			}
+			if jerr := json.Unmarshal(raw, &gateways); jerr != nil {
+				log.Fatalf("cnsa2: gateways %q: %v", path, jerr)
+			}
+		}
+		ch := httpx.NewCNSA2Handler(db, cnsa2.NewClient(url, token), cfg.AccountNumberSecret,
+			cfg.RegionInternalSecret, envOr("CNSA2_DEVICE_NAME_SUFFIX", "dev.latticevpn.ai"), gateways)
+		mux.HandleFunc("/v1/device/cnsa2/enroll", ch.Enroll)
+		mux.HandleFunc("/v1/device/cnsa2", ch.Device)
+		mux.HandleFunc("/v1/internal/cnsa2/denylist", ch.DenyList)
+		log.Printf("cnsa2 enrollment enabled (%d gateways)", len(gateways))
+	} else {
+		log.Printf("cnsa2 enrollment disabled (set CNSA2_SIGNER_URL to enable)")
 	}
 
 	mux.HandleFunc("/v1/device", httpx.NewDeviceHandler(db, regs, rc,
