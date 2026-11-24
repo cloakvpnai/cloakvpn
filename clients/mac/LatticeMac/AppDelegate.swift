@@ -56,6 +56,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await self.connection.connectCNSA2(
                     routes: mode == "split" ? ["10.88.0.0/24"] : nil,
                     regionID: UserDefaults.standard.string(forKey: "LatticeCNSA2Region"))
+                // Test options: `-LatticeCNSA2SwitchTo <region id>` picks another region 15 seconds
+                // later, as a click in the list would; `-LatticeCNSA2ModeOff YES` then turns the mode off.
+                if let next = UserDefaults.standard.string(forKey: "LatticeCNSA2SwitchTo"),
+                   let region = self.connection.availableRegions.first(where: { $0.id == next }) {
+                    try? await Task.sleep(nanoseconds: 15_000_000_000)
+                    await self.connection.connect(to: region)
+                }
+                if UserDefaults.standard.bool(forKey: "LatticeCNSA2ModeOff") {
+                    try? await Task.sleep(nanoseconds: 20_000_000_000)
+                    await self.connection.setCNSA2Mode(false)
+                }
             }
         }
         #endif

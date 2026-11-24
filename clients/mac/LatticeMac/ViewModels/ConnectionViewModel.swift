@@ -85,8 +85,17 @@ final class ConnectionViewModel: ObservableObject {
 
     func renewCNSA2IfDue() async { await tunnel?.renewCNSA2IfDue() }
 
-    /// True when the saved VPN profile is the CNSA 2.0 one.
-    var isCNSA2Mode: Bool { tunnel?.isCNSA2Mode ?? false }
+    /// True while CNSA 2.0 mode is switched on.
+    @Published private(set) var isCNSA2Mode = false
+
+    /// Turns the mode on or off. Stops a running tunnel; does not start one.
+    func setCNSA2Mode(_ on: Bool) async {
+        guard let tunnel, !cnsa2Busy else { return }
+        cnsa2Busy = true
+        cnsa2Message = nil
+        await tunnel.setCNSA2Mode(on)
+        cnsa2Busy = false
+    }
     var cnsa2GatewayRegionName: String? { tunnel?.cnsa2GatewayRegionName }
 
     @Published private(set) var isSignedIn = false
@@ -134,6 +143,11 @@ final class ConnectionViewModel: ObservableObject {
             .sink { [weak self] iosStatus in
                 self?.handleTunnelStatus(iosStatus)
             }
+            .store(in: &cancellables)
+
+        tunnel.$cnsa2Mode
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] on in self?.isCNSA2Mode = on }
             .store(in: &cancellables)
 
         // Selected region: CloakRegion -> RegionSummary

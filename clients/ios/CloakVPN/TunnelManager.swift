@@ -393,6 +393,12 @@ final class TunnelManager: ObservableObject {
         if status == .connected || status == .connecting || status == .reasserting {
             try? await disconnect()
         }
+        // Give up this device's CNSA 2.0 identity: the server revokes its certificate and
+        // the key is erased, so a signed-out device cannot keep using the service.
+        if let number = accountNumber, !number.isEmpty {
+            await CNSA2Enroller.shared.forget(accountNumber: number)
+        }
+        storeCNSA2Mode(false)
         AppGroupKeyStore.clearAccountNumber()
         accountNumber = nil
         accountStatus = nil
@@ -473,6 +479,18 @@ final class TunnelManager: ObservableObject {
 
         lastRegionError = nil  // clear previous error before retry
         accountNeedsReentry = false  // re-set only by THIS attempt's 401
+
+        // CNSA 2.0 mode: the region only chooses the gateway. No WireGuard provisioning.
+        if cnsa2Mode {
+            let wasActive = (status == .connected || status == .connecting || status == .reasserting)
+            selectedRegion = region
+            UserDefaults.standard.set(region.id, forKey: Self.selectedRegionUserDefaultsKey)
+            if wasActive {
+                await disconnectAndWait()
+                if let failure = await startCNSA2(regionID: region.id) { lastRegionError = failure }
+            }
+            return
+        }
 
         // Snapshot the current connection state BEFORE we touch the
         // config. If the user is currently connected (or actively
@@ -711,6 +729,11 @@ final class TunnelManager: ObservableObject {
                 if let cfgDict = (m.protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration,
                    let cfg = try? CloakConfig(dict: cfgDict) {
                     config = cfg
+                }
+                // A device that was put in CNSA 2.0 mode before the setting existed.
+                if UserDefaults.standard.object(forKey: Self.cnsa2ModeKey) == nil,
+                   (m.protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration?["cnsa2"] != nil {
+                    storeCNSA2Mode(true)
                 }
                 observeStatus(m.connection)
                 updateStatus(m.connection.status)
@@ -1076,6 +1099,10 @@ final class TunnelManager: ObservableObject {
 
     func connect() async throws {
         debugLog("connect() called, current status=\(status)")
+        if cnsa2Mode {
+            if let failure = await startCNSA2() { throw CNSA2Renewal.Failure(status: 0, message: failure) }
+            return
+        }
         // A fresh ML-KEM-768 key for every connection: run the exchange
         // again before the tunnel starts, so no post-quantum key outlives
         // one session. This also replaces a Rosenpass config left by an
@@ -1105,9 +1132,27 @@ final class TunnelManager: ObservableObject {
         return CloakRegion.byID(id)?.displayName ?? id
     }
 
-    /// True when the saved VPN configuration is the CNSA 2.0 (TLS 1.3) tunnel, not WireGuard.
-    var isCNSA2Mode: Bool {
-        ((manager?.protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration?["cnsa2"]) != nil
+    /// CNSA 2.0 mode is a setting the user turns on and off. While it is on, Connect and
+    /// the region list use the TLS 1.3 tunnel and nothing falls back to WireGuard.
+    private static let cnsa2ModeKey = "cnsa2.mode.enabled"
+    @Published private(set) var cnsa2Mode = UserDefaults.standard.bool(forKey: "cnsa2.mode.enabled")
+
+    var isCNSA2Mode: Bool { cnsa2Mode }
+
+    private func storeCNSA2Mode(_ on: Bool) {
+        cnsa2Mode = on
+        UserDefaults.standard.set(on, forKey: Self.cnsa2ModeKey)
+    }
+
+    /// Turns the mode on or off. Any running tunnel is stopped first; nothing is started.
+    /// Turning it off puts the WireGuard configuration for the selected region back.
+    func setCNSA2Mode(_ on: Bool) async {
+        guard on != cnsa2Mode else { return }
+        if status == .connected || status == .connecting || status == .reasserting {
+            await disconnectAndWait()
+        }
+        storeCNSA2Mode(on)
+        if !on, let region = selectedRegion { await selectRegion(region) }
     }
 
     /// Seconds since the running tunnel last completed a WireGuard handshake,
@@ -1377,6 +1422,7 @@ final class TunnelManager: ObservableObject {
                 accountNumber: number, regionID: regionID ?? selectedRegion?.id)
             if let routes { cfg["routes"] = routes }
             try await startCNSA2Tunnel(cfg)
+            storeCNSA2Mode(true)
             debugLog("cnsa2: tunnel start requested")
             // Renew ahead of expiry with the same key. The live tunnel keeps its current certificate.
             await renewCNSA2IfDue()

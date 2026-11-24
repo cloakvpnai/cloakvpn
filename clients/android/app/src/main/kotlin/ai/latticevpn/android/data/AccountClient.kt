@@ -317,6 +317,21 @@ class AccountClient(private val context: Context) {
             parseCnsa2Gateways(jsonOf(execute(request)))
         }
 
+    /**
+     * DELETE /v1/device/cnsa2?id=: remove this device from the account. The
+     * server revokes its certificates, so the gateways stop accepting them.
+     */
+    suspend fun removeCnsa2Device(accountNumber: String, deviceId: Long) {
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url("${LatticeApi.BASE_URL}/v1/device/cnsa2?id=$deviceId")
+                .header("Authorization", bearer(accountNumber))
+                .delete()
+                .build()
+            execute(request)
+        }
+    }
+
     private fun parseCnsa2Gateways(j: JSONObject): List<Cnsa2Gateway> {
         val gateways = mutableListOf<Cnsa2Gateway>()
         j.optJSONArray("gateways")?.let { arr ->

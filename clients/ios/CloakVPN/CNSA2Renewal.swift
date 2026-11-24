@@ -149,6 +149,22 @@ enum CNSA2Renewal {
         return parseGateways(obj["gateways"])
     }
 
+    /// Removes this device from the account. The server revokes its certificates.
+    static func removeDevice(accountNumber: String, deviceID: Int64) async throws {
+        guard let url = URL(string: "\(LatticeAPI.baseURL)/v1/device/cnsa2?id=\(deviceID)") else {
+            throw Failure(status: 0, message: "Bad API URL.")
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "DELETE"
+        req.timeoutInterval = 15
+        req.setValue("Bearer " + LatticeAPI.format(accountNumber), forHTTPHeaderField: "Authorization")
+        let (_, response) = try await URLSession(configuration: .ephemeral).data(for: req)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200...299).contains(status) || status == 404 else {
+            throw Failure(status: status, message: message(for: status))
+        }
+    }
+
     static func parseGateways(_ value: Any?) -> [CNSA2Gateway] {
         ((value as? [[String: Any]]) ?? []).compactMap { g -> CNSA2Gateway? in
             guard let host = g["host"] as? String, let name = g["name"] as? String else { return nil }

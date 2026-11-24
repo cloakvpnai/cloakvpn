@@ -111,6 +111,20 @@ actor CNSA2Enroller {
         return true
     }
 
+    /// Sign-out: removes this device from the account (which revokes its certificate on
+    /// every gateway), then erases the key, the certificate and everything saved here.
+    /// The local erase happens even if the server cannot be reached; the certificate then
+    /// simply runs out, and its key no longer exists anywhere.
+    func forget(accountNumber: String) async {
+        if let id = deviceID {
+            try? await CNSA2Renewal.removeDevice(accountNumber: accountNumber, deviceID: id)
+        }
+        CNSA2Identity.reset()
+        for key in [Key.notAfter, Key.deviceID, Key.gateway, Key.gateways, Key.root, Self.currentGatewayKey] {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     /// Enrolls, or renews with the existing key.
     func enroll(accountNumber: String) async throws {
         let reply = try await CNSA2Renewal.issue(accountNumber: accountNumber)

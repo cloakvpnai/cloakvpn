@@ -101,6 +101,19 @@ class Cnsa2Enroller(context: Context, private val api: AccountClient) {
         return config
     }
 
+    /**
+     * Sign-out: removes this device from the account (which revokes its certificate on
+     * every gateway), then erases the key, the certificate and everything saved here.
+     * The local erase happens even if the server cannot be reached; the certificate then
+     * simply runs out, and its key no longer exists anywhere.
+     */
+    suspend fun forget(accountNumber: String) = lock.withLock {
+        deviceId()?.let { id -> runCatching { api.removeCnsa2Device(accountNumber, id) } }
+        identity.reset()
+        stateFile.delete()
+        File(context.filesDir, "cnsa2/gateway.json").delete()
+    }
+
     /** The gateways the server offered last time it was asked. */
     fun gateways(): List<Cnsa2Gateway> {
         val arr = state()?.optJSONArray("gateways") ?: return emptyList()

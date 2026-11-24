@@ -373,6 +373,16 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Forget the account number, wipe the subscription's tunnel state, return to sign-in. */
     fun signOut() {
+        // Give up this device's CNSA 2.0 identity, so a signed-out phone cannot keep using the service.
+        if (cnsa2 != null) {
+            disconnect()
+            prefs.edit().putBoolean(KEY_CNSA2_MODE, false).apply()
+            _cnsa2Mode.value = false
+            _cnsa2Error.value = null
+            cnsa2Config = null
+            androidx.work.WorkManager.getInstance(getApplication()).cancelUniqueWork(Cnsa2RenewalWorker.WORK_NAME)
+            accountStore.accountNumber()?.let { number -> viewModelScope.launch { cnsa2Enroller.forget(number) } }
+        }
         tm.signOutCleanup()
         accountStore.clear()
         _accountState.value = AccountUiState.Loading
