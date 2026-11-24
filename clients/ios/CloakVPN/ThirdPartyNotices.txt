@@ -247,3 +247,16 @@ which Rosenpass is offered)
       of your accepting any such warranty or additional liability.
 
    END OF TERMS AND CONDITIONS
+
+
+================================================================================
+OpenSSL 3.5 - TLS 1.3, ML-KEM-1024, ML-DSA-87 and AES-256-GCM (CNSA 2.0 mode)
+https://www.openssl.org
+================================================================================
+
+Copyright (c) 1998-2026 The OpenSSL Project Authors
+Copyright (c) 1995-1998 Eric A. Young, Tim J. Hudson
+All rights reserved.
+
+Licensed under the Apache License, Version 2.0, the full text of which is
+included in this file.
