@@ -88,6 +88,9 @@ struct ContentView: View {
     @State private var showingImport = false
     @State private var showingFileImporter = false
     @State private var errorMsg: String?
+    #if DEBUG
+    @State private var cnsa2Busy = false
+    #endif
 
     // Runtime smoke test for the post-quantum FFI. Pressing the button
     // calls into Rust, generates a Classic McEliece-460896 + ML-KEM-768
@@ -329,6 +332,28 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.25), value: orbState)
     }
 
+    #if DEBUG
+    /// Preview builds only: enroll this iPhone if needed and connect with the CNSA 2.0 suite.
+    /// To go back to WireGuard, pick a location.
+    private var cnsa2PreviewButton: some View {
+        Button {
+            guard !cnsa2Busy else { return }
+            cnsa2Busy = true
+            Task {
+                if let failure = await tunnel.startCNSA2() { errorMsg = "CNSA 2.0 mode: \(failure)" }
+                cnsa2Busy = false
+            }
+        } label: {
+            Text(cnsa2Busy ? "Working\u{2026}" : "Connect in CNSA 2.0 mode (preview)")
+                .font(.system(size: 13, weight: .semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .overlay(Capsule().stroke(LatticeTheme.muted.opacity(0.6)))
+        }
+        .disabled(cnsa2Busy)
+    }
+    #endif
+
     /// Post-quantum status as a capsule. Same truth table as the old
     /// one-line readout: ML-KEM-768 is only called active after a
     /// completed WireGuard handshake.
@@ -485,6 +510,9 @@ struct ContentView: View {
                 signalOrb
                     .padding(.top, 8)
                 signalPQChip
+                #if DEBUG
+                cnsa2PreviewButton
+                #endif
                 signalIPCard
                 signalRegionList
                     .padding(.top, 4)
@@ -503,6 +531,9 @@ struct ContentView: View {
                 Spacer(minLength: 0)
                 signalOrb
                 signalPQChip
+                #if DEBUG
+                cnsa2PreviewButton
+                #endif
                 signalIPCard
                 Spacer(minLength: 0)
             }

@@ -17,6 +17,18 @@ struct CloakVPNApp: App {
                         try? await Task.sleep(nanoseconds: 2_000_000_000)
                         await tunnel.startCNSA2Lab(blob)
                     }
+                    // `-LatticeCNSA2Connect full` enrolls through the account API and connects,
+                    // the same as the preview button. The outcome goes to Documents for test tools.
+                    if UserDefaults.standard.string(forKey: "LatticeCNSA2Connect") != nil {
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        let failure = await tunnel.startCNSA2()
+                        if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                            try? Data((failure ?? "started").utf8).write(to: docs.appendingPathComponent("cnsa2-connect.txt"))
+                        }
+                    }
+                    // Renew the CNSA 2.0 certificate when it is in its last 10 days.
+                    try? await Task.sleep(nanoseconds: 15_000_000_000)
+                    await tunnel.renewCNSA2IfDue()
                 }
                 #endif
                 .task {
