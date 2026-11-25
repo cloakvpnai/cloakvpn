@@ -195,11 +195,8 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
             regions.select(region)
             onComplete(null)
             // A live tunnel moves to the new region's gateway.
-            if (wasUp) {
-                cnsa2?.disconnect(getApplication())
-                kotlinx.coroutines.delay(600)
-                connect()
-            }
+            // The tunnel service changes gateway in place, so traffic stays held.
+            if (wasUp) connect()
         }
     }
 
@@ -222,6 +219,10 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 _cnsa2Error.value = null
                 cnsa2Config = config
+                // No region picked yet: show the one this connection goes through.
+                if (regions.selectedRegion.value == null) {
+                    cnsa2Enroller.regionIdOf(config)?.let { LatticeRegion.byId(it) }?.let { regions.select(it) }
+                }
                 engine.connect(getApplication(), config)
                 // Renew ahead of expiry with the same key. The live tunnel keeps its current certificate.
                 // The daily background job does the same when the app is not open.

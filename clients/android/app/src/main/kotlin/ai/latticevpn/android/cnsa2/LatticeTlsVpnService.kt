@@ -106,7 +106,21 @@ class LatticeTlsVpnService : VpnService() {
     // ---- everything below runs on the engine thread ------------------------
 
     private fun start(cfg: Cnsa2Config) {
-        if (running) return
+        if (running) {
+            // Already up: a start with another gateway moves the tunnel there. The VPN
+            // interface stays in place, so traffic is held for the whole change.
+            if (cfg.host == config?.host && cfg.port == config?.port) return
+            report("changing gateway; traffic is held")
+            config = cfg
+            session?.close(now())
+            dropConnection()
+            retry?.cancel(false)
+            retry = null
+            retryDelay = RETRY_FIRST_MS
+            publish(Cnsa2State.RECONNECTING)
+            connect()
+            return
+        }
         running = true
         config = cfg
         retryDelay = RETRY_FIRST_MS
@@ -116,6 +130,7 @@ class LatticeTlsVpnService : VpnService() {
         report("starting")
         publish(Cnsa2State.CONNECTING)
         watchNetwork()
+        holdTraffic()
         connect()
     }
 
@@ -312,6 +327,34 @@ class LatticeTlsVpnService : VpnService() {
         }
     }
 
+    /**
+     * Takes all traffic into the VPN interface before the first handshake, so nothing
+     * leaves outside the tunnel while the connection is being made. Until the tunnel is
+     * up those packets are dropped. The gateway's real settings replace this interface
+     * once it has assigned them. The tunnel's own socket is protected and is not affected.
+     */
+    private fun holdTraffic() {
+        if (tun != null) return
+        try {
+            val b = Builder().setSession("Lattice VPN: CNSA 2.0").setMtu(1280).setBlocking(true)
+            b.addAddress("169.254.88.2", 32)
+            b.addRoute("0.0.0.0", 0)
+            b.addAddress("fd42:88::2", 128)
+            b.addRoute("::", 0)
+            // A resolver that is only reachable through the tunnel, so lookups wait too.
+            b.addDnsServer("9.9.9.9")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) b.setMetered(false)
+            val device = b.establish() ?: return
+            tun = device
+            tunOut = FileOutputStream(device.fileDescriptor)
+            tunSettings = null
+            Thread({ tunLoop(device) }, "cnsa2-tun-hold").start()
+            report("traffic held until the tunnel is up")
+        } catch (e: Exception) {
+            Log.w(TAG, "could not hold traffic before connecting", e)
+        }
+    }
+
     /** Reads outgoing packets for as long as the device exists; they are dropped unless the tunnel is up. */
     private fun tunLoop(device: ParcelFileDescriptor) {
         val buffer = ByteArray(65536)
@@ -325,7 +368,7 @@ class LatticeTlsVpnService : VpnService() {
                     engine.execute {
                         session?.let {
                             it.sendPacket(packet, now())
-                            txBytes += packet.size
+                            if (tunSettings != null) txBytes += packet.size
                         }
                     }
                 }

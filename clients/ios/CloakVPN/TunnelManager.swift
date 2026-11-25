@@ -396,9 +396,22 @@ final class TunnelManager: ObservableObject {
         selectedRegion = region
         UserDefaults.standard.set(region.id, forKey: Self.selectedRegionUserDefaultsKey)
         if wasActive {
+            // Change gateway inside the running tunnel, so nothing leaves outside it
+            // during the change. Only if that is not possible, restart the tunnel.
+            if status == .connected, await switchGatewayInTunnel(regionID: region.id) { return }
             await disconnectAndWait()
             if let failure = await startCNSA2(regionID: region.id) { lastRegionError = failure }
         }
+    }
+
+    private func switchGatewayInTunnel(regionID: String) async -> Bool {
+        guard let number = accountNumber, !number.isEmpty,
+              let cfg = try? await CNSA2Enroller.shared.configuration(accountNumber: number, regionID: regionID),
+              let body = try? JSONSerialization.data(withJSONObject: cfg),
+              let answer = try? await Self.sendProviderMessageAsync(Data([0x02]) + body, manager: manager) else { return false }
+        let accepted = String(data: answer, encoding: .utf8) == "ok"
+        debugLog("cnsa2: gateway change inside the tunnel \(accepted ? "accepted" : "refused")")
+        return accepted
     }
 
     /// Disconnect and poll until the tunnel is actually `.disconnected`, then a
@@ -744,7 +757,13 @@ final class TunnelManager: ObservableObject {
         proto.providerBundleIdentifier = Self.providerBundleIdentifier
         proto.serverAddress = (cfg["host"] as? String) ?? "cnsa2"
         proto.providerConfiguration = ["cnsa2": cfg]
-        proto.includeAllNetworks = false
+        // A full tunnel asks the system itself to drop anything that would leave outside
+        // the tunnel, including while connecting and while settings change. Devices on
+        // the local network (printers, AirPlay) stay reachable. A tunnel limited to
+        // chosen routes (used for testing) leaves the rest of the traffic alone.
+        let fullTunnel = (cfg["routes"] as? [String])?.contains("0.0.0.0/0") ?? true
+        proto.includeAllNetworks = fullTunnel
+        proto.excludeLocalNetworks = true
         m.protocolConfiguration = proto
         m.localizedDescription = "LATTICE VPN"
         m.isEnabled = true

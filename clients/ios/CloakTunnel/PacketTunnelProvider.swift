@@ -72,6 +72,17 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             }
             return
         }
+        // Opcode 0x02: move to another gateway. The rest of the message is the new configuration.
+        if messageData.first == 0x02, let controller = cnsa2 {
+            guard let cfg = (try? JSONSerialization.jsonObject(with: messageData.dropFirst())) as? [String: Any] else {
+                completionHandler(Data("no".utf8))
+                return
+            }
+            controller.switchGateway(cfg) { accepted in
+                completionHandler(Data((accepted ? "ok" : "no").utf8))
+            }
+            return
+        }
         guard messageData.first == 0x00, let controller = cnsa2 else {
             completionHandler(Data([0xFF]))
             return

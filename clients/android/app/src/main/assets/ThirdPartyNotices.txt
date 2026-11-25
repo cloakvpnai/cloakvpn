@@ -56,6 +56,14 @@ Copyright (c) Google LLC
 Licensed under the Apache License, Version 2.0 (below).
 
 ================================================================================
+Natural Earth
+https://www.naturalearthdata.com
+================================================================================
+
+The outline of the land on the globe is made with Natural Earth 1:110m land data.
+Natural Earth map data is in the public domain.
+
+================================================================================
 THE APACHE LICENSE, VERSION 2.0
 ================================================================================
 

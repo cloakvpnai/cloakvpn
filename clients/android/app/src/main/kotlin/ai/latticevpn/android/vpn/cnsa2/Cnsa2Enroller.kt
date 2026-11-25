@@ -139,6 +139,9 @@ class Cnsa2Enroller(context: Context, private val api: AccountClient) {
      * With no region chosen, or before the gateway list has ever been fetched, the
      * gateway saved at enrollment is used. There is no silent substitute otherwise.
      */
+    /** The region whose gateway [config] points at, if it is one of the offered gateways. */
+    fun regionIdOf(config: Cnsa2Config): String? = gateways().firstOrNull { it.host == config.host && it.port == config.port }?.id
+
     fun configFor(regionId: String?): Cnsa2Config? {
         val base = Cnsa2Config.load(context) ?: return null
         val offered = gateways()

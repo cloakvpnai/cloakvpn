@@ -40,6 +40,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import kotlin.math.abs
+import kotlin.math.atan2
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -354,36 +357,19 @@ private fun DrawScope.drawGlobe(land: GlobeLand, view: GlobeView, selectedRegion
 
     val disk = Path().apply { addOval(androidx.compose.ui.geometry.Rect(center.x - radius, center.y - radius, center.x + radius, center.y + radius)) }
     clipPath(disk) {
-        // Land. Points on the far side are moved to the edge of the disk, so a continent
-        // that runs over the horizon is cut off along it.
-        val path = Path().apply { fillType = PathFillType.EvenOdd }
-        var scratch = FloatArray(512)
+        // Land. Each outline is cut where it crosses the horizon and closed along the
+        // edge of the disk, so a continent that runs over the horizon ends at it.
+        val path = Path()
+        val points = HorizonClipper()
         for (ring in land.rings) {
-            val n = ring.lon.size
-            if (scratch.size < n * 2) scratch = FloatArray(n * 2)
-            var count = 0
-            var anyVisible = false
-            for (i in 0 until n) {
-                val p = view.project(ring.lon[i], ring.sinLat[i], ring.cosLat[i])
-                var x = p.x
-                var y = p.y
-                if (p.z < 0f) {
-                    val len = sqrt(x * x + y * y)
-                    if (len < 1e-4f) continue
-                    x /= len
-                    y /= len
-                } else {
-                    anyVisible = true
-                }
-                scratch[count++] = center.x + radius * x
-                scratch[count++] = center.y - radius * y
-            }
-            // A ring wholly on the far side shows nothing.
-            if (!anyVisible || count < 6) continue
-            path.moveTo(scratch[0], scratch[1])
+            points.clip(ring, view)
+            val count = points.count
+            if (count < 6) continue
+            val xy = points.xy
+            path.moveTo(center.x + radius * xy[0], center.y - radius * xy[1])
             var k = 2
             while (k < count) {
-                path.lineTo(scratch[k], scratch[k + 1])
+                path.lineTo(center.x + radius * xy[k], center.y - radius * xy[k + 1])
                 k += 2
             }
             path.close()
@@ -428,6 +414,67 @@ private fun DrawScope.drawGlobe(land: GlobeLand, view: GlobeView, selectedRegion
     }
 }
 
+/**
+ * Cuts one land outline to the visible half of the globe. The result is in [xy] as
+ * unit-disk coordinates (x right, y up), [count] floats long. Where the outline goes
+ * behind the horizon and comes back, the gap is closed along the edge of the disk by
+ * the shorter way round.
+ */
+internal class HorizonClipper {
+    var xy = FloatArray(1024)
+        private set
+    var count = 0
+        private set
+
+    private fun add(x: Float, y: Float) {
+        if (count + 2 > xy.size) xy = xy.copyOf(xy.size * 2)
+        xy[count++] = x
+        xy[count++] = y
+    }
+
+    fun clip(ring: GlobeLand.Ring, view: GlobeView) {
+        count = 0
+        val n = ring.lon.size
+        var start = -1
+        for (i in 0 until n) {
+            if (view.project(ring.lon[i], ring.sinLat[i], ring.cosLat[i]).z >= 0f) { start = i; break }
+        }
+        if (start < 0) return // wholly on the far side
+        var prev = view.project(ring.lon[start], ring.sinLat[start], ring.cosLat[start])
+        var px = prev.x; var py = prev.y; var pz = prev.z
+        add(px, py)
+        var exitAngle = 0f
+        for (step in 1..n) {
+            val i = (start + step) % n
+            val cur = view.project(ring.lon[i], ring.sinLat[i], ring.cosLat[i])
+            val cx = cur.x; val cy = cur.y; val cz = cur.z
+            if (pz >= 0f && cz >= 0f) {
+                if (step < n) add(cx, cy)
+            } else if (pz >= 0f) {
+                // going behind the horizon: stop at the edge
+                val t = pz / (pz - cz)
+                val angle = atan2(py + (cy - py) * t, px + (cx - px) * t)
+                add(cos(angle), sin(angle))
+                exitAngle = angle
+            } else if (cz >= 0f) {
+                // coming back: follow the edge from where the outline left it
+                val t = pz / (pz - cz)
+                val angle = atan2(py + (cy - py) * t, px + (cx - px) * t)
+                var sweep = angle - exitAngle
+                while (sweep > PI) sweep -= (2 * PI).toFloat()
+                while (sweep < -PI) sweep += (2 * PI).toFloat()
+                val pieces = max(1, (abs(sweep) / 0.09f).toInt())
+                for (j in 1..pieces) {
+                    val at = exitAngle + sweep * j / pieces
+                    add(cos(at), sin(at))
+                }
+                if (step < n) add(cx, cy)
+            }
+            px = cx; py = cy; pz = cz
+        }
+    }
+}
+
 // ---- Header, tiles and the popped-out detail ---------------------------------
 
 @Composable
@@ -458,9 +505,9 @@ private fun GlobeTiles(lit: Boolean, stats: Cnsa2Stats, connected: Boolean, open
     val now by sessionClock()
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         GlobeFact("SESSION", sessionText(connected, stats, now), lit, open == GlobeTile.SESSION, Modifier.weight(1f)) { onTap(GlobeTile.SESSION) }
-        GlobeFact("DOWN / UP", trafficText(connected, stats), lit, open == GlobeTile.TRAFFIC, Modifier.weight(1.25f)) { onTap(GlobeTile.TRAFFIC) }
+        GlobeFact("DOWN / UP", tileTraffic(connected, stats), lit, open == GlobeTile.TRAFFIC, Modifier.weight(1.25f)) { onTap(GlobeTile.TRAFFIC) }
         GlobeFact("LATENCY", latencyText(connected, stats), lit, open == GlobeTile.LATENCY, Modifier.weight(0.85f)) { onTap(GlobeTile.LATENCY) }
-        GlobeFact("NEW KEYS", keysText(connected, stats), lit, open == GlobeTile.KEYS, Modifier.weight(1.1f)) { onTap(GlobeTile.KEYS) }
+        GlobeFact("NEW KEYS", keysText(connected, stats).removePrefix("Every "), lit, open == GlobeTile.KEYS, Modifier.weight(1.1f)) { onTap(GlobeTile.KEYS) }
     }
 }
 
@@ -473,13 +520,17 @@ private fun GlobeFact(label: String, value: String, lit: Boolean, isOpen: Boolea
             .background(GlobePanelFill.copy(alpha = if (isOpen) 0.95f else 0.82f))
             .border(1.dp, if (isOpen) LatticeMint.copy(alpha = 0.7f) else Color.Transparent, RoundedCornerShape(10.dp))
             .clickable(onClickLabel = if (isOpen) "Close the detail" else "Show more detail", onClick = onTap)
-            .padding(horizontal = 8.dp, vertical = 7.dp),
+            .padding(horizontal = 6.dp, vertical = 7.dp),
     ) {
-        Text(label, color = if (isOpen) LatticeMint else LatticeOnSurfaceMuted, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.8.sp, maxLines = 1)
+        // Sized in fixed units: four tiles share one row, so the text must not grow
+        // with the phone's font setting. The detail that pops out does grow.
+        val labelSize = with(LocalDensity.current) { 8.5.dp.toSp() }
+        val valueSize = with(LocalDensity.current) { 10.5.dp.toSp() }
+        Text(label, color = if (isOpen) LatticeMint else LatticeOnSurfaceMuted, fontSize = labelSize, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
         Text(
             value,
             color = if (lit) Color(0xFFBFF3DC) else LatticeOnSurface,
-            fontSize = 11.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace,
+            fontSize = valueSize, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace,
             maxLines = 1, overflow = TextOverflow.Clip, softWrap = false,
         )
     }
@@ -603,6 +654,17 @@ internal fun sessionText(connected: Boolean, stats: Cnsa2Stats, nowMillis: Long)
 
 internal fun trafficText(connected: Boolean, stats: Cnsa2Stats): String =
     if (!connected) "--" else "${formatBytes(stats.rxBytes)} / ${formatBytes(stats.txBytes)}"
+
+/** Short form for the tile, for example "1.5M / 250K". The detail shows the full figures. */
+internal fun tileTraffic(connected: Boolean, stats: Cnsa2Stats): String =
+    if (!connected) "--" else "${shortBytes(stats.rxBytes)} / ${shortBytes(stats.txBytes)}"
+
+internal fun shortBytes(bytes: Long): String = when {
+    bytes < 1_000_000L -> "${max(0L, bytes) / 1000}K"
+    bytes < 100_000_000L -> "%.1fM".format(bytes / 1_000_000.0)
+    bytes < 1_000_000_000L -> "${bytes / 1_000_000}M"
+    else -> "%.1fG".format(bytes / 1_000_000_000.0)
+}
 
 internal fun latencyText(connected: Boolean, stats: Cnsa2Stats): String =
     if (!connected || stats.latencyMs <= 0) "--" else "${stats.latencyMs} ms"

@@ -81,8 +81,22 @@ final class CNSA2TunnelController {
                 self.identity = identity
                 self.rekeyInterval = rekey
                 self.startCompletion = completion
-                try self.connect()
-                if cfg["clientKeyPKCS8"] == nil { self.scheduleRenewal() }
+                let begin = { [self] in
+                    do {
+                        try self.connect()
+                        if cfg["clientKeyPKCS8"] == nil { self.scheduleRenewal() }
+                    } catch {
+                        os_log("cnsa2: start failed: %{public}s", log: self.log, type: .error, String(describing: error))
+                        self.teardown()
+                        self.startCompletion = nil
+                        completion(error)
+                    }
+                }
+                // A full tunnel takes all traffic before the first handshake, so nothing leaves
+                // outside it while the connection is being made. A tunnel limited to chosen
+                // routes (used for testing) starts as before.
+                let fullTunnel = (cfg["routes"] as? [String])?.contains("0.0.0.0/0") ?? true
+                if fullTunnel { self.holdTraffic(then: begin) } else { begin() }
             } catch {
                 os_log("cnsa2: start failed: %{public}s", log: self.log, type: .error, String(describing: error))
                 self.teardown()
@@ -116,6 +130,35 @@ final class CNSA2TunnelController {
               let certificate = CNSA2Identity.certificate(),
               let key = try? CNSA2Identity.privateKeyPKCS8() else { return }
         identity = TunnelIdentity(caDER: ca, certificateDER: certificate, privateKeyPKCS8: key, gatewayName: name)
+    }
+
+    /// Routes all traffic into the tunnel interface before there is a connection. Until
+    /// the handshake finishes nothing reads those packets, so they go nowhere. The
+    /// tunnel's own socket to the gateway is not affected: the system keeps a tunnel
+    /// extension's own traffic outside its tunnel. The gateway's real settings replace
+    /// these once it has assigned them.
+    private func holdTraffic(then begin: @escaping () -> Void) {
+        let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: host)
+        let v4 = NEIPv4Settings(addresses: ["169.254.88.2"], subnetMasks: ["255.255.255.255"])
+        v4.includedRoutes = [NEIPv4Route.default()]
+        settings.ipv4Settings = v4
+        let v6 = NEIPv6Settings(addresses: ["fd42:88::2"], networkPrefixLengths: [128])
+        v6.includedRoutes = [NEIPv6Route.default()]
+        settings.ipv6Settings = v6
+        settings.mtu = 1280
+        // Name resolvers that are only reachable through the tunnel, so lookups wait too.
+        settings.dnsSettings = NEDNSSettings(servers: (config["dns"] as? [String]) ?? ["9.9.9.9", "149.112.112.112"])
+        provider?.setTunnelNetworkSettings(settings) { [weak self] error in
+            guard let self else { return }
+            self.queue.async {
+                if let error {
+                    os_log("cnsa2: could not hold traffic before connecting: %{public}s", log: self.log, type: .error, String(describing: error))
+                } else {
+                    os_log("cnsa2: traffic held until the tunnel is up", log: self.log, type: .info)
+                }
+                begin()
+            }
+        }
     }
 
     private func connect() throws {
@@ -250,6 +293,39 @@ final class CNSA2TunnelController {
         retryDelay = 1
         provider?.reasserting = true
         if !retryPending { do { try connect() } catch { teardown(); scheduleRetry(String(describing: error)) } }
+    }
+
+    /// Moves the running tunnel to another gateway without taking the tunnel down, so
+    /// the system keeps holding traffic for the whole change. Answers false if the
+    /// tunnel is not in a state to do it; the app then restarts the tunnel instead.
+    func switchGateway(_ cfg: [String: Any], completion: @escaping (Bool) -> Void) {
+        queue.async { [self] in
+            guard everConnected, !stopping, config["clientKeyPKCS8"] == nil,
+                  let newHost = cfg["host"] as? String, cfg["gatewayID"] is String,
+                  (cfg["caDER"] as? String).flatMap({ Data(base64Encoded: $0) }) != nil else {
+                completion(false)
+                return
+            }
+            os_log("cnsa2: changing gateway; traffic is held", log: log, type: .info)
+            provider?.reasserting = true
+            session?.close(now: now())
+            // let the exit notice leave before the socket closes
+            queue.asyncAfter(deadline: .now() + 0.3) { [self] in
+                guard !stopping else { completion(false); return }
+                teardown()
+                var next = cfg
+                if let routes = config["routes"] { next["routes"] = routes }
+                config = next
+                host = newHost
+                port = (cfg["port"] as? NSNumber)?.intValue ?? 1194
+                if let r = (cfg["rekeySeconds"] as? NSNumber)?.doubleValue, r >= 10 { rekeyInterval = r }
+                retryDelay = 1
+                if !retryPending {
+                    do { try connect() } catch { teardown(); scheduleRetry(String(describing: error)) }
+                }
+                completion(true)
+            }
+        }
     }
 
     private func watchPath() {

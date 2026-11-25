@@ -70,4 +70,43 @@ class GlobeMathTest {
         assertEquals("2 so far", keysText(true, stats))
         assertEquals("Every 10 min", keysText(true, stats.copy(keyChanges = 0)))
     }
+
+    private fun square(lonDeg: Float, latDeg: Float, half: Float): GlobeLand.Ring {
+        val corners = listOf(-half to -half, half to -half, half to half, -half to half)
+        val lon = FloatArray(4) { Math.toRadians((lonDeg + corners[it].first).toDouble()).toFloat() }
+        val lat = DoubleArray(4) { Math.toRadians((latDeg + corners[it].second).toDouble()) }
+        return GlobeLand.Ring(lon, FloatArray(4) { kotlin.math.sin(lat[it]).toFloat() }, FloatArray(4) { kotlin.math.cos(lat[it]).toFloat() })
+    }
+
+    @Test
+    fun outlinesAreCutAtTheHorizon() {
+        val view = GlobeView(0f, 0f)
+        val clipper = HorizonClipper()
+
+        // wholly in view: the four corners, untouched
+        clipper.clip(square(0f, 0f, 10f), view)
+        assertEquals(8, clipper.count)
+
+        // wholly on the far side: nothing
+        clipper.clip(square(180f, 0f, 10f), view)
+        assertEquals(0, clipper.count)
+
+        // across the horizon: closed along the edge, and never outside the disk
+        clipper.clip(square(90f, 0f, 20f), view)
+        assertTrue(clipper.count >= 8)
+        var onEdge = 0
+        for (k in 0 until clipper.count step 2) {
+            val r = kotlin.math.hypot(clipper.xy[k], clipper.xy[k + 1])
+            assertTrue(r <= 1.0001f)
+            if (r > 0.999f) onEdge++
+        }
+        assertTrue(onEdge >= 2)
+    }
+
+    @Test
+    fun tileTrafficIsShort() {
+        assertEquals("13K / 5K", tileTraffic(true, Cnsa2Stats(rxBytes = 13_400, txBytes = 5_900)))
+        assertEquals("1.5M / 250K", tileTraffic(true, Cnsa2Stats(rxBytes = 1_500_000, txBytes = 250_000)))
+        assertEquals("--", tileTraffic(false, Cnsa2Stats()))
+    }
 }
