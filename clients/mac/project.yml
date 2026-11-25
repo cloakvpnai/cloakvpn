@@ -76,8 +76,9 @@ targets:
       - path: ../ios/CloakVPN/StoreManager.swift
       - path: ../ios/CloakVPN/Region.swift
       - path: ../ios/CloakVPN/SubscriptionInfo.swift
+      - path: ../ios/CloakVPN/ThirdPartyNotices.txt
+        buildPhase: resources
       - path: ../ios/CloakVPN/LatticeGlobeView.swift
-      - path: ../ios/CloakVPN/LatticePing.swift
 
     # ---- Info.plist (FULL contents declared inline) -----------
     info:
@@ -166,7 +167,6 @@ targets:
       # Shared PTP logic from iOS (target-membership cross-cut)
       - path: ../ios/CloakTunnel/PacketTunnelProvider.swift
       - path: ../ios/CloakTunnel/CNSA2Tunnel.swift
-      - path: ../ios/CloakVPN/LatticePing.swift
       # CNSA 2.0 tunnel client (TLS 1.3). The C file is the only code that
       # touches OpenSSL; build it first with ../apple-tls/build-openssl.sh.
       - path: ../apple-tls/Sources/LatticeTLS
@@ -203,11 +203,6 @@ targets:
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
-        # wireguard-go binds its own UDP socket. Under App Sandbox a bind
-        # needs the server entitlement; without it the tunnel comes up with
-        # no socket ("Unable to update bind: ... operation not permitted")
-        # and never sends a handshake.
-        com.apple.security.network.server: true
         com.apple.developer.networking.networkextension:
           - packet-tunnel-provider
         com.apple.security.application-groups:

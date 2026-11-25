@@ -1,74 +1,23 @@
-LATTICE VPN — OPEN-SOURCE ACKNOWLEDGEMENTS
+LATTICE VPN - OPEN-SOURCE ACKNOWLEDGEMENTS
 
-Lattice VPN is built on open-source software. We gratefully acknowledge the
-following projects and reproduce their license and attribution notices below,
-as required by their licenses.
-
-================================================================================
-WireGuard
-================================================================================
-Copyright (C) Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
-"WireGuard" and the "WireGuard" logo are registered trademarks of
-Jason A. Donenfeld.
-
-Used as the encrypted data-plane tunnel. On iOS via WireGuardKit (the
-wireguard-apple library, Mullvad VPN AB fork) and wireguard-go; on Android via
-com.wireguard.android:tunnel. wireguard-go and WireGuardKit are provided under
-the MIT License (below). The com.wireguard.android:tunnel library is provided
-under the Apache License, Version 2.0 (below).
-
-https://www.wireguard.com
+Lattice VPN includes open-source software. The projects are listed below with
+their copyright notices, followed by the full text of each license.
 
 ================================================================================
-Rosenpass
-================================================================================
-Copyright (c) The Rosenpass Project and contributors.
-
-Used as the post-quantum-secure key exchange that supplies WireGuard's
-pre-shared key. Rosenpass is dual-licensed under the Apache License, Version
-2.0 and the MIT License; you may use it under the terms of either (both
-reproduced below).
-
-https://rosenpass.eu  ·  https://github.com/rosenpass/rosenpass
-
-================================================================================
-liboqs (Open Quantum Safe)
-================================================================================
-Copyright (c) The Open Quantum Safe project and contributors.
-
-Provides the post-quantum cryptographic primitives (e.g. Classic McEliece)
-used by Rosenpass. Provided under the MIT License (below).
-
-https://openquantumsafe.org  ·  https://github.com/open-quantum-safe/liboqs
-
-================================================================================
-THE MIT LICENSE
-(applies to wireguard-go, WireGuardKit/wireguard-apple, and liboqs, and is one
-of the two options under which Rosenpass is offered)
+OpenSSL 3.5
+https://www.openssl.org
 ================================================================================
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Copyright (c) 1998-2026 The OpenSSL Project Authors
+Copyright (c) 1995-1998 Eric A. Young, Tim J. Hudson
+All rights reserved.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Used for TLS 1.3 and for the cryptographic algorithms of the tunnel: ML-KEM-1024,
+ML-DSA-87, AES-256-GCM and SHA-384. Licensed under the Apache License,
+Version 2.0 (below).
 
 ================================================================================
 THE APACHE LICENSE, VERSION 2.0
-(applies to com.wireguard.android:tunnel, and is one of the two options under
-which Rosenpass is offered)
 ================================================================================
 
                                  Apache License
@@ -247,16 +196,3 @@ which Rosenpass is offered)
       of your accepting any such warranty or additional liability.
 
    END OF TERMS AND CONDITIONS
-
-
-================================================================================
-OpenSSL 3.5 - TLS 1.3, ML-KEM-1024, ML-DSA-87 and AES-256-GCM (CNSA 2.0 mode)
-https://www.openssl.org
-================================================================================
-
-Copyright (c) 1998-2026 The OpenSSL Project Authors
-Copyright (c) 1995-1998 Eric A. Young, Tim J. Hudson
-All rights reserved.
-
-Licensed under the Apache License, Version 2.0, the full text of which is
-included in this file.

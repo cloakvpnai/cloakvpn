@@ -450,6 +450,16 @@ private struct SubscriptionStatusContent: View {
 
 struct AboutSettingsView: View {
     @Environment(\.openURL) private var openURL
+    @State private var showLicenses = false
+
+    /// The license notices shipped inside the app.
+    private static let notices: String = {
+        guard let url = Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: "txt"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else {
+            return "Lattice VPN includes OpenSSL, used under the Apache License, Version 2.0. The full license text could not be loaded; see latticevpn.ai."
+        }
+        return text
+    }()
 
     var body: some View {
         LatticePage {
@@ -463,6 +473,17 @@ struct AboutSettingsView: View {
                     if let url = URL(string: "mailto:support@latticevpn.ai") { openURL(url) }
                 }
                 .buttonStyle(.link)
+            }
+            LatticeCard("Open-source software") {
+                Text("Lattice VPN includes OpenSSL, used under the Apache License, Version 2.0.")
+                    .foregroundStyle(.secondary)
+                Button(showLicenses ? "Hide licenses" : "Show licenses") { showLicenses.toggle() }
+                if showLicenses {
+                    Text(Self.notices)
+                        .font(.system(size: 15, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
         .latticePage()

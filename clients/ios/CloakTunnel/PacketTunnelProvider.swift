@@ -65,17 +65,13 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler: ((Data?) -> Void)? = nil
     ) {
         guard let completionHandler else { return }
-        #if os(macOS)
-        // Opcode 0x01: time one echo to the gateway through the tunnel. The Mac app asks
-        // the extension to do it because the app's sandbox does not let the reply in.
-        if messageData.first == 0x01, cnsa2 != nil {
-            Task {
-                let trip = await LatticePing.roundTrip(to: LatticePing.gatewayInTunnel)
+        // Opcode 0x01: time one echo to the gateway through the tunnel.
+        if messageData.first == 0x01, let controller = cnsa2 {
+            controller.measureLatency { trip in
                 completionHandler(Data(String(trip ?? -1).utf8))
             }
             return
         }
-        #endif
         guard messageData.first == 0x00, let controller = cnsa2 else {
             completionHandler(Data([0xFF]))
             return

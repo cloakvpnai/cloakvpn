@@ -7,8 +7,7 @@ import LatticeTLS
 #endif
 
 /// Runs the CNSA 2.0 tunnel (TLS 1.3, see clients/apple-tls) inside the packet tunnel
-/// extension, as an alternative to the WireGuard path. Selected when the provider
-/// configuration carries a "cnsa2" dictionary:
+/// extension. The provider configuration carries a "cnsa2" dictionary:
 ///   host, port, gatewayID                    strings / number (gatewayID is the name in the gateway certificate)
 ///   caDER                                    base64
 ///   clientCertDER, clientKeyPKCS8            base64, lab only; normally the device's own enrolled identity is used
@@ -127,6 +126,7 @@ final class CNSA2TunnelController {
         let fd = self.fd
         s.send = { d in _ = d.withUnsafeBytes { Darwin.send(fd, $0.baseAddress, $0.count, 0) } }
         s.onPacket = { [weak self] packet in
+            if self?.takeEchoReply(packet) == true { return }
             self?.receivedBytes &+= UInt64(packet.count)
             let family = (packet.first ?? 0) >> 4 == 6 ? AF_INET6 : AF_INET
             self?.provider?.packetFlow.writePackets([packet], withProtocols: [NSNumber(value: family)])
@@ -379,6 +379,72 @@ final class CNSA2TunnelController {
                 self.pump()
             }
         }
+    }
+
+    // MARK: Latency
+
+    /// The gateway's own address inside every CNSA 2.0 tunnel.
+    private static let gatewayInTunnel: [UInt8] = [10, 88, 0, 1]
+    private var echoToken: [UInt8]?
+    private var echoSentAt: TimeInterval = 0
+    private var echoCompletion: ((TimeInterval?) -> Void)?
+
+    /// Times one echo to the gateway and back. The request is built here and sent
+    /// straight down the tunnel, and the reply is picked out of the tunnel's incoming
+    /// packets, so no socket and no extra permission is involved.
+    func measureLatency(completion: @escaping (TimeInterval?) -> Void) {
+        queue.async { [self] in
+            guard let s = session, echoToken == nil,
+                  let source = appliedSettings?.address.split(separator: ".").compactMap({ UInt8($0) }), source.count == 4 else {
+                completion(nil)
+                return
+            }
+            let token = (0..<8).map { _ in UInt8.random(in: 0...255) }
+            // Echo request: type 8, code 0, checksum, identifier, sequence, then the token.
+            var icmp: [UInt8] = [8, 0, 0, 0, UInt8.random(in: 0...255), UInt8.random(in: 0...255), 0, 1] + token
+            let icmpSum = Self.checksum(icmp)
+            icmp[2] = UInt8(icmpSum >> 8)
+            icmp[3] = UInt8(icmpSum & 0xff)
+            var ip: [UInt8] = [0x45, 0, 0, UInt8(20 + icmp.count), UInt8.random(in: 0...255), UInt8.random(in: 0...255),
+                               0, 0, 64, 1, 0, 0] + source + Self.gatewayInTunnel
+            let ipSum = Self.checksum(ip)
+            ip[10] = UInt8(ipSum >> 8)
+            ip[11] = UInt8(ipSum & 0xff)
+            echoToken = token
+            echoSentAt = now()
+            echoCompletion = completion
+            s.sendPacket(Data(ip + icmp), now: echoSentAt)
+            queue.asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self, self.echoToken == token else { return }
+                self.finishEcho(nil)
+            }
+        }
+    }
+
+    private func finishEcho(_ trip: TimeInterval?) {
+        let completion = echoCompletion
+        echoToken = nil
+        echoCompletion = nil
+        completion?(trip)
+    }
+
+    /// True when `packet` is the reply to the echo in flight. It is then kept from the system.
+    private func takeEchoReply(_ packet: Data) -> Bool {
+        guard let token = echoToken, packet.count >= 36 else { return false }
+        let b = [UInt8](packet.prefix(80))
+        guard b[0] >> 4 == 4, b[9] == 1 else { return false }
+        let header = Int(b[0] & 0x0f) * 4
+        guard b.count >= header + 16, b[header] == 0, Array(b[(header + 8)..<(header + 16)]) == token else { return false }
+        finishEcho(now() - echoSentAt)
+        return true
+    }
+
+    private static func checksum(_ bytes: [UInt8]) -> UInt16 {
+        var sum: UInt32 = 0
+        for i in stride(from: 0, to: bytes.count - 1, by: 2) { sum += UInt32(bytes[i]) << 8 | UInt32(bytes[i + 1]) }
+        if bytes.count % 2 == 1 { sum += UInt32(bytes[bytes.count - 1]) << 8 }
+        while sum >> 16 != 0 { sum = (sum & 0xffff) + (sum >> 16) }
+        return ~UInt16(truncatingIfNeeded: sum)
     }
 
     private static func subnetRoute(address: String, netmask: String) -> NEIPv4Route? {

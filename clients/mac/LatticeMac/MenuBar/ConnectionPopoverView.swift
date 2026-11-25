@@ -58,8 +58,7 @@ struct ConnectionPopoverView: View {
                              connectedSince: connection.connectedSince,
                              loadStats: { await connection.sessionStats() },
                              onPick: { region in Task { await connection.connect(to: RegionSummary(region)) } },
-                             scale: 1.45,
-                             loadLatency: { await connection.gatewayLatency() })
+                             scale: 1.45)
                 .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
         }
         }

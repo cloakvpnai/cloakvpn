@@ -2,8 +2,7 @@
 //
 // Lattice VPN — open-source acknowledgements screen.
 //
-// Displays the bundled ThirdPartyNotices.txt (WireGuard, Rosenpass, liboqs,
-// and their MIT / Apache-2.0 license texts). Required to comply with the
+// Displays the bundled ThirdPartyNotices.txt (OpenSSL and the Apache-2.0 license text). Required to comply with the
 // attribution terms of those licenses. Pure in-app text — no external links.
 
 import SwiftUI

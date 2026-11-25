@@ -37,7 +37,7 @@ import kotlinx.coroutines.withContext
 /**
  * Open-source acknowledgements screen — Android counterpart of the iOS
  * `AcknowledgementsView` (build 109). Displays the bundled
- * `assets/ThirdPartyNotices.txt` (WireGuard, Rosenpass, liboqs, and their
+ * `assets/ThirdPartyNotices.txt` (OpenSSL, Bouncy Castle, OkHttp, Kotlin, AndroidX, and their
  * MIT / Apache-2.0 license texts). Required to comply with the attribution
  * terms of those licenses. Pure in-app text — no external links.
  */

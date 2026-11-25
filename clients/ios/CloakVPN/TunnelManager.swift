@@ -512,16 +512,13 @@ final class TunnelManager: ObservableObject {
     var connectedSince: Date? { manager?.connection.connectedDate }
 
     /// Traffic and key changes for the running session, asked of the tunnel extension.
-    /// Round trip to the gateway through the tunnel, in seconds.
+    /// Round trip to the gateway through the tunnel, in seconds. The tunnel extension
+    /// measures it, with an echo it sends down the tunnel itself.
     func gatewayLatency() async -> TimeInterval? {
-        guard status == .connected else { return nil }
-        #if os(macOS)
-        guard let data = try? await Self.sendProviderMessageAsync(Data([0x01]), manager: manager),
+        guard status == .connected,
+              let data = try? await Self.sendProviderMessageAsync(Data([0x01]), manager: manager),
               let text = String(data: data, encoding: .utf8), let trip = Double(text), trip > 0 else { return nil }
         return trip
-        #else
-        return await LatticePing.roundTrip(to: LatticePing.gatewayInTunnel)
-        #endif
     }
 
     func cnsa2SessionStats() async -> CNSA2SessionStats? {
@@ -534,9 +531,11 @@ final class TunnelManager: ObservableObject {
             if parts.count == 2 { values[String(parts[0])] = String(parts[1]) }
         }
         guard values["mode"] == "cnsa2" else { return nil }
-        return CNSA2SessionStats(received: UInt64(values["cnsa2_rx_bytes"] ?? "") ?? 0,
-                                 sent: UInt64(values["cnsa2_tx_bytes"] ?? "") ?? 0,
-                                 keyChanges: Int(values["cnsa2_rekeys"] ?? "") ?? 0)
+        var stats = CNSA2SessionStats(received: UInt64(values["cnsa2_rx_bytes"] ?? "") ?? 0,
+                                      sent: UInt64(values["cnsa2_tx_bytes"] ?? "") ?? 0,
+                                      keyChanges: Int(values["cnsa2_rekeys"] ?? "") ?? 0)
+        stats.latency = await gatewayLatency()
+        return stats
     }
 
     /// Seconds since the running tunnel last completed its handshake,
@@ -923,6 +922,8 @@ struct CNSA2SessionStats: Equatable {
     let received: UInt64
     let sent: UInt64
     let keyChanges: Int
+    /// Round trip to the gateway, in seconds, when it could be measured.
+    var latency: TimeInterval? = nil
 }
 
 /// Errors the tunnel manager raises on its own account.

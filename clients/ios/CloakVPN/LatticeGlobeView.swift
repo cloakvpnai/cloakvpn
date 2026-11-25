@@ -31,8 +31,6 @@ struct LatticeGlobeView: View {
     let onPick: (CloakRegion) -> Void
     /// Text size multiplier. The Mac window uses larger text than the phone.
     var scale: CGFloat = 1
-    /// How to measure the round trip to the exit. Nil means an echo sent from the app.
-    var loadLatency: (() async -> TimeInterval?)? = nil
 
     private func f(_ size: CGFloat) -> CGFloat { size * scale }
 
@@ -97,7 +95,7 @@ struct LatticeGlobeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(LatticeTheme.border, lineWidth: 1))
         .task(id: isConnected) {
-            // Ask the tunnel for its counters and time one echo to the exit, every few
+            // Ask the tunnel for its counters and its latency to the exit, every few
             // seconds, for as long as this panel is on screen and the tunnel is up.
             stats = nil
             latency = nil
@@ -105,9 +103,7 @@ struct LatticeGlobeView: View {
             guard isConnected else { return }
             while !Task.isCancelled {
                 stats = await loadStats()
-                let measured: TimeInterval?
-                if let loadLatency { measured = await loadLatency() } else { measured = await LatticePing.roundTrip(to: LatticePing.gatewayInTunnel) }
-                if let trip = measured {
+                if let trip = stats?.latency {
                     latency = trip
                     latencySamples.append(trip)
                     if latencySamples.count > 20 { latencySamples.removeFirst() }
