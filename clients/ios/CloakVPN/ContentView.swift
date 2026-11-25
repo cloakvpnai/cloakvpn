@@ -1,13 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-// Note on RosenpassFFI: the Swift bindings (rosenpassffi.swift) are
-// compiled directly into the CloakVPN app target alongside this file,
-// so types like `generateStaticKeypair()` and `StaticKeypair` are
-// already in scope — no `import` needed. The bindings themselves
-// `import rosenpassffiFFI` (the C module from the xcframework) under
-// the hood; that's the only module name in this build.
-
 /// Lattice VPN design system — single source of truth for brand color
 /// and typography choices. Centralized here so we can rev the visual
 /// language in one place rather than chasing magic constants across
@@ -84,20 +77,8 @@ struct ContentView: View {
     #else
     private static let layoutPreview = false
     #endif
-    @State private var configText: String = ""
-    @State private var showingImport = false
-    @State private var showingFileImporter = false
     @State private var errorMsg: String?
 
-    // Runtime smoke test for the post-quantum FFI. Pressing the button
-    // calls into Rust, generates a Classic McEliece-460896 + ML-KEM-768
-    // keypair, and reports the key sizes back. Also serves as a memory
-    // budget canary — McEliece keygen peaks at 2-4 MB working set; if
-    // we ever try to call this from the NetworkExtension (which we
-    // shouldn't — see docs/IOS_PQC.md) it will crash on the 50 MiB
-    // limit.
-    @State private var pqcStatus: String = "PQC: not tested"
-    @State private var pqcRunning = false
 
     // Layer 4 of the NE wedge auto-recovery story — manual reset
     // escape hatch for the rare case where Layers 1-3 have all failed
@@ -184,22 +165,8 @@ struct ContentView: View {
             } message: {
                 Text("This deletes and recreates the iOS VPN profile, then reconnects. iOS will ask you to allow LATTICE VPN to add VPN configurations again. Use this only when normal disconnect+reconnect doesn't recover the tunnel.")
             }
-            .sheet(isPresented: $showingImport) {
-                importSheet
-            }
             .sheet(isPresented: $showingMoreSheet) {
                 moreSheet
-            }
-            // .plainText covers .txt; .data is the catch-all so users can
-            // pick a renamed file. We don't enforce a `.cloak` extension
-            // because configs come out of `add-peer.sh` as plain text and
-            // forcing a custom UTI would just make AirDrop more annoying.
-            .fileImporter(
-                isPresented: $showingFileImporter,
-                allowedContentTypes: [.plainText, .text, .data],
-                allowsMultipleSelection: false
-            ) { result in
-                handleFileImport(result)
             }
             // Sign-in gate. Whenever no account number is stored the
             // account-entry screen covers the whole app — the customer
@@ -238,14 +205,12 @@ struct ContentView: View {
     private var orbState: OrbState {
         switch tunnel.status {
         case .connected:
-            // A Rosenpass config (pre-1.1 installs) has no handshake gate.
-            if tunnel.config?.pqEnabled == true { return .protected }
             return tunnel.handshakeVerified ? .protected : .securing
         case .connecting, .reasserting, .disconnecting:
             return .working
         default:
             if tunnel.regionSelectionInProgress { return .working }
-            return (tunnel.config == nil && !tunnel.isCNSA2Mode) ? .noRegion : .off
+            return .off
         }
     }
 
@@ -331,7 +296,7 @@ struct ContentView: View {
                 .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .disabled((tunnel.config == nil && !tunnel.isCNSA2Mode) || orbState == .working)
+            .disabled(orbState == .working)
             .accessibilityLabel(tunnel.status == .connected ? "Disconnect" : "Connect")
 
             VStack(spacing: 4) {
@@ -346,26 +311,13 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.25), value: orbState)
     }
 
-    /// Post-quantum status as a capsule. Same truth table as the old
-    /// one-line readout: ML-KEM-768 is only called active after a
-    /// completed WireGuard handshake.
+    /// The CNSA 2.0 status as a capsule. It reads "active" only once the tunnel has
+    /// finished its handshake.
     private var signalPQChip: some View {
-        let legacy = tunnel.config?.pqEnabled == true
-        let active = tunnel.status == .connected && (legacy ? true : tunnel.handshakeVerified)
-        let text: String = {
-            if tunnel.isCNSA2Mode {
-                return tunnel.status == .connected
-                    ? "CNSA 2.0 · active · ML-KEM-1024 · ML-DSA-87"
-                    : "CNSA 2.0 · ML-KEM-1024 · ML-DSA-87"
-            }
-            if legacy { return tunnel.rosenpass.status.description }
-            if tunnel.status == .connected {
-                return tunnel.handshakeVerified
-                    ? "ML-KEM-768 key exchange active"
-                    : "ML-KEM-768: verifying tunnel"
-            }
-            return "ML-KEM-768 post-quantum key exchange"
-        }()
+        let active = tunnel.status == .connected && tunnel.handshakeVerified
+        let text = active
+            ? "CNSA 2.0 · active · ML-KEM-1024 · ML-DSA-87"
+            : "CNSA 2.0 · ML-KEM-1024 · ML-DSA-87"
         return HStack(spacing: 8) {
             Image(systemName: active ? "checkmark.shield.fill" : "shield")
                 .font(.system(size: 14, weight: .semibold))
@@ -625,47 +577,6 @@ struct ContentView: View {
         .disabled(tunnel.regionSelectionInProgress)
     }
 
-    /// Read a peer config file the user picked from Files / iCloud Drive /
-    /// AirDrop and feed it into TunnelManager.importConfig.
-    ///
-    /// Files chosen via the document picker live OUTSIDE the app sandbox,
-    /// so we have to bracket the read with
-    /// `startAccessingSecurityScopedResource` / `stopAccessing…` — without
-    /// it, `Data(contentsOf:)` returns a permissions error even though
-    /// the user just explicitly granted access.
-    private func handleFileImport(_ result: Result<[URL], Error>) {
-        switch result {
-        case .failure(let err):
-            errorMsg = "Couldn't open file: \(err.localizedDescription)"
-        case .success(let urls):
-            guard let url = urls.first else { return }
-            // Read the file synchronously (cheap), then dispatch the
-            // async import (which now awaits saveToPreferences inline)
-            // into a Task so the file picker handler can return without
-            // blocking. Security-scoped access is held only for the
-            // synchronous read — the import operates on the in-memory
-            // String afterwards and doesn't need the URL.
-            let text: String
-            do {
-                let scoped = url.startAccessingSecurityScopedResource()
-                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                text = try String(contentsOf: url, encoding: .utf8)
-            } catch {
-                errorMsg = "Read failed: \(error.localizedDescription)"
-                return
-            }
-            Task {
-                do {
-                    try await tunnel.importConfig(text)
-                } catch let e as TunnelError {
-                    errorMsg = e.errorDescription ?? "Parse error"
-                } catch {
-                    errorMsg = "Import failed: \(error.localizedDescription)"
-                }
-            }
-        }
-    }
-
     /// World-map outline background — bundled vector PDF rendered as
     /// a template image so we can tint it via foregroundStyle. Sits at
     /// low opacity (8%) tinted with the brand grey, behind everything,
@@ -735,7 +646,6 @@ struct ContentView: View {
                     radius: 10, x: 0, y: 0
                 )
         }
-        .disabled(tunnel.config == nil && !tunnel.isCNSA2Mode)
     }
 
     /// Holo-glass background for the Connect button — same visual
@@ -888,19 +798,7 @@ struct ContentView: View {
     /// activity, not the endpoint URL repeated.
     private var pqcStatusLine: some View {
         HStack(spacing: 6) {
-            if tunnel.config?.pqEnabled == true {
-                // Legacy Rosenpass config (only until the next provision).
-                if case .established = tunnel.rosenpass.status {
-                    Image(systemName: "lock.shield.fill").foregroundStyle(.green)
-                } else if case .error = tunnel.rosenpass.status {
-                    Image(systemName: "exclamationmark.shield").foregroundStyle(.orange)
-                } else {
-                    Image(systemName: "lock.shield").foregroundStyle(.secondary)
-                }
-                Text(tunnel.rosenpass.status.description)
-                    .font(.system(.footnote, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            } else if tunnel.isCNSA2Mode && tunnel.status == .connected {
+            if tunnel.isCNSA2Mode && tunnel.status == .connected {
                 Image(systemName: "lock.shield.fill").foregroundStyle(.green)
                 Text("TLS 1.3 · AES-256-GCM · ML-KEM-1024 · ML-DSA-87")
                     .font(.system(.footnote, design: .monospaced))
@@ -1025,7 +923,7 @@ struct ContentView: View {
                     .font(.footnote)
             }
             .buttonStyle(.bordered)
-            .disabled(tunnel.config == nil || resetInProgress)
+            .disabled(resetInProgress)
 
             Spacer()
 
@@ -1107,27 +1005,6 @@ struct ContentView: View {
                     }
                     Link(destination: URL(string: "mailto:support@latticevpn.ai")!) {
                         Label("Support", systemImage: "bubble.left.and.bubble.right")
-                    }
-                }
-
-                // ---- Advanced (developer / power-user) ----
-                Section("Advanced") {
-                    Button {
-                        showingMoreSheet = false
-                        showingImport = true
-                    } label: {
-                        Label("Paste config", systemImage: "doc.text")
-                    }
-                    Button {
-                        showingMoreSheet = false
-                        showingFileImporter = true
-                    } label: {
-                        Label("Import from file…", systemImage: "tray.and.arrow.down")
-                    }
-                    NavigationLink {
-                        pqcDiagnosticsView
-                    } label: {
-                        Label("PQC diagnostics", systemImage: "key.fill")
                     }
                 }
 
@@ -1235,7 +1112,7 @@ struct ContentView: View {
                 } label: {
                     Label("Reset tunnel", systemImage: "arrow.counterclockwise")
                 }
-                .disabled(tunnel.config == nil || resetInProgress)
+                .disabled(resetInProgress)
             }
         }
         .navigationTitle("Settings")
@@ -1256,21 +1133,6 @@ struct ContentView: View {
         .navigationTitle("About")
     }
 
-    /// "PQC diagnostics" — formerly the on-main-screen PQC FFI smoke
-    /// test + identity panel. Tucked here so the main screen stays
-    /// customer-clean.
-    private var pqcDiagnosticsView: some View {
-        Form {
-            Section("Local PQC identity") {
-                pqcIdentityPanel
-            }
-            Section("FFI smoke test") {
-                pqcSmokeTestPanel
-            }
-        }
-        .navigationTitle("PQC diagnostics")
-    }
-
     /// CFBundleShortVersionString for display (e.g. "1.0").
     private var appVersionDisplay: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
@@ -1279,95 +1141,6 @@ struct ContentView: View {
     /// CFBundleVersion (build number) for display.
     private var appBuildDisplay: String {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
-    }
-
-    private var infoPanel: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let cfg = tunnel.config {
-                Text("Endpoint: \(cfg.endpoint)").font(.footnote)
-                Text("PQC: \(cfg.pqKEM ?? (cfg.pqEnabled ? "Rosenpass" : "off"))").font(.footnote)
-                Text(tunnel.rosenpass.status.description)
-                    .font(.system(.footnote, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("No config imported.").font(.footnote).foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(Color.secondary.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-
-    /// Shows this device's locally-generated rosenpass public key
-    /// fingerprint plus a Share button to AirDrop the full base64
-    /// pubkey to a Mac for server-side registration. The local
-    /// keypair is generated on first launch via the FFI's
-    /// generateStaticKeypair() — secret never leaves the device.
-    /// See docs/IOS_PQC.md for the privacy rationale.
-    private var pqcIdentityPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: "key.fill")
-                    .foregroundStyle(CloakDesign.brandGrey)
-                Text("Your PQC Identity")
-                    .font(.subheadline.bold())
-            }
-
-            if let fp = tunnel.localPubkeyFingerprint {
-                Text("Fingerprint: \(fp)")
-                    .font(.system(.footnote, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-
-                if let url = try? tunnel.makeLocalPubkeyShareFile() {
-                    ShareLink(
-                        item: url,
-                        subject: Text("LATTICE VPN PQC public key"),
-                        message: Text("Register this with `sudo add-peer.sh <peer-name> <this-file>` on your Lattice server.")
-                    ) {
-                        Label("Share my public key…", systemImage: "square.and.arrow.up")
-                            .font(.footnote)
-                    }
-                    .buttonStyle(.bordered)
-                }
-            } else {
-                HStack(spacing: 8) {
-                    ProgressView().scaleEffect(0.7)
-                    Text("Generating PQC identity…")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(Color.secondary.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-
-    private var pqcSmokeTestPanel: some View {
-        VStack(spacing: 8) {
-            Text(pqcStatus)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-
-            Button {
-                runPqcSmokeTest()
-            } label: {
-                if pqcRunning {
-                    HStack(spacing: 8) {
-                        ProgressView().scaleEffect(0.8)
-                        Text("Generating PQC keypair…")
-                    }
-                } else {
-                    Text("Test PQC FFI")
-                }
-            }
-            .buttonStyle(.bordered)
-            .disabled(pqcRunning)
-        }
     }
 
     /// Layer 4 of the wedge auto-recovery story — last-resort manual
@@ -1392,7 +1165,7 @@ struct ContentView: View {
                 }
             }
             .buttonStyle(.bordered)
-            .disabled(tunnel.config == nil || resetInProgress)
+            .disabled(resetInProgress)
         }
     }
 
@@ -1410,64 +1183,4 @@ struct ContentView: View {
         }
     }
 
-    private func runPqcSmokeTest() {
-        pqcRunning = true
-        pqcStatus = "PQC: working…"
-        // Off the main actor — McEliece keygen takes ~50-200 ms on a
-        // modern iPhone and peaks at 2-4 MB working set. Don't block UI.
-        Task.detached(priority: .userInitiated) {
-            let started = Date()
-            do {
-                let kp = try generateStaticKeypair()
-                let elapsed = Date().timeIntervalSince(started)
-                let pkKB = kp.publicKey.count / 1024
-                let skKB = kp.secretKey.count / 1024
-                let line = String(
-                    format: "PQC: ✓ pk=%d KB sk=%d KB in %.0f ms",
-                    pkKB, skKB, elapsed * 1000
-                )
-                await MainActor.run {
-                    pqcStatus = line
-                    pqcRunning = false
-                }
-            } catch {
-                await MainActor.run {
-                    pqcStatus = "PQC: ✗ \(error.localizedDescription)"
-                    pqcRunning = false
-                }
-            }
-        }
-    }
-
-    private var importSheet: some View {
-        NavigationStack {
-            VStack {
-                TextEditor(text: $configText)
-                    .font(.system(.caption, design: .monospaced))
-                    .border(.secondary)
-                    .padding()
-                Button("Save") {
-                    Task {
-                        do {
-                            try await tunnel.importConfig(configText)
-                            showingImport = false
-                        } catch {
-                            errorMsg = error.localizedDescription
-                        }
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .padding(.bottom)
-            }
-            .navigationTitle("Paste config")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showingImport = false }
-                }
-            }
-        }
-        // Same as moreSheet — re-apply tint inside the new UIScene
-        // context so toolbar + Save buttons stay grey.
-        .tint(CloakDesign.brandGrey)
-    }
 }

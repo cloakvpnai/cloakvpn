@@ -38,8 +38,6 @@ struct CloakVPNApp: App {
                     // so we don't double-create on second launches. The
                     // keypair + IP work runs in parallel since none of it
                     // depends on the manager state.
-                    async let _ = tunnel.ensureLocalKeypair()
-                    async let _ = tunnel.ensureLocalWGKeypair()
                     async let _ = tunnel.refreshPublicIPIfNotConnected()
 
                     await tunnel.load()
@@ -67,18 +65,6 @@ struct CloakVPNApp: App {
                     // customer hasn't signed in yet). Keeps the Account
                     // screen and the Basic/Pro app icon current.
                     await tunnel.refreshAccountStatus()
-
-                    // Warm-up: kick off a background provision call for
-                    // the user's most-likely-to-tap region (last-used or
-                    // default). Doesn't block UI — by the time the user
-                    // accepts the VPN prompt and taps a region, the
-                    // network round-trip is complete and the cache is
-                    // populated. Their tap is then a local cache hit
-                    // (~200ms) instead of waiting 2.5-4.5s for the
-                    // server round-trip to complete in the foreground.
-                    Task.detached(priority: .background) { [tunnel] in
-                        await tunnel.warmUpPreferredRegion()
-                    }
                 }
         }
     }

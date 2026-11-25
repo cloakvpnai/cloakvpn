@@ -9,11 +9,6 @@
 // + the per-region cloak-api-server provisioning path.
 //
 // iOS port of the Android `AccountClient`; the wire format is identical.
-// The one iOS-specific job is in `provisionDevice`: the central API
-// returns the tunnel config as JSON, but TunnelManager.importConfig
-// consumes the INI block the old server emitted — so this client renders
-// the JSON back into that INI format (and synthesizes the IPv6 ULA the
-// iOS NetworkExtension requires, exactly as the old server did).
 
 import Foundation
 
@@ -120,8 +115,7 @@ struct LatticeAccountClient {
 
     private var session: URLSession {
         let cfg = URLSessionConfiguration.ephemeral
-        // Provisioning runs add-peer + a rosenpass restart server-side,
-        // so it needs generous read headroom; capped so a hung server
+        // Generous read headroom for slow links; capped so a hung server
         // cannot block the UI indefinitely.
         cfg.timeoutIntervalForRequest = 30
         return URLSession(configuration: cfg)
@@ -148,100 +142,6 @@ struct LatticeAccountClient {
             // are an API error, not evidence of an inactive subscription.
             throw AccountError.other("Lattice returned incomplete or invalid subscription information. Please refresh and try again.")
         }
-    }
-
-    // MARK: - POST /v1/device
-
-    /// Register this device as a WireGuard + Rosenpass peer in `region`.
-    /// Only the device's *public* keys are sent; the private keys are
-    /// generated on-device and never leave it.
-    ///
-    /// Returns the tunnel config rendered as the INI block
-    /// `TunnelManager.importConfig` / `ConfigParser` consume.
-    func provisionDevice(
-        accountNumber: String,
-        wgPubkeyB64: String,
-        rosenpassPubkeyB64: String,
-        region: String
-    ) async throws -> String {
-        guard let url = URL(string: "\(LatticeAPI.baseURL)/v1/device") else {
-            throw AccountError.other("Bad API URL.")
-        }
-        let payload: [String: Any] = [
-            "wg_pubkey": wgPubkeyB64,
-            "rosenpass_pubkey": rosenpassPubkeyB64,
-            "region": region,
-        ]
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue(bearer(accountNumber), forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: payload)
-
-        let body = try await execute(req)
-        guard let obj = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
-              let cfg = obj["config"] as? [String: Any]
-        else {
-            throw AccountError.other("The server response was missing the tunnel config.")
-        }
-        return Self.renderConfigINI(cfg)
-    }
-
-    // MARK: - POST /v1/device (ML-KEM-768)
-
-    /// Provision this device with an ML-KEM-768 exchange instead of
-    /// Rosenpass. A fresh ML-KEM key pair is created for this call; the
-    /// region returns a ciphertext and installs the derived key as the
-    /// WireGuard preshared key. See MLKEM768Exchange.swift.
-    ///
-    /// Never falls back to a tunnel without a post-quantum key: a response
-    /// that lacks the ML-KEM-768 ciphertext is an error.
-    func provisionDeviceMLKEM768(
-        accountNumber: String,
-        wgPubkeyB64: String,
-        region: String
-    ) async throws -> String {
-        guard let url = URL(string: "\(LatticeAPI.baseURL)/v1/device") else {
-            throw AccountError.other("Bad API URL.")
-        }
-        let exchange: MLKEM768Exchange
-        do {
-            exchange = try MLKEM768Exchange()
-        } catch {
-            throw AccountError.other("Couldn't create the post-quantum key for this connection.")
-        }
-        let payload: [String: Any] = [
-            "wg_pubkey": wgPubkeyB64,
-            "mlkem768_pubkey": exchange.publicKeyB64,
-            "region": region,
-        ]
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue(bearer(accountNumber), forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: payload)
-
-        let body = try await execute(req)
-        guard let obj = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
-              let cfg = obj["config"] as? [String: Any]
-        else {
-            throw AccountError.other("The server response was missing the tunnel config.")
-        }
-        guard (cfg["PQKEM"] as? String) == MLKEM768Exchange.pqKEMName,
-              let ciphertext = cfg["MLKEM768Ciphertext"] as? String,
-              let serverWGPub = cfg["PeerPublicKey"] as? String
-        else {
-            throw AccountError.other("This region does not support ML-KEM-768 yet. Please choose another region.")
-        }
-        let psk: String
-        do {
-            psk = try exchange.presharedKeyB64(ciphertextB64: ciphertext,
-                                               clientWGPublicKeyB64: wgPubkeyB64,
-                                               serverWGPublicKeyB64: serverWGPub)
-        } catch {
-            throw AccountError.other("The post-quantum key exchange with Lattice failed. Please try again.")
-        }
-        return Self.renderConfigINI(cfg, mlkem768PSKB64: psk)
     }
 
     // MARK: - DELETE /v1/device
@@ -294,55 +194,4 @@ struct LatticeAccountClient {
         }
     }
 
-    /// Render the central API's JSON `config` object into the INI block
-    /// `ConfigParser.parse` expects. The central `wg.ClientConfig` is
-    /// IPv4-only, so the IPv6 ULA the iOS NE requires is synthesized from
-    /// the assigned tunnel address — the same `fd42:99::X/128` the old
-    /// cloak-api-server emitted.
-    ///
-    /// `mlkem768PSKB64`, when set, is the preshared key from an ML-KEM-768
-    /// exchange: the block then carries `[mlkem768]` and no `[rosenpass]`.
-    private static func renderConfigINI(_ cfg: [String: Any], mlkem768PSKB64: String? = nil) -> String {
-        func s(_ key: String) -> String { cfg[key] as? String ?? "" }
-
-        let assignedIP = s("AssignedIP")                  // "10.99.0.5"
-        let addressV4 = {
-            // InterfaceAddress may now carry a trailing IPv6 ULA appended for
-            // the Android IPv6 leak fix, e.g. "10.99.0.5/32, fd00::2/128".
-            // iOS assigns its own IPv6 (addressV6 below), so take only the
-            // first comma-separated entry: the IPv4 CIDR. Passing the whole
-            // string would make IPAddressRange(from:) fail and the tunnel
-            // would throw badField("addressV4") at connect time.
-            let v = s("InterfaceAddress")
-                .split(separator: ",")
-                .first
-                .map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
-            return v.isEmpty ? "\(assignedIP)/32" : v
-        }()
-        let lastOctet = assignedIP.split(separator: ".").last.map(String.init) ?? "2"
-        let addressV6 = "fd42:99::\(lastOctet)/128"
-
-        var lines: [String] = []
-        lines.append("[wireguard]")
-        lines.append("address_v4 = \(addressV4)")
-        lines.append("address_v6 = \(addressV6)")
-        lines.append("dns = \(s("InterfaceDNS"))")
-        lines.append("")
-        lines.append("[wireguard.peer]")
-        lines.append("public_key = \(s("PeerPublicKey"))")
-        lines.append("endpoint = \(s("PeerEndpoint"))")
-        lines.append("allowed_ips = \(s("PeerAllowedIPs"))")
-        lines.append("persistent_keepalive = 25")
-        lines.append("")
-        if let psk = mlkem768PSKB64 {
-            lines.append("[mlkem768]")
-            lines.append("preshared_key_b64 = \(psk)")
-            return lines.joined(separator: "\n") + "\n"
-        }
-        lines.append("[rosenpass]")
-        lines.append("server_public_key_b64 = \(s("RosenpassPeerPub"))")
-        lines.append("server_endpoint = \(s("RosenpassListen"))")
-        lines.append("psk_rotation_seconds = 120")
-        return lines.joined(separator: "\n") + "\n"
-    }
 }

@@ -32,7 +32,6 @@ final class TunnelManager: ObservableObject {
     }
 
     @Published private(set) var status: Status = .disconnected
-    @Published private(set) var config: CloakConfig?
 
     /// Currently-selected Cloak region. Driven by the in-app region
     /// picker (ContentView's flag strip). Persisted in UserDefaults so
@@ -51,33 +50,12 @@ final class TunnelManager: ObservableObject {
     /// when an early build's selectRegion swallowed errors).
     @Published var lastRegionError: String?
 
-    /// True once the running tunnel has completed a WireGuard handshake.
+    /// True once the running tunnel has completed its CNSA 2.0 handshake.
     /// NetworkExtension's "connected" only means the interface exists; this is
     /// what the UI uses before it claims the post-quantum tunnel is active.
     @Published private(set) var handshakeVerified = false
     private var handshakeVerifyTask: Task<Void, Never>?
 
-    /// Cache of already-provisioned region configs, keyed by region.id.
-    /// Populated on first successful selectRegion call for a given
-    /// region; subsequent taps on the same region (e.g. user toggles
-    /// US-W → DE → US-W) skip the server round-trip entirely and just
-    /// swap the active config locally — empirically takes 200-400ms
-    /// vs 3-8s for the full provisioning round-trip (which includes
-    /// add-peer.sh + cloak-rosenpass.service restart on the server).
-    ///
-    /// Persisted to UserDefaults so the cache survives app restarts —
-    /// once the user has provisioned each region once, switching is
-    /// effectively instant for the lifetime of the install.
-    ///
-    /// Cache invalidation: not needed in steady state. The server's
-    /// add-peer.sh is idempotent (peer name derived from rp pubkey
-    /// hash); if the user's local keys are deleted (factory reset of
-    /// the App Group container, full app reinstall), the cached
-    /// configs are still valid — they reference the server's pubkey
-    /// + endpoint, both of which are stable. The wgPrivateKey gets
-    /// re-filled at importConfig time from the local WG keypair, so
-    /// even a fresh keypair will produce a working config.
-    private var provisionedConfigsByRegionID: [String: String] = [:]
     private static let provisionedConfigsCacheKey = "provisionedRegionConfigsV1"
 
     /// User's actual public IP (their home / cellular IP, NOT the VPN
@@ -87,18 +65,6 @@ final class TunnelManager: ObservableObject {
     /// real IP immediately even if launching with VPN already up.
     @Published private(set) var publicIP: String?
     private static let publicIPUserDefaultsKey = "lastKnownPublicIP"
-
-    /// The post-quantum key exchange driver. Owned by the main app
-    /// (never the NE — see docs/IOS_PQC.md). Bridges PSKs into the NE
-    /// via `sendProviderMessage` opcode 0x01.
-    let rosenpass = RosenpassBridge()
-
-    /// Base64 of the device's locally-generated rosenpass public key,
-    /// once available. Published so the UI can render a fingerprint and
-    /// expose a "Share my public key" affordance. nil during the brief
-    /// window between app launch and `ensureLocalKeypair()` completion
-    /// on first install. Stable across launches once persisted.
-    @Published private(set) var localPublicKeyB64: String?
 
     // MARK: - Account (no-account billing model)
     //
@@ -145,17 +111,6 @@ final class TunnelManager: ObservableObject {
     private var manager: NETunnelProviderManager?
     private var statusObserver: NSObjectProtocol?
 
-    /// Forwards nested-ObservableObject change notifications from
-    /// `rosenpass` (a let property of this class) up to TunnelManager's
-    /// own publisher chain. Without this, SwiftUI views observing
-    /// `tunnel: TunnelManager` via @EnvironmentObject don't redraw when
-    /// `tunnel.rosenpass.status` changes — they only redraw when one of
-    /// TunnelManager's own @Published properties changes. Surfaced today
-    /// 2026-04-27 as the "PQC: rotation N" UI text not updating until
-    /// the user tapped Test PQC FFI (which mutated a @State and forced a
-    /// re-render that then read the fresh rosenpass.status).
-    private var rosenpassChangeForwarder: AnyCancellable?
-
     // MARK: - Layer 3 — auto-reconnect on detected wedge recovery
     //
     // When the NE calls `cancelTunnelWithError` from Layer 2, iOS marks
@@ -196,33 +151,15 @@ final class TunnelManager: ObservableObject {
     private static let providerBundleIdentifier = "ai.cloakvpn.CloakVPN.CloakTunnel"
 
     init() {
-        // Forward derived PSKs into the NE.
-        rosenpass.onPSKDerived = { [weak self] psk in
-            self?.pushPresharedKey(psk)
-        }
         // Belt-and-suspenders: any legacy server-shipped client keys
         // sitting on disk from earlier builds get cleaned up on every
         // launch. New code path never reads them, but no point letting
         // stale files linger in the App Group container.
-        AppGroupKeyStore.deleteLegacyClientKeys()
-        // The pre-account-number auth model is retired: drop any stale
-        // JWT + install-UUID files left by earlier builds.
-        AppGroupKeyStore.deleteLegacyAuthFiles()
+        AppGroupKeyStore.eraseLegacyFiles()
 
         // Restore the customer's account number so the app knows on
         // launch whether to show the sign-in cover or the main UI.
         accountNumber = AppGroupKeyStore.loadAccountNumber()
-
-        // Re-publish rosenpass.objectWillChange events as our own. Without
-        // this, SwiftUI views observing TunnelManager via @EnvironmentObject
-        // don't see updates when rosenpass.status changes (because
-        // `rosenpass` is a `let` property, not @Published — and SwiftUI
-        // doesn't traverse nested ObservableObjects automatically).
-        rosenpassChangeForwarder = rosenpass.objectWillChange
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.objectWillChange.send()
-            }
 
         // Restore last-selected region from UserDefaults so the picker
         // shows the user's chosen flag highlighted on app relaunch.
@@ -236,20 +173,8 @@ final class TunnelManager: ObservableObject {
         // the app with the VPN already connected.
         publicIP = UserDefaults.standard.string(forKey: Self.publicIPUserDefaultsKey)
 
-        // Restore the per-region provisioned-config cache. Lets repeat
-        // taps on a previously-provisioned region skip the server
-        // round-trip entirely.
-        if let cached = UserDefaults.standard.dictionary(forKey: Self.provisionedConfigsCacheKey)
-            as? [String: String] {
-            provisionedConfigsByRegionID = cached
-        }
-    }
-
-    /// Persist the in-memory provisioned-config cache to UserDefaults.
-    /// Called whenever a new region is provisioned successfully.
-    private func persistProvisionedConfigsCache() {
-        UserDefaults.standard.set(provisionedConfigsByRegionID,
-                                  forKey: Self.provisionedConfigsCacheKey)
+        // Configurations cached by a WireGuard-based version of the app are no use to this one.
+        UserDefaults.standard.removeObject(forKey: Self.provisionedConfigsCacheKey)
     }
 
     // MARK: - Account sign-in / sign-out
@@ -404,10 +329,6 @@ final class TunnelManager: ObservableObject {
         accountStatusError = nil
         accountStatusVerifiedAt = nil
         accountNeedsReentry = false
-        // Per-region provisioned configs were tied to the old account —
-        // clear them so a future sign-in re-provisions cleanly.
-        provisionedConfigsByRegionID = [:]
-        persistProvisionedConfigsCache()
     }
 
     /// Fetch the user's actual public IP from a third-party service.
@@ -460,17 +381,8 @@ final class TunnelManager: ObservableObject {
         debugLog("refreshPublicIP: all providers failed; publicIP stays \(publicIP ?? "nil")")
     }
 
-    /// Customer-facing region selection. Called when the user taps a
-    /// flag in ContentView's quick-connect strip. Runs the provisioning
-    /// API for that region (POST /api/v1/peers with our local public
-    /// keys), imports the returned config, and persists the choice.
-    /// The user can then tap the big Connect button to bring up the
-    /// tunnel.
-    ///
-    /// Idempotent: tapping the same region multiple times is safe (the
-    /// server's add-peer.sh derives peer name from the rosenpass pubkey
-    /// hash, so we just re-register the same peer; existing peer entry
-    /// in wg0.conf is preserved).
+    /// Called when the customer taps a region. Remembers the choice, and if the tunnel is
+    /// up, restarts it through the new region's gateway.
     func selectRegion(_ region: CloakRegion) async {
         guard !regionSelectionInProgress else { return }
         regionSelectionInProgress = true
@@ -479,102 +391,13 @@ final class TunnelManager: ObservableObject {
         lastRegionError = nil  // clear previous error before retry
         accountNeedsReentry = false  // re-set only by THIS attempt's 401
 
-        // CNSA 2.0 mode: the region only chooses the gateway. No WireGuard provisioning.
-        if cnsa2Mode {
-            let wasActive = (status == .connected || status == .connecting || status == .reasserting)
-            selectedRegion = region
-            UserDefaults.standard.set(region.id, forKey: Self.selectedRegionUserDefaultsKey)
-            if wasActive {
-                await disconnectAndWait()
-                if let failure = await startCNSA2(regionID: region.id) { lastRegionError = failure }
-            }
-            return
-        }
-
-        // Snapshot the current connection state BEFORE we touch the
-        // config. If the user is currently connected (or actively
-        // connecting) to a different region, swapping the underlying
-        // providerConfiguration is not enough — iOS keeps running the
-        // old NE process with the OLD config until we explicitly stop
-        // the tunnel and start it again. Without this, tapping a flag
-        // while connected silently leaves the user on the previous
-        // region's tunnel ("connected but to the wrong place").
-        let wasActivelyConnected = (status == .connected
-                                    || status == .connecting
-                                    || status == .reasserting)
-        let switchingRegions = (selectedRegion?.id != region.id)
-
-        // Fast path — region already provisioned this install. Skip
-        // the server round-trip entirely; just re-import the cached
-        // config text. Empirically takes 200-400ms (config parse +
-        // saveToPreferences) vs 3-8s for full provisioning.
-        var cachedConfig = provisionedConfigsByRegionID[region.id]
-        // A config cached by a pre-ML-KEM-768 build is a Rosenpass config;
-        // reusing it would skip the exchange, so drop it and provision again.
-        var droppedLegacyConfig = false
-        if let text = cachedConfig, !text.contains("[mlkem768]") {
-            cachedConfig = nil
-            droppedLegacyConfig = true
-            provisionedConfigsByRegionID.removeValue(forKey: region.id)
-        }
-        if let cachedText = cachedConfig {
-            debugLog("selectRegion: \(region.id) — cache hit, instant swap")
-            do {
-                try await importConfig(cachedText)
-                selectedRegion = region
-                UserDefaults.standard.set(region.id, forKey: Self.selectedRegionUserDefaultsKey)
-                await reconnectIfWasConnected(wasConnected: wasActivelyConnected,
-                                              switching: switchingRegions,
-                                              region: region)
-                return
-            } catch {
-                // Cache entry was bad somehow — fall through to a
-                // full re-provision rather than failing the tap.
-                debugLog("selectRegion: cache import failed (\(error)), falling back to provisioning")
-                provisionedConfigsByRegionID.removeValue(forKey: region.id)
-                persistProvisionedConfigsCache()
-            }
-        }
-
-        debugLog("selectRegion: \(region.id) — provisioning via account API")
-        do {
-            // Switch-while-connected: take the tunnel DOWN before provisioning.
-            // Under includeAllNetworks the provision HTTPS request is forced
-            // through the CURRENT tunnel; on a switch the server tears that
-            // peer down and slow provisions (legacy boxes restart rosenpass,
-            // ~3-9s) let the in-flight request die — surfaced as "Couldn't
-            // reach Lattice." With the tunnel down first, the request rides the
-            // physical interface and always completes. Fresh connects (not
-            // currently connected) are unaffected; the cache-hit path above
-            // makes no network call so it keeps its in-place bounce.
-            // Every ML-KEM-768 provision installs a NEW preshared key on the
-            // server, so a tunnel still running the previous config (same
-            // region, migrated from a legacy cached config) must be restarted
-            // with the new one or its next handshake fails.
-            let mustReconnect = wasActivelyConnected && (switchingRegions || droppedLegacyConfig)
-            if mustReconnect {
-                debugLog("selectRegion: switching while connected — dropping tunnel before provision (out-of-tunnel control plane)")
-                await disconnectAndWait()
-            }
-            let configText = try await provisionFromAPIRaw(region: region)
-            try await importConfig(configText)
-            selectedRegion = region
-            UserDefaults.standard.set(region.id, forKey: Self.selectedRegionUserDefaultsKey)
-            // A device has exactly one active region server-side:
-            // provisioning this one revoked the peer in any previous
-            // region, so every other region's cached config is now
-            // stale. Keep only this region's entry.
-            provisionedConfigsByRegionID = [region.id: configText]
-            persistProvisionedConfigsCache()
-            debugLog("selectRegion: \(region.id) configured + cached successfully")
-            presharedKeyIsUnused = true
-            if mustReconnect {
-                try await connect()
-            }
-        } catch {
-            let msg = error.localizedDescription
-            debugLog("selectRegion: \(region.id) failed: \(msg)")
-            lastRegionError = "\(region.displayName): \(msg)"
+        // A region only chooses the gateway. Nothing is provisioned on the server for it.
+        let wasActive = (status == .connected || status == .connecting || status == .reasserting)
+        selectedRegion = region
+        UserDefaults.standard.set(region.id, forKey: Self.selectedRegionUserDefaultsKey)
+        if wasActive {
+            await disconnectAndWait()
+            if let failure = await startCNSA2(regionID: region.id) { lastRegionError = failure }
         }
     }
 
@@ -590,129 +413,6 @@ final class TunnelManager: ObservableObject {
         try? await Task.sleep(nanoseconds: 500_000_000)
     }
 
-    /// If the user tapped a flag while the tunnel was active, tear
-    /// down the existing connection and re-start it against the
-    /// freshly-imported config. iOS doesn't pick up the new
-    /// providerConfiguration mid-flight — the only way to repoint a
-    /// running tunnel is stop + start.
-    ///
-    /// `switching` guards against the no-op case where the user
-    /// re-tapped the SAME region they were already connected to —
-    /// no need to drop+restart the tunnel for that.
-    private func reconnectIfWasConnected(wasConnected: Bool,
-                                         switching: Bool,
-                                         region: CloakRegion) async {
-        guard wasConnected, switching else { return }
-        debugLog("selectRegion: was connected, switching regions — bouncing tunnel")
-        do {
-            try await disconnect()
-
-            // POLL until the tunnel is actually .disconnected before
-            // calling connect(). stopVPNTunnel is fire-and-forget at
-            // the iOS layer; without polling, startVPNTunnel can race
-            // the in-flight stop and either:
-            //   - fail outright ("another connection is in progress")
-            //   - silently no-op (status flips to "connected" but the
-            //     NE process from the OLD config is still what's
-            //     actually running — the symptom the user reported
-            //     2026-04-27: PQC handshaking never completes after
-            //     a region switch because the new NE process never
-            //     actually started)
-            //
-            // Up to 8 seconds; bail out if iOS hasn't settled by then
-            // and surface as a real error rather than silently
-            // attempting a half-broken connect.
-            let deadline = Date().addingTimeInterval(8.0)
-            while Date() < deadline && status != .disconnected {
-                try? await Task.sleep(nanoseconds: 200_000_000)
-            }
-            if status != .disconnected {
-                debugLog("selectRegion: bounce stop didn't settle (status=\(status)) — proceeding anyway")
-            } else {
-                debugLog("selectRegion: bounce stop settled cleanly")
-            }
-
-            // One more brief beat for iOS to release the utun before
-            // we ask for a new one.
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            try await connect()
-        } catch {
-            let msg = error.localizedDescription
-            debugLog("selectRegion: bounce failed: \(msg)")
-            lastRegionError = "\(region.displayName) reconnect: \(msg)"
-        }
-    }
-
-    /// Ensure this device has a locally-generated WireGuard keypair
-    /// persisted in the App Group container. Idempotent — if a keypair
-    /// already exists from a prior launch, no-op. Otherwise generates a
-    /// fresh Curve25519 keypair via CryptoKit (instant on any iPhone)
-    /// and persists. Used by the cloak-api-server provisioning flow,
-    /// which sends only the public key to the server. The private key
-    /// never leaves the device.
-    func ensureLocalWGKeypair() async {
-        if AppGroupKeyStore.hasLocalWGKeypair() { return }
-        do {
-            // CryptoKit's Curve25519.KeyAgreement.PrivateKey uses X25519
-            // semantics with RFC 7748 clamping — wire-compatible with
-            // WireGuard's `wg genkey`. rawRepresentation yields the 32
-            // raw bytes; base64 yields the 44-char form WG expects.
-            let privKey = Curve25519.KeyAgreement.PrivateKey()
-            let secretB64 = privKey.rawRepresentation.base64EncodedString()
-            let publicB64 = privKey.publicKey.rawRepresentation.base64EncodedString()
-            try AppGroupKeyStore.saveLocalWGKeypair(secretB64: secretB64, publicB64: publicB64)
-            debugLog("ensureLocalWGKeypair: generated & persisted (pub=\(publicB64.prefix(16))…)")
-        } catch {
-            debugLog("ensureLocalWGKeypair: persistence failed: \(error)")
-        }
-    }
-
-    /// Ensure this device has a locally-generated rosenpass keypair
-    /// persisted in the App Group container. Idempotent — if a keypair
-    /// already exists from a prior launch, just publishes the cached
-    /// public key. Otherwise generates a fresh one via the FFI's
-    /// `generateStaticKeypair()` (~50-200ms on iPhone 13 Pro Max,
-    /// imperceptible to the user) and persists.
-    ///
-    /// Should be called on app launch, ideally from the SwiftUI
-    /// `.task { await tunnel.ensureLocalKeypair() }` modifier on the
-    /// root view. Safe to call multiple times.
-    func ensureLocalKeypair() async {
-        // Fast path — keypair already on disk.
-        if AppGroupKeyStore.hasLocalKeypair() {
-            do {
-                let kp = try AppGroupKeyStore.loadLocalKeypair()
-                self.localPublicKeyB64 = kp.publicB64
-            } catch {
-                debugLog("ensureLocalKeypair: load failed despite has=true, regenerating: \(error)")
-                AppGroupKeyStore.clearLocalKeypair()
-                await generateAndPersistLocalKeypair()
-            }
-            return
-        }
-        await generateAndPersistLocalKeypair()
-    }
-
-    /// Generate a fresh rosenpass keypair via the FFI and persist to the
-    /// App Group container. Heavy lifting (McEliece keygen, ~1-3 MB
-    /// working set, hundreds of ms) is done off the MainActor.
-    private func generateAndPersistLocalKeypair() async {
-        do {
-            let kp = try await Task.detached(priority: .userInitiated) {
-                try generateStaticKeypair()
-            }.value
-            let secretB64 = kp.secretKey.base64EncodedString()
-            let publicB64 = kp.publicKey.base64EncodedString()
-            try AppGroupKeyStore.saveLocalKeypair(secretB64: secretB64, publicB64: publicB64)
-            self.localPublicKeyB64 = publicB64
-            debugLog("ensureLocalKeypair: generated & persisted (pk=\(kp.publicKey.count) B, sk=\(kp.secretKey.count) B)")
-        } catch {
-            debugLog("ensureLocalKeypair: generation failed: \(error)")
-            // Don't crash — the UI will see localPublicKeyB64 stay nil
-            // and can show a "PQC identity unavailable" state.
-        }
-    }
-
     /// Load existing VPN configurations from the system preferences.
     func load() async {
         do {
@@ -721,14 +421,6 @@ final class TunnelManager: ObservableObject {
                 ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == Self.providerBundleIdentifier
             }
             if let m = manager {
-                // Restore config BEFORE updateStatus so the .connected handler
-                // can start the PQC status poller. Without this ordering, a cold
-                // launch into an already-up tunnel shows "PQC: idle" even though
-                // the NE is actively rotating keys.
-                if let cfgDict = (m.protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration,
-                   let cfg = try? CloakConfig(dict: cfgDict) {
-                    config = cfg
-                }
                 observeStatus(m.connection)
                 updateStatus(m.connection.status)
                 // CNSA 2.0 is the only mode. A profile saved by an older build is a WireGuard
@@ -749,95 +441,14 @@ final class TunnelManager: ObservableObject {
         }
     }
 
-    /// Background pre-provision: warm up the per-region config cache for
-    /// the user's most-likely-to-pick region BEFORE they tap anything.
-    /// Each first-time provision is bottlenecked by ~1.4 MB of HTTPS
-    /// transfer (700 KB upload of the iPhone's rosenpass pubkey + 700 KB
-    /// download of the server's pubkey) which takes 2.5-4.5 seconds
-    /// depending on region distance. By doing that work eagerly during
-    /// the moments the user is reading the UI / accepting the iOS VPN
-    /// prompt, the eventual region tap becomes a local cache hit (~200 ms)
-    /// instead of a network round-trip.
+    /// On a fresh install, save a placeholder VPN profile so the system's "Would Like to
+    /// Add VPN Configurations" prompt appears as the app opens, not at the first connect.
     ///
-    /// Heuristic: pre-provision the LAST-USED region (most likely tap
-    /// target). Falls back to us-west-1 on first launch. Only one region
-    /// is pre-provisioned to keep background bandwidth + server load
-    /// bounded — provisioning all 4 in parallel would be 4 × 1.4 MB =
-    /// 5.6 MB of background traffic per app launch and 4× the load on
-    /// our region API.
+    /// The customer allows it once. Later saves, at connect time, update the same approved
+    /// profile with no second prompt. The placeholder is disabled and has a dummy server
+    /// address, so it cannot be connected by accident.
     ///
-    /// Failures are silent (logged only) — the user will hit the normal
-    /// provision path when they tap if the warmup didn't land.
-    func warmUpPreferredRegion() async {
-        // Provisioning needs the customer's account number — nothing to
-        // warm up until they have signed in.
-        guard isSignedIn else { return }
-
-        let target: CloakRegion
-        if let preferred = selectedRegion {
-            target = preferred
-        } else {
-            // First launch — pick the region whose endpoint IP is geographically
-            // closest based on a quick reverse-lookup of our public IP would
-            // be ideal but is overkill for now. Default to us-west-1 (covers
-            // the largest user demographic for a US-headquartered launch).
-            target = CloakRegion.byID("us-west-1") ?? CloakRegion.all[0]
-        }
-
-        // A saved VPN profile already exists: the customer can connect as is.
-        // Provisioning now would install a new preshared key on the server
-        // without updating that profile, and the saved tunnel would stop working.
-        guard config == nil else {
-            debugLog("warmUp: a VPN profile is already saved — skipping")
-            return
-        }
-
-        // Skip if already cached this install
-        if provisionedConfigsByRegionID[target.id] != nil {
-            debugLog("warmUp: \(target.id) already cached — skipping")
-            return
-        }
-
-        debugLog("warmUp: pre-provisioning \(target.id) in background")
-        do {
-            let configText = try await provisionFromAPIRaw(region: target)
-            // Stash in the cache. Do NOT auto-import or set selectedRegion —
-            // the user hasn't actually picked anything yet, so we don't want
-            // to mutate any UI-visible state. The cache hit at selectRegion
-            // time will trigger the normal import path. One active region
-            // per device, so keep only this region's entry.
-            provisionedConfigsByRegionID = [target.id: configText]
-            persistProvisionedConfigsCache()
-            debugLog("warmUp: \(target.id) cached successfully (\(configText.count) chars)")
-        } catch {
-            debugLog("warmUp: \(target.id) failed silently: \(error.localizedDescription)")
-        }
-    }
-
-    /// On fresh install, pre-create a placeholder NETunnelProviderManager
-    /// so the iOS "Lattice VPN Would Like to Add VPN Configurations" prompt
-    /// fires the moment the app opens — BEFORE the user taps a region.
-    ///
-    /// Why: the prompt is only triggered by saveToPreferences() on a
-    /// not-yet-approved manager. Without this, the prompt fires later
-    /// inside selectRegion → provisionFromAPI → importConfig, AFTER the
-    /// 3-8s server provisioning round-trip. Net effect was the user
-    /// would tap a region, watch a spinner for 5 seconds, finally see
-    /// the iOS prompt. Bad first impression.
-    ///
-    /// With this pre-creation:
-    ///   - On fresh install, prompt fires within ~300ms of app launch.
-    ///   - User taps Allow once. iOS stores the approval.
-    ///   - Subsequent saveToPreferences calls (from importConfig when
-    ///     the user actually picks a region) silently update the same
-    ///     approved profile — no second prompt.
-    ///
-    /// The placeholder is configured with isEnabled=false and a
-    /// dummy server address so the user can't accidentally tap Connect
-    /// against it. importConfig replaces every field when real config
-    /// arrives.
-    ///
-    /// Idempotent — no-op when a manager already exists (load() found one).
+    /// Does nothing when a profile already exists.
     func preCreateManagerIfNeeded() async {
         if manager != nil {
             debugLog("preCreateManager: existing manager found, skipping")
@@ -851,14 +462,14 @@ final class TunnelManager: ObservableObject {
         // and iOS would later need to revoke + re-prompt when we update
         // to the correct one.
         proto.providerBundleIdentifier = Self.providerBundleIdentifier
-        // Placeholder server address. Real value gets set in importConfig
+        // Placeholder server address. The real value is set at the first connect,
         // when user picks a region. iOS doesn't validate this until
         // startVPNTunnel() is called, which we never do on the placeholder
         // (isEnabled=false).
         proto.serverAddress = "placeholder"
         proto.providerConfiguration = ["placeholder": "true"]
         // includeAllNetworks MUST match the eventual real config to avoid
-        // re-prompting on the first real save. The real importConfig sets
+        // re-prompting on the first real save. The CNSA 2.0 profile sets
         // includeAllNetworks=true, so we set it here too.
         proto.includeAllNetworks = true
         placeholder.protocolConfiguration = proto
@@ -874,262 +485,15 @@ final class TunnelManager: ObservableObject {
         } catch {
             // Most likely: user tapped "Don't Allow". Fall through —
             // the next selectRegion attempt will re-trigger via the
-            // real importConfig path, and the user will see the prompt
+            // connect path, and the user will see the prompt
             // again at that point. Nothing we can do besides retry.
             debugLog("preCreateManager: saveToPreferences failed (user denied?): \(error)")
         }
     }
 
-    /// Persist a new config and attach it to an NETunnelProviderManager.
-    ///
-    /// New (privacy-fixed) data flow:
-    ///   - WG fields + small PQ flags → `providerConfiguration` (small,
-    ///     persisted by iOS, readable by both processes).
-    ///   - Server's rosenpass public key → App Group container via
-    ///     `AppGroupKeyStore.saveServerPublicKey`. ~700 KB on disk.
-    ///   - Any `client_secret_key_b64` / `client_public_key_b64` fields
-    ///     in the imported config block are IGNORED. The device's local
-    ///     keypair (already generated by `ensureLocalKeypair`) is the
-    ///     only client-side identity that ever participates in handshakes.
-    ///     Server-shipped client keys break PQC privacy — see
-    ///     docs/IOS_PQC.md "Open items" §22.
-    ///
-    /// If writing the server pubkey to the App Group fails we abort the
-    /// whole import — saving an `NETunnelProviderManager` without the
-    /// pubkey on disk would put the user in a state where Connect appears
-    /// to work but PQC silently never engages. Failing loud is better.
-    func importConfig(_ text: String) async throws {
-        var parsed = try ConfigParser.parse(text)
-
-        // If the config came from cloak-api-server (which omits
-        // private_key — server doesn't have ours), fill it in from
-        // the locally-stored WG keypair. provisionFromAPI ensures
-        // ensureLocalWGKeypair has run before getting here. Legacy
-        // configs that DO carry a private_key keep their existing
-        // value untouched.
-        if parsed.wgPrivateKey.isEmpty {
-            do {
-                let wg = try AppGroupKeyStore.loadLocalWGKeypair()
-                parsed.wgPrivateKey = wg.secretB64
-                debugLog("importConfig: filled in wgPrivateKey from local WG keypair")
-            } catch {
-                throw TunnelError.parse(
-                    "config has no private_key and no local WG keypair available: \(error.localizedDescription)"
-                )
-            }
-        }
-
-        // Stash just the server's pubkey (the only PQC blob we still
-        // accept from the config). If this fails, abort before we touch
-        // the system VPN preferences — leaves the device in a clean state.
-        if parsed.pqEnabled {
-            guard !parsed.serverRPPublicKeyB64.isEmpty else {
-                throw TunnelError.parse("PQ enabled but server_public_key_b64 is empty")
-            }
-            try AppGroupKeyStore.saveServerPublicKey(parsed.serverRPPublicKeyB64)
-        } else {
-            // Re-importing a non-PQ config; clear stale server pubkey so
-            // a future PQ config doesn't silently inherit a wrong one.
-            // Local keypair is preserved — the device's identity is
-            // stable across config re-imports.
-            AppGroupKeyStore.clearServerPublicKey()
-        }
-
-        let manager = self.manager ?? NETunnelProviderManager()
-
-        let proto = NETunnelProviderProtocol()
-        // MUST match the CloakTunnel target's PRODUCT_BUNDLE_IDENTIFIER
-        // exactly. iOS uses this string to locate the NetworkExtension
-        // binary to launch when startVPNTunnel() is called. A mismatch
-        // here results in iOS silently doing nothing (or briefly
-        // transitioning to Connecting then snapping back to Disconnected
-        // with no logs), which is one of the most painful failure modes
-        // in NE-land — there's no error surfaced to the host app.
-        proto.providerBundleIdentifier = Self.providerBundleIdentifier
-        proto.serverAddress = parsed.endpoint
-        // .asDictionary deliberately excludes the three big Rosenpass keys
-        // — see ConfigParser.swift. They're already on disk in the App
-        // Group container by the time we reach this line.
-        proto.providerConfiguration = parsed.asDictionary
-
-        // Secrets (WireGuard private key) currently flow through
-        // providerConfiguration plaintext. TODO: move to Keychain via the
-        // App Group's `kSecAttrAccessGroup`. Tracked separately — same
-        // posture Mullvad shipped with for months. Not blocking the
-        // first PQC smoke test.
-        proto.passwordReference = nil
-
-        // Full-tunnel + kill-switch. Required for the tunnel to actually
-        // CARRY app traffic — with includeAllNetworks=false, iOS path-eval
-        // routes Safari/Chrome over WiFi instead of utun, and the tunnel
-        // exists but is bypassed (this is the "ifconfig.me shows ISP IP"
-        // leak we confirmed 2026-04-27 ~01:30 HST: test-ipv6.com showed
-        // <USER_NAT_IP> — the user's home NAT IP — while our app was
-        // active).
-        //
-        // The earlier "no internet with includeAllNetworks=true" symptom
-        // was misleading — we were testing with ICMP ping, which iOS
-        // doesn't pass through tunnels reliably. Real TCP/UDP traffic
-        // (Safari, Chrome) works fine through full-tunnel mode once
-        // iOS is forced to use utun via includeAllNetworks=true.
-        //
-        // First activation per signing identity prompts the user with
-        // "Lattice VPN would like to monitor all your network traffic" —
-        // accept once and iOS retains consent.
-        proto.includeAllNetworks = true
-
-        // Match the official WireGuard iOS app's minimal approach: set
-        // ONLY includeAllNetworks=true and let iOS use sensible
-        // defaults for the other exclusion flags. Manual overrides
-        // (enforceRoutes, excludeLocalNetworks, etc.) didn't fix the
-        // 2026-04-26 traffic-not-flowing bug, and may have made things
-        // worse. Stripping back to the upstream minimum.
-
-        manager.protocolConfiguration = proto
-        manager.localizedDescription = "LATTICE VPN"
-        manager.isEnabled = true
-
-        // CRITICAL: await saveToPreferences inline (was fire-and-forget
-        // in a Task before). The previous design caused a race where
-        // selectRegion → importConfig → returns → user taps Connect
-        // → startVPNTunnel runs against the STALE config because the
-        // save hadn't propagated yet. Symptom (2026-04-27): every
-        // region-switch+Connect lit up the "Connected" status but the
-        // tunnel was actually pointed at whatever region was loaded
-        // BEFORE the switch (or had no fresh keys at all). For cache-
-        // miss paths the API call took 3-8 s — enough time for the
-        // fire-and-forget save to land. For cache-HIT paths (after the
-        // per-region cache landed in commit b96235a), the import was
-        // instant and the race fired every single time.
-        try await manager.saveToPreferences()
-        try await manager.loadFromPreferences()
-        self.manager = manager
-        self.config = parsed
-        self.observeStatus(manager.connection)
-    }
-
-    /// Provision (or idempotently re-register) this device against the
-    /// central account API in `region`, returning the tunnel config as
-    /// the INI block `importConfig` consumes.
-    ///
-    /// Only the device's *public* keys cross the wire — the WireGuard +
-    /// Rosenpass secrets never leave the device. The account number is
-    /// the bearer credential. The central API routes the peer onto the
-    /// chosen region's concentrator; if the device was provisioned in a
-    /// different region, that peer is torn down server-side first
-    /// (BILLING_INTEGRATION.md §7).
-    func provisionFromAPIRaw(region: CloakRegion) async throws -> String {
-        guard let number = accountNumber, !number.isEmpty else {
-            throw TunnelError.parse("Enter your account number to connect.")
-        }
-        // ML-KEM-768 on every platform: a fresh post-quantum key pair is
-        // created inside provisionDeviceMLKEM768 for every provision, so only
-        // the WireGuard keypair has to exist beforehand. No Rosenpass.
-        await ensureLocalWGKeypair()
-        let wgKeys = try AppGroupKeyStore.loadLocalWGKeypair()
-
-        debugLog("provisionFromAPIRaw: region=\(region.id) (wg_pub=\(wgKeys.publicB64.prefix(8))…, pq=ML-KEM-768)")
-
-        func provision(_ accountNumber: String) async throws -> String {
-            try await accountClient.provisionDeviceMLKEM768(
-                accountNumber: accountNumber,
-                wgPubkeyB64: wgKeys.publicB64,
-                region: region.id
-            )
-        }
-
-        let configText: String
-        do {
-            configText = try await provision(number)
-        } catch AccountError.unauthorized(let serverKeepsPreviousNumbers) {
-            // The stored number was rejected. Retry ONCE with a recovered
-            // number; if that is not possible, surface a message that says
-            // what happened and how to fix it instead of "check it and try
-            // again" (there is nothing to check: the customer never typed it).
-            guard let current = accountNumber else {
-                // Signed out while this request was in flight.
-                throw TunnelError.parse("Enter your account number to connect.")
-            }
-            let retryNumber: String
-            if current != number {
-                // A concurrent recovery already replaced the number.
-                debugLog("provisionFromAPIRaw: 401 on a superseded number — retrying with the current one")
-                retryNumber = current
-            } else if serverKeepsPreviousNumbers,
-                      let recovered = await recoverAccountNumberFromAppStore() {
-                debugLog("provisionFromAPIRaw: 401 — recovered account number, retrying")
-                retryNumber = recovered
-            } else {
-                accountNeedsReentry = true
-                throw AccountError.numberReplaced
-            }
-            do {
-                configText = try await provision(retryNumber)
-            } catch AccountError.unauthorized(_) {
-                // Still rejected after recovery: same customer-facing outcome.
-                accountNeedsReentry = true
-                throw AccountError.numberReplaced
-            }
-        }
-        accountNeedsReentry = false
-        return configText
-    }
-
-    /// True while the imported config holds a preshared key that has not
-    /// carried a session yet (set by a provision, cleared by connect).
-    private var presharedKeyIsUnused = false
-
-    /// Run a new ML-KEM-768 exchange for the selected region and import the
-    /// result. Any failure (offline, API error) is logged and the saved key
-    /// is used instead, so Connect still works.
-    private func rekeyForConnect() async {
-        guard status == .disconnected, isSignedIn, let region = selectedRegion,
-              !regionSelectionInProgress else { return }
-        if presharedKeyIsUnused {
-            presharedKeyIsUnused = false
-            return
-        }
-        regionSelectionInProgress = true
-        defer { regionSelectionInProgress = false }
-        do {
-            let text = try await provisionFromAPIRaw(region: region)
-            try await importConfig(text)
-            provisionedConfigsByRegionID = [region.id: text]
-            persistProvisionedConfigsCache()
-            debugLog("connect(): fresh ML-KEM-768 key installed for \(region.id)")
-        } catch {
-            debugLog("connect(): fresh ML-KEM-768 key failed (\(error)); using the saved key")
-        }
-        presharedKeyIsUnused = false
-    }
-
     func connect() async throws {
         debugLog("connect() called, current status=\(status)")
-        if cnsa2Mode {
-            if let failure = await startCNSA2() { throw CNSA2Renewal.Failure(status: 0, message: failure) }
-            return
-        }
-        // A fresh ML-KEM-768 key for every connection: run the exchange
-        // again before the tunnel starts, so no post-quantum key outlives
-        // one session. This also replaces a Rosenpass config left by an
-        // older build.
-        await rekeyForConnect()
-        guard let m = manager else {
-            debugLog("connect() FAILING: manager is nil")
-            throw TunnelError.noConfig
-        }
-        debugLog("connect(): starting VPN tunnel via NETunnelProviderManager")
-        try m.connection.startVPNTunnel()
-
-        // Rotation loop now runs IN the NE (task #17). The host-app
-        // RosenpassBridge is repurposed: instead of running the loop, it
-        // polls the App Group UserDefaults that the NE-side
-        // RosenpassDriver writes to, and updates its `status` for the
-        // existing ContentView UI to consume. Net effect: the user keeps
-        // seeing "PQC: N rotations ✓" in the app, but the actual key
-        // exchange happens in the NE which iOS never suspends.
-        guard let cfg = config, cfg.pqEnabled else { return }
-        rosenpass.startStatusPolling()
+        if let failure = await startCNSA2() { throw CNSA2Renewal.Failure(status: 0, message: failure) }
     }
 
     /// Display name of the region whose CNSA 2.0 gateway was last used, for the UI.
@@ -1163,7 +527,7 @@ final class TunnelManager: ObservableObject {
                                  keyChanges: Int(values["cnsa2_rekeys"] ?? "") ?? 0)
     }
 
-    /// Seconds since the running tunnel last completed a WireGuard handshake,
+    /// Seconds since the running tunnel last completed its handshake,
     /// or nil if it has not completed one (or the provider can't be asked).
     /// "Connected" from NetworkExtension only means the interface is up; this
     /// is the signal that the tunnel can actually carry traffic.
@@ -1205,50 +569,17 @@ final class TunnelManager: ObservableObject {
         }
     }
 
-    /// Layer 4 — last-resort manual recovery escape hatch.
-    ///
-    /// Tears down the entire NETunnelProviderManager and recreates it
-    /// using the cached CloakConfig. Equivalent to "Settings → VPN →
-    /// Delete + reopen app + re-import" in one tap, except iOS will
-    /// still prompt the user once for permission to add the new VPN
-    /// configuration (Apple's hard requirement; not a UX choice we can
-    /// bypass). Used when Layers 1-3 of wedge auto-recovery have all
-    /// failed — typically because Layer 3's rate limit (3 reconnects /
-    /// 5min) was hit while the underlying issue keeps recurring, and
-    /// the only remaining option is to fully reset iOS's VPN state.
-    ///
-    /// Sequence:
-    ///   1. Stop the rosenpass loop and unwire sendNE.
-    ///   2. Stop any running tunnel cleanly.
-    ///   3. removeFromPreferences (deletes the iOS VPN profile).
-    ///   4. Wait briefly for iOS to settle.
-    ///   5. Build a fresh NETunnelProviderManager with the same config.
-    ///   6. saveToPreferences (triggers iOS permission prompt — user
-    ///      must tap Allow once).
-    ///   7. observeStatus + connect.
-    ///
-    /// Throws if there's no cached config to recreate from (user has
-    /// never imported one). Otherwise propagates errors from
-    /// removeFromPreferences / saveToPreferences / connect — the UI
-    /// should surface these in an alert.
+    /// Last-resort manual recovery: delete the saved VPN profile, create it again and
+    /// reconnect. The system asks the customer to allow the new profile once.
     func resetTunnel() async throws {
         debugLog("resetTunnel: starting")
 
-        guard let cfg = self.config else {
-            throw TunnelError.noConfig
-        }
-
-        // 1. Stop rosenpass loop and clear NE relay closure.
-        rosenpass.stop()
-        rosenpass.sendNE = nil
-
-        // 2 + 3. Stop existing tunnel and remove the manager from prefs.
+        // Stop the tunnel and remove the saved VPN profile.
         if let m = manager {
             let st = m.connection.status
             if st == .connected || st == .connecting || st == .reasserting {
                 debugLog("resetTunnel: stopping active tunnel")
                 m.connection.stopVPNTunnel()
-                // Brief wait for the stop to propagate before removeFromPreferences
                 try? await Task.sleep(nanoseconds: 500_000_000)
             }
             debugLog("resetTunnel: removeFromPreferences")
@@ -1256,46 +587,17 @@ final class TunnelManager: ObservableObject {
         }
         self.manager = nil
 
-        // 4. Settle delay. Without this, the subsequent
-        // saveToPreferences sometimes races with iOS's profile-deletion
-        // bookkeeping and either fails or silently doesn't show the
-        // permission prompt.
+        // Give the system a moment, or the save below can race with its own cleanup.
         try? await Task.sleep(nanoseconds: 1_000_000_000)
 
-        // 5. Rebuild a fresh manager from the cached config. Mirrors
-        // the inner logic of importConfig but skips the parse step
-        // since we already have a CloakConfig in self.config.
-        let manager = NETunnelProviderManager()
-        let proto = NETunnelProviderProtocol()
-        proto.providerBundleIdentifier = Self.providerBundleIdentifier
-        proto.serverAddress = cfg.endpoint
-        proto.providerConfiguration = cfg.asDictionary
-        proto.passwordReference = nil
-        proto.includeAllNetworks = true
-        manager.protocolConfiguration = proto
-        manager.localizedDescription = "LATTICE VPN"
-        manager.isEnabled = true
-
-        // 6. Save (triggers iOS permission prompt the first time after
-        // a removeFromPreferences). User must tap "Allow" — without
-        // user action this hangs.
-        debugLog("resetTunnel: saveToPreferences (iOS may prompt for permission)")
-        try await manager.saveToPreferences()
-        try await manager.loadFromPreferences()
-        self.manager = manager
-
-        // 7. Wire up status observation + connect.
-        self.observeStatus(manager.connection)
-        debugLog("resetTunnel: profile recreated, calling connect()")
+        // Connect again. This writes a fresh profile, and the system asks the customer
+        // to allow it once.
+        debugLog("resetTunnel: profile removed, calling connect()")
         try await connect()
     }
 
     func disconnect() async throws {
         debugLog("disconnect() called, current status=\(status)")
-        rosenpass.stop()
-        // Drop the NE relay closure so a stale capture can't fire
-        // sendProviderMessage after the session goes away.
-        rosenpass.sendNE = nil
         guard let m = manager else {
             debugLog("disconnect(): manager is nil, nothing to stop")
             return
@@ -1310,40 +612,6 @@ final class TunnelManager: ObservableObject {
     /// 0x01 = SET_PSK, payload = 32-byte preshared key.
     /// (Mirrors PacketTunnelProvider.handleAppMessage on the receiving side.)
     private static let opcodeSetPsk: UInt8 = 0x01
-
-    /// Push a Rosenpass-derived PSK to the running PacketTunnelProvider
-    /// extension via `sendProviderMessage`. Best-effort — if the tunnel
-    /// isn't up yet, the message is dropped and we'll retry on the next
-    /// rotation tick.
-    private func pushPresharedKey(_ psk: Data) {
-        guard let session = manager?.connection as? NETunnelProviderSession else {
-            print("pushPresharedKey: tunnel not connected, dropping (will retry on next rotation)")
-            return
-        }
-        guard psk.count == 32 else {
-            print("pushPresharedKey: refusing to push PSK of length \(psk.count)")
-            return
-        }
-        var payload = Data()
-        payload.append(Self.opcodeSetPsk)
-        payload.append(psk)
-
-        do {
-            try session.sendProviderMessage(payload) { response in
-                if let response = response, let code = response.first {
-                    if code == 0 {
-                        print("PSK accepted by NE")
-                    } else {
-                        print("PSK rejected by NE, code=0x\(String(code, radix: 16))")
-                    }
-                } else {
-                    print("PSK push: no response from NE")
-                }
-            }
-        } catch {
-            print("pushPresharedKey send error: \(error)")
-        }
-    }
 
     // MARK: - Status observation
 
@@ -1493,82 +761,6 @@ final class TunnelManager: ObservableObject {
         }
     }
 
-    // MARK: - Layer 5 — PQC self-heal (recover poisoned PQC state, no reinstall)
-    //
-    // Root cause 2026-05-30: the App Group's rosenpass keypair / stored server
-    // pubkey could end up missing or stale (notably persisting across
-    // upgrade-installs), so the NE never starts the rosenpass exchange —
-    // WireGuard comes up but PQC stays at 0 rotations and the only known fix was
-    // a full delete+reinstall. This recovers automatically: if PQC has NEVER
-    // rotated by `pqcHealGraceSec` after connecting, regenerate the local
-    // keypair when it's missing, drop the cached config + stale server pubkey for
-    // the active region, and re-provision it fresh. One-shot per connection,
-    // rate-limited, and it can ONLY fire when PQC is provably stuck (>= grace
-    // with zero rotations) — the healthy path is never touched.
-    //
-    // Grace is set comfortably past a normal first rotation (~30-90s) so a
-    // slow-but-working exchange is never interrupted.
-    private static let pqcHealGraceSec: TimeInterval = 150
-    private static let maxPqcHealsPerWindow = 2
-    private static let pqcHealWindowSec: TimeInterval = 600
-    private var pqcHealTimer: Timer?
-    private var pqcHealedThisConnection = false
-    private var pqcHealTimestamps: [Date] = []
-
-    /// Arm the one-shot PQC self-heal grace timer for this connection.
-    private func armPQCSelfHeal() {
-        guard config?.pqEnabled == true else { return }
-        disarmPQCSelfHeal()
-        pqcHealedThisConnection = false
-        let timer = Timer.scheduledTimer(withTimeInterval: Self.pqcHealGraceSec, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.pqcSelfHealCheck() }
-        }
-        pqcHealTimer = timer
-    }
-
-    /// Cancel the grace timer (tunnel left the connected state, or healed).
-    private func disarmPQCSelfHeal() {
-        pqcHealTimer?.invalidate()
-        pqcHealTimer = nil
-    }
-
-    /// Fired `pqcHealGraceSec` after connect. If PQC has never rotated, the NE
-    /// never started its exchange (poisoned PQC state) — recover by regenerating
-    /// the keypair when missing and re-provisioning the active region fresh.
-    private func pqcSelfHealCheck() {
-        // Only act if still connected AND PQC has not established a rotation.
-        guard status == .connected else { return }
-        if case .established(let n) = rosenpass.status, n > 0 { return } // healthy — never touch
-        guard !pqcHealedThisConnection else { return }
-
-        let now = Date()
-        pqcHealTimestamps.removeAll { now.timeIntervalSince($0) > Self.pqcHealWindowSec }
-        guard pqcHealTimestamps.count < Self.maxPqcHealsPerWindow else {
-            debugLog("pqcSelfHeal: rate-limited (\(pqcHealTimestamps.count) in window) — leaving for manual reconnect")
-            return
-        }
-        guard let region = selectedRegion else { return }
-
-        pqcHealedThisConnection = true
-        pqcHealTimestamps.append(now)
-        debugLog("pqcSelfHeal: PQC at 0 rotations \(Int(Self.pqcHealGraceSec))s after connect — regenerating keys if missing + re-provisioning \(region.id)")
-
-        Task { @MainActor [weak self] in
-            guard let self = self else { return }
-            // Integrity: regenerate the rosenpass keypair only if it's gone.
-            if !AppGroupKeyStore.hasLocalKeypair() {
-                AppGroupKeyStore.clearLocalKeypair()
-                await self.ensureLocalKeypair()
-            }
-            // Drop the stale server pubkey (re-saved on the fresh import) and the
-            // cached region config so selectRegion does a full fresh provision.
-            AppGroupKeyStore.clearServerPublicKey()
-            self.provisionedConfigsByRegionID.removeValue(forKey: region.id)
-            self.persistProvisionedConfigsCache()
-            await self.selectRegion(region)
-        }
-    }
-
     private func updateStatus(_ s: NEVPNStatus) {
         let old = status
         switch s {
@@ -1613,11 +805,8 @@ final class TunnelManager: ObservableObject {
         // is idempotent. This also gives the self-heal correct status input.
         // Layer 5: arm PQC self-heal on connect; disarm when leaving connected.
         if status == .connected, old != .connected {
-            if config?.pqEnabled == true { rosenpass.startStatusPolling() }
-            armPQCSelfHeal()
             startHandshakeVerification()
         } else if status != .connected, old == .connected {
-            disarmPQCSelfHeal()
             handshakeVerifyTask?.cancel()
             handshakeVerifyTask = nil
             handshakeVerified = false
@@ -1685,13 +874,6 @@ final class TunnelManager: ObservableObject {
         let attemptNumber = autoReconnectTimestamps.count
         debugLog("autoReconnect: scheduling (#\(attemptNumber) in window) after \(Self.autoReconnectDelaySec)s delay; reason=\(reason)")
 
-        // Tear down stale rosenpass loop state from before the wedge —
-        // the NE that the loop was talking to is gone. The new connect()
-        // call below re-spins it up cleanly with sendNE rebound to the
-        // freshly spawned NE process.
-        rosenpass.stop()
-        rosenpass.sendNE = nil
-
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(Self.autoReconnectDelaySec * 1_000_000_000))
             guard let self = self else { return }
@@ -1718,49 +900,6 @@ final class TunnelManager: ObservableObject {
 
     // MARK: - Local pubkey export (for server-side registration)
 
-    /// Short hex fingerprint of a base64 rosenpass public key — first
-    /// 16 hex chars (8 bytes) of SHA-256 over the base64 string. Used
-    /// for the UI's "your PQC identity" display and as part of the
-    /// share filename so the user can recognize which device they
-    /// AirDropped from.
-    ///
-    /// Note: this fingerprints the base64 STRING, not the raw key
-    /// bytes. Either is fine for human-recognition purposes; the
-    /// string-based hash matches what they'll see in a rendered
-    /// config or copy-paste view.
-    static func pubkeyFingerprint(_ b64: String) -> String {
-        let hash = SHA256.hash(data: Data(b64.utf8))
-        return hash.prefix(8).map { String(format: "%02x", $0) }.joined()
-    }
-
-    /// Computed convenience for the UI — the short fingerprint of the
-    /// currently-loaded local pubkey, or nil if generation hasn't
-    /// completed yet. SwiftUI re-evaluates this whenever
-    /// `localPublicKeyB64` changes.
-    var localPubkeyFingerprint: String? {
-        localPublicKeyB64.map(Self.pubkeyFingerprint)
-    }
-
-    /// Write the local pubkey (base64) to a tmp-dir file with a
-    /// recognizable filename including the fingerprint, and return
-    /// the URL for SwiftUI's ShareLink. Caller is responsible for
-    /// not retaining the returned URL after the share sheet closes —
-    /// the file lives in the system's autocleaned tmp directory.
-    ///
-    /// File contents are exactly the base64 of the rosenpass public
-    /// key, no extra framing. The server's `add-peer.sh` (when
-    /// invoked with this file as its second argument) base64-decodes
-    /// and writes the binary to /etc/rosenpass/<peer>.rosenpass-public.
-    func makeLocalPubkeyShareFile() throws -> URL {
-        guard let pubB64 = self.localPublicKeyB64 else {
-            throw TunnelError.parse("local rosenpass keypair not yet generated")
-        }
-        let fp = Self.pubkeyFingerprint(pubB64)
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("latticevpn-pubkey-\(fp).b64")
-        try pubB64.write(to: url, atomically: true, encoding: .utf8)
-        return url
-    }
 }
 
 // `TunnelError` lives in ConfigParser.swift so the NetworkExtension
@@ -1772,4 +911,15 @@ struct CNSA2SessionStats: Equatable {
     let received: UInt64
     let sent: UInt64
     let keyChanges: Int
+}
+
+/// Errors the tunnel manager raises on its own account.
+enum TunnelError: LocalizedError {
+    case noConfig
+
+    var errorDescription: String? {
+        switch self {
+        case .noConfig: return "The VPN is not set up yet. Connect once to set it up."
+        }
+    }
 }

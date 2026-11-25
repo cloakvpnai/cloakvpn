@@ -1,5 +1,0 @@
-framework module rosenpassffiFFI {
-    umbrella header "rosenpassffiFFI.h"
-    export *
-    module * { export * }
-}

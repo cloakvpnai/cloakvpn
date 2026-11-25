@@ -9,7 +9,7 @@
 // config (BILLING_INTEGRATION.md §7).
 //
 // `id` is the contract: it must match the ids in the server's
-// regions.json exactly. `endpointIP` is the WireGuard tunnel endpoint,
+// regions.json exactly. `endpointIP` is the region's gateway address,
 // shown in the picker for reference.
 //
 // The list is bundled (not fetched at runtime) so the cold-start path
@@ -23,7 +23,7 @@ struct CloakRegion: Identifiable, Equatable, Codable {
     let displayName: String     // user-facing label, e.g. "US West (Oregon)"
     let shortLabel: String      // ~3-char chip label under flag, e.g. "US-W"
     let countryFlag: String     // emoji flag
-    let endpointIP: String      // WireGuard tunnel endpoint, for display
+    let endpointIP: String      // gateway address, for display
 
     /// Every concentrator wired into the central account API. All ten are
     /// live (BILLING_INTEGRATION.md §7).

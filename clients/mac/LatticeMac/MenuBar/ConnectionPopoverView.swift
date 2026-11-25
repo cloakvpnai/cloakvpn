@@ -10,7 +10,7 @@
 //                            and a checkmark on the active one.
 //    3. Footer actions     — Preferences…, Quit.
 //
-//  Sized to fit the NSPopover (360 x 480 default). All styling uses
+//  Sized to fit the NSPopover (480 x 680 default). All styling uses
 //  semantic Mac colors so the popover automatically adapts to
 //  light/dark menu bars without us writing two themes.
 //
@@ -71,9 +71,9 @@ struct ConnectionPopoverView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("CNSA 2.0")
-                        .font(.system(size: inWindow ? 13 : 11, weight: .semibold))
+                        .font(.system(size: inWindow ? 18 : 16, weight: .semibold))
                     Text("ML-KEM-1024, ML-DSA-87 and AES-256 over TLS 1.3, through the selected region.")
-                        .font(.system(size: inWindow ? 12 : 10))
+                        .font(.system(size: inWindow ? 16 : 14))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -81,7 +81,7 @@ struct ConnectionPopoverView: View {
             }
             if let message = connection.cnsa2Message {
                 Text(message)
-                    .font(.system(size: inWindow ? 12 : 10))
+                    .font(.system(size: inWindow ? 16 : 14))
                     .foregroundStyle(.secondary)
             }
         }
@@ -93,18 +93,18 @@ struct ConnectionPopoverView: View {
                 .resizable()
                 .renderingMode(.template)
                 .foregroundStyle(.tint)
-                .frame(width: 22, height: 22)
+                .frame(width: 30, height: 30)
             VStack(alignment: .leading, spacing: 0) {
                 Text("Lattice VPN")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
                 Text("CNSA 2.0")
-                    .font(.system(size: 10))
+                    .font(.system(size: 14))
                     .foregroundStyle(.secondary)
             }
             Spacer()
             Button(action: { Task { await connection.refreshPublicIP() } }) {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 16, weight: .medium))
             }
             .buttonStyle(.borderless)
             .help("Refresh status")
@@ -117,7 +117,7 @@ struct ConnectionPopoverView: View {
             statusPill
             HStack(spacing: 16) {
                 ipColumn(label: "Your IP",  value: connection.publicIP ?? "—")
-                Divider().frame(height: 28)
+                Divider().frame(height: 38)
                 ipColumn(label: "Exit IP",  value: connection.tunnelIP ?? "—")
             }
             primaryActionButton
@@ -128,7 +128,7 @@ struct ConnectionPopoverView: View {
         HStack(spacing: 8) {
             Circle()
                 .fill(pillTintColor)
-                .frame(width: 8, height: 8)
+                .frame(width: 11, height: 11)
                 .overlay(
                     Circle()
                         .stroke(pillTintColor.opacity(0.4), lineWidth: 4)
@@ -142,12 +142,12 @@ struct ConnectionPopoverView: View {
                         )
                 )
             Text(connection.status.menuTitle)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 19, weight: .semibold))
                 .foregroundStyle(pillTextColor)
             Spacer()
             if connection.status == .connected, let region = connection.selectedRegion {
                 Text("\(region.countryFlag) \(region.id)")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .font(.system(size: 16, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
         }
@@ -162,11 +162,11 @@ struct ConnectionPopoverView: View {
     private func ipColumn(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label.uppercased())
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .tracking(0.6)
             Text(value)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .font(.system(size: 17, weight: .medium, design: .monospaced))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
         }
@@ -188,13 +188,13 @@ struct ConnectionPopoverView: View {
             HStack(spacing: 6) {
                 if connection.status.isBusy { ProgressView().controlSize(.small) }
                 Text(primaryActionLabel)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 19, weight: .semibold))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
+            .padding(.vertical, 10)
         }
         .buttonStyle(.borderedProminent)
-        .controlSize(.regular)
+        .controlSize(.large)
         .tint(connection.status.isConnected ? .red : .accentColor)
         .disabled(connection.status.isBusy)
     }
@@ -203,12 +203,12 @@ struct ConnectionPopoverView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("REGION")
-                    .font(.system(size: inWindow ? 12 : 9, weight: .semibold))
+                    .font(.system(size: inWindow ? 16 : 13, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .tracking(0.6)
                 Spacer()
                 Text("\(connection.availableRegions.count) available")
-                    .font(.system(size: inWindow ? 12 : 10))
+                    .font(.system(size: inWindow ? 16 : 14))
                     .foregroundStyle(.secondary)
             }
             ScrollView {
@@ -231,7 +231,7 @@ struct ConnectionPopoverView: View {
                         Image(systemName: "chevron.down")
                         Text("More regions below")
                     }
-                    .font(.system(size: inWindow ? 12 : 10, weight: .semibold))
+                    .font(.system(size: inWindow ? 16 : 14, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 5)
@@ -243,7 +243,7 @@ struct ConnectionPopoverView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: regionListAtBottom)
-            .frame(maxHeight: inWindow ? .infinity : 170)
+            .frame(maxHeight: inWindow ? .infinity : 250)
         }
     }
 
@@ -253,15 +253,15 @@ struct ConnectionPopoverView: View {
             Task { await connection.connect(to: region) }
         } label: {
             HStack(spacing: inWindow ? 14 : 10) {
-                Text(region.countryFlag).font(.system(size: inWindow ? 32 : 20))
+                Text(region.countryFlag).font(.system(size: inWindow ? 43 : 29))
                 Text(region.displayName)
-                    .font(.system(size: inWindow ? 17 : 13, weight: .medium))
+                    .font(.system(size: inWindow ? 23 : 19, weight: .medium))
                     .foregroundStyle(.primary)
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.tint)
-                        .font(.system(size: inWindow ? 18 : 13, weight: .semibold))
+                        .font(.system(size: inWindow ? 24 : 19, weight: .semibold))
                 }
             }
             .padding(.horizontal, inWindow ? 14 : 10)
@@ -279,11 +279,11 @@ struct ConnectionPopoverView: View {
         HStack {
             Button("Preferences…") { openPreferences() }
                 .buttonStyle(.borderless)
-                .font(.system(size: 11))
+                .font(.system(size: 16))
             Spacer()
             Button("Quit") { NSApp.terminate(nil) }
                 .buttonStyle(.borderless)
-                .font(.system(size: 11))
+                .font(.system(size: 16))
                 .foregroundStyle(.secondary)
         }
         .padding(.top, 8)
@@ -332,5 +332,5 @@ struct ConnectionPopoverView: View {
 #Preview {
     ConnectionPopoverView()
         .environmentObject(ConnectionViewModel())
-        .frame(width: 360, height: 480)
+        .frame(width: 480, height: 680)
 }

@@ -76,7 +76,7 @@ final class MenuBarController: NSObject {
     private func configurePopover() {
         popover.behavior = .transient   // Auto-dismisses on click-outside
         popover.animates = true
-        popover.contentSize = NSSize(width: 360, height: 480)
+        popover.contentSize = NSSize(width: 480, height: 680)
         popover.contentViewController = NSHostingController(
             rootView: ConnectionPopoverView(showPreferences: showPreferences)
                 .environmentObject(connection)

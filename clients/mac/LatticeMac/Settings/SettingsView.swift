@@ -37,7 +37,9 @@ struct SettingsView: View {
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
         .padding(20)
-        .frame(minWidth: 560, idealWidth: 640, minHeight: 520, idealHeight: 680)
+        .font(.system(size: 16))
+        .controlSize(.large)
+        .frame(minWidth: 720, idealWidth: 860, minHeight: 680, idealHeight: 860)
     }
 }
 
@@ -176,7 +178,7 @@ struct SubscriptionSettingsView: View {
                     }
                     .buttonStyle(.link)
                 }
-                .font(.footnote)
+                .font(.system(size: 14))
                 .foregroundStyle(.secondary)
             }
         }
@@ -199,13 +201,13 @@ struct SubscriptionSettingsView: View {
         ForEach(store.sortedProducts, id: \.id) { product in
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(product.displayName).font(.headline)
+                    Text(product.displayName).font(.system(size: 18, weight: .semibold))
                     Text(product.description)
-                        .font(.subheadline)
+                        .font(.system(size: 16))
                         .foregroundStyle(.secondary)
                     if let period = product.subscription?.subscriptionPeriod {
                         Text("\(product.displayPrice) per \(Self.unitName(period))")
-                            .font(.subheadline)
+                            .font(.system(size: 16))
                     }
                 }
                 Spacer()
@@ -294,11 +296,11 @@ private struct SubscriptionStatusContent: View {
                 .foregroundStyle(.secondary)
         } else {
             if let error = connection.accountStatusError {
-                Text("Subscription could not be verified").font(.headline)
+                Text("Subscription could not be verified").font(.system(size: 18, weight: .semibold))
                 Text(error).foregroundStyle(.red)
             } else if let status = connection.accountStatus, connection.accountStatusVerifiedAt != nil {
                 Text(status.isActive ? "Active subscription" : "No active subscription")
-                    .font(.headline)
+                    .font(.system(size: 18, weight: .semibold))
                 LabeledContent("Plan", value: status.tier.isEmpty ? "None" : status.tier.capitalized)
                 LabeledContent("Devices", value: "\(status.deviceCount) of \(status.deviceLimit)")
                 if let expiry = status.activeUntilDate, expiry > Date(timeIntervalSince1970: 0) {

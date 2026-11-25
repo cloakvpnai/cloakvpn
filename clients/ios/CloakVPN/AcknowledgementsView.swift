@@ -27,7 +27,7 @@ struct AcknowledgementsView: View {
                 notices = text
             } else {
                 notices = "Lattice VPN is built on open-source software including "
-                    + "WireGuard, Rosenpass, and liboqs (Open Quantum Safe). "
+                    + "OpenSSL. "
                     + "Full license texts could not be loaded; see latticevpn.ai."
             }
         }

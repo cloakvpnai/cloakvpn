@@ -17,17 +17,6 @@
 
 name: LatticeMac
 
-# ---- Swift Package dependencies -----------------------------------
-#
-# Mullvad's fork of wireguard-apple — same package the iOS target pulls
-# in. The fork includes a custom WireGuardKit ABI (Mullvad uses this in
-# production), the WireGuardKitGo bridge (a build-phase make-script
-# compiles the Go side at first-build), and macOS support.
-packages:
-  WireGuardKit:
-    url: https://github.com/mullvad/wireguard-apple.git
-    branch: mullvad-master
-
 options:
   bundleIdPrefix: ai.latticevpn
   createIntermediateGroups: true
@@ -84,13 +73,8 @@ targets:
       - path: ../ios/CloakVPN/CNSA2Renewal.swift
       - path: ../ios/CloakVPN/LatticeAPI.swift
       - path: ../ios/CloakVPN/LatticeAccountClient.swift
-      # ML-KEM-768 exchange (CryptoKit, needs macOS 26)
-      - path: ../ios/CloakVPN/MLKEM768Exchange.swift
       - path: ../ios/CloakVPN/StoreManager.swift
-      - path: ../ios/CloakVPN/ConfigParser.swift
       - path: ../ios/CloakVPN/Region.swift
-      - path: ../ios/CloakVPN/RosenpassBridge.swift
-      - path: ../ios/CloakVPN/rosenpassffi.swift
       - path: ../ios/CloakVPN/SubscriptionInfo.swift
 
     # ---- Info.plist (FULL contents declared inline) -----------
@@ -122,7 +106,7 @@ targets:
         # App Sandbox is REQUIRED for the App Store build and recommended
         # for Direct Download. On everywhere; selectively grant access.
         com.apple.security.app-sandbox: true
-        # Outbound network (we initiate API calls + WireGuard handshake)
+        # Outbound network (we initiate API calls and the tunnel)
         com.apple.security.network.client: true
         # NetworkExtension entitlement — Apple-controlled grant.
         com.apple.developer.networking.networkextension:
@@ -165,20 +149,6 @@ targets:
 
     dependencies:
       - target: LatticeMacTunnel
-      # Mac uses a dedicated dynamic framework (RosenpassFFI built as a
-      # .dylib + wrapped) instead of consuming the iOS xcframework
-      # directly. Two reasons:
-      #  1) An xcframework cannot mix static (iOS) and dynamic (Mac)
-      #     library types; the Mac slice has to be dynamic to avoid
-      #     duplicate-symbol conflicts at link time with Mullvad's
-      #     libmaybenot, which also embeds Rust's std (and thus
-      #     defines `_rust_eh_personality`). A static-lib Mac slice
-      #     would re-define that symbol; a dynamic framework hides
-      #     internal symbols entirely.
-      #  2) Decoupling means we can rebuild the Mac framework
-      #     independently of the iOS xcframework when iterating.
-      - framework: Frameworks/rosenpassffiFFI.framework
-        embed: true
 
   # ---- Packet Tunnel Provider extension ---------------------------
   LatticeMacTunnel:
@@ -193,26 +163,17 @@ targets:
           - "LatticeMacTunnel.entitlements"
       # Shared PTP logic from iOS (target-membership cross-cut)
       - path: ../ios/CloakTunnel/PacketTunnelProvider.swift
-      - path: ../ios/CloakTunnel/RosenpassDriver.swift
       - path: ../ios/CloakTunnel/CNSA2Tunnel.swift
       # CNSA 2.0 tunnel client (TLS 1.3). The C file is the only code that
       # touches OpenSSL; build it first with ../apple-tls/build-openssl.sh.
       - path: ../apple-tls/Sources/LatticeTLS
       - path: ../apple-tls/Sources/CLatticeTLS
       # PTP also depends on these shared helpers.
-      # NOTE: RosenpassBridge.swift is NOT included here even though the
-      # host app uses it — that file declares `extension FfiError:
-      # LocalizedError`, and RosenpassDriver.swift declares the SAME
-      # extension. They're meant to live in separate targets (the iOS
-      # project does it the same way). Adding both to one target
-      # produces "invalid redeclaration of 'errorDescription'".
       - path: ../ios/CloakVPN/AppGroupKeyStore.swift
       - path: ../ios/CloakVPN/CNSA2Identity.swift
       - path: ../ios/CloakVPN/CNSA2Renewal.swift
       - path: ../ios/CloakVPN/LatticeAPI.swift
-      - path: ../ios/CloakVPN/ConfigParser.swift
       - path: ../ios/CloakVPN/Region.swift
-      - path: ../ios/CloakVPN/rosenpassffi.swift
 
     # ---- Info.plist (FULL contents declared inline) -----------
     info:
@@ -283,49 +244,6 @@ targets:
         Release-DirectDownload:
           OTHER_SWIFT_FLAGS: "$(inherited) -DDIRECT_DOWNLOAD_BUILD"
 
-    dependencies:
-      # PTP extension LINKS the same Mac framework (don't embed —
-      # extensions consume the parent app's embedded copy at runtime
-      # via the @executable_path/../../../../Frameworks rpath).
-      - framework: Frameworks/rosenpassffiFFI.framework
-        embed: false
-      # WireGuardKit Swift Package — provides the userspace WG state
-      # machine the PTP drives. The companion Go bridge
-      # (WireGuardKitGo) is compiled by the build phase below.
-      - package: WireGuardKit
-
-    # ---- Pre-build phase: compile WireGuardKitGo (Go side of WG) ----
-    #
-    # WireGuardKit's Swift binding calls into a Go-built static library
-    # at runtime; the package itself does NOT auto-build that Go side.
-    # We compile it once per build, walking up from BUILT_PRODUCTS_DIR
-    # to find the SourcePackages checkout (path layout differs between
-    # Debug builds and Archives, so we don't hardcode either).
-    preBuildScripts:
-      - name: Build WireGuardKitGo
-        basedOnDependencyAnalysis: false
-        shell: /bin/bash
-        script: |
-          set -euo pipefail
-          WG_GO_DIR=""
-          DIR="$BUILT_PRODUCTS_DIR"
-          while [ "$DIR" != "/" ]; do
-              CANDIDATE="$DIR/SourcePackages/checkouts/wireguard-apple/Sources/WireGuardKitGo"
-              if [ -d "$CANDIDATE" ]; then
-                  WG_GO_DIR="$CANDIDATE"
-                  break
-              fi
-              DIR="$(dirname "$DIR")"
-          done
-          [ -n "$WG_GO_DIR" ] || { echo "error: WireGuardKitGo not found"; exit 1; }
-          echo "info: building wg-go bridge in $WG_GO_DIR"
-          export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin"
-          # Stripping the enum-map-derive proc-macro dylib on this toolchain
-          # produces a Mach-O dyld rejects (rustc E0463 "can't find crate for
-          # enum_map_derive"). Building maybenot unstripped avoids it.
-          export CARGO_PROFILE_RELEASE_STRIP=none
-          cd "$WG_GO_DIR"
-          make -j$(sysctl -n hw.ncpu)
 
 # ---- Schemes -------------------------------------------------------
 schemes:
@@ -346,7 +264,7 @@ schemes:
       config: Release
 
   # No spaces or parentheses in scheme names: the scheme name becomes part of
-  # the archive build path, and the WireGuardKitGo Makefile breaks on both.
+  # the archive build path.
   LatticeMac-AppStore:
     build:
       targets:
