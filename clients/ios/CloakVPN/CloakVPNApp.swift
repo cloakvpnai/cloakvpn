@@ -17,6 +17,12 @@ struct CloakVPNApp: App {
                         try? await Task.sleep(nanoseconds: 2_000_000_000)
                         await tunnel.startCNSA2Lab(blob)
                     }
+                    // `-LatticeCNSA2Disconnect 1` stops the tunnel, so a test run can leave the
+                    // phone the way it found it.
+                    if UserDefaults.standard.string(forKey: "LatticeCNSA2Disconnect") != nil {
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        try? await tunnel.disconnect()
+                    }
                     // `-LatticeCNSA2Connect full` enrolls through the account API and connects,
                     // the same as the preview button. The outcome goes to Documents for test tools.
                     if UserDefaults.standard.string(forKey: "LatticeCNSA2Connect") != nil {
