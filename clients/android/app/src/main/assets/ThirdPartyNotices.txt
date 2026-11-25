@@ -21,7 +21,7 @@ Bouncy Castle
 https://www.bouncycastle.org
 ================================================================================
 
-Copyright (c) 2000-2024 The Legion of the Bouncy Castle Inc.
+Copyright (c) 2000-2023 The Legion of the Bouncy Castle Inc. (https://www.bouncycastle.org)
 
 Used on the device for key and certificate handling. Licensed under the MIT
 License (below).
