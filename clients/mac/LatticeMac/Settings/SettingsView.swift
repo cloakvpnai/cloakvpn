@@ -39,7 +39,7 @@ struct SettingsView: View {
         .padding(20)
         .font(.system(size: 16))
         .controlSize(.large)
-        .frame(minWidth: 720, idealWidth: 860, minHeight: 680, idealHeight: 860)
+        .frame(minWidth: 760, idealWidth: 860, minHeight: 780, idealHeight: 820)
     }
 }
 

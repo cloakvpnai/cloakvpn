@@ -212,7 +212,9 @@ struct ConnectionPopoverView: View {
                     .foregroundStyle(.secondary)
             }
             ScrollView {
-                VStack(spacing: 6) {
+                // Two columns, so all ten regions show without scrolling.
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
+                          spacing: 6) {
                     ForEach(connection.availableRegions) { region in
                         regionRow(region)
                     }
@@ -243,7 +245,7 @@ struct ConnectionPopoverView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: regionListAtBottom)
-            .frame(maxHeight: inWindow ? .infinity : 250)
+            .frame(maxHeight: inWindow ? .infinity : 260)
         }
     }
 
@@ -252,20 +254,22 @@ struct ConnectionPopoverView: View {
         return Button {
             Task { await connection.connect(to: region) }
         } label: {
-            HStack(spacing: inWindow ? 14 : 10) {
-                Text(region.countryFlag).font(.system(size: inWindow ? 43 : 29))
+            HStack(spacing: inWindow ? 10 : 7) {
+                Text(region.countryFlag).font(.system(size: inWindow ? 30 : 22))
                 Text(region.displayName)
-                    .font(.system(size: inWindow ? 23 : 19, weight: .medium))
+                    .font(.system(size: inWindow ? 18 : 15, weight: .medium))
                     .foregroundStyle(.primary)
-                Spacer()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Spacer(minLength: 2)
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.tint)
-                        .font(.system(size: inWindow ? 24 : 19, weight: .semibold))
+                        .font(.system(size: inWindow ? 18 : 15, weight: .semibold))
                 }
             }
-            .padding(.horizontal, inWindow ? 14 : 10)
-            .padding(.vertical, inWindow ? 10 : 7)
+            .padding(.horizontal, inWindow ? 12 : 8)
+            .padding(.vertical, inWindow ? 9 : 6)
             .background(
                 RoundedRectangle(cornerRadius: inWindow ? 10 : 6, style: .continuous)
                     .fill(isSelected ? Color.accentColor.opacity(0.10) : Color.clear)

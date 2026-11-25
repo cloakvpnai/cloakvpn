@@ -102,7 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 SettingsView().environmentObject(connection))
             let window = NSWindow(contentViewController: controller)
             window.title = "Lattice VPN"
-            window.setContentSize(NSSize(width: 640, height: 680))
+            window.setContentSize(NSSize(width: 860, height: 820))
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.isReleasedWhenClosed = false
             window.center()
