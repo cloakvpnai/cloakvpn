@@ -104,11 +104,12 @@ struct ConnectionPopoverView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: "shield.lefthalf.filled")
+            // The Lattice logo, taken from the app's own icon.
+            Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
-                .renderingMode(.template)
-                .foregroundStyle(.tint)
-                .frame(width: 30, height: 30)
+                .interpolation(.high)
+                .frame(width: 46, height: 46)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 0) {
                 Text("Lattice VPN")
                     .font(.system(size: 20, weight: .semibold))
