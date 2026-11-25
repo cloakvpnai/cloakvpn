@@ -77,6 +77,9 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
 
     val cnsa2Detail: StateFlow<String?> = cnsa2?.detail ?: MutableStateFlow(null)
 
+    /** Session time, data, latency and key changes for the globe panel. */
+    val sessionStats: StateFlow<ai.latticevpn.android.vpn.cnsa2.Cnsa2Stats> = ai.latticevpn.android.cnsa2.LatticeTlsVpnService.stats
+
     init {
         // Keeps the daily renewal scheduled for a device that is already enrolled.
         if (cnsa2Available && Cnsa2Config.load(app) != null) Cnsa2RenewalWorker.schedule(app)

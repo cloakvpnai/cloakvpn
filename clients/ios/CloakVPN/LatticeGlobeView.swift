@@ -454,6 +454,9 @@ private struct GlobeMap: PlatformRepresentable {
         #if os(macOS)
         private var monitor: Any?
         #endif
+        #if DEBUG
+        private var demoAppliedStep = -1
+        #endif
 
         init(onPick: @escaping (CloakRegion) -> Void) { self.onPick = onPick }
 
@@ -495,7 +498,12 @@ private struct GlobeMap: PlatformRepresentable {
                 // usual three degrees per second, half a second of video per step.
                 guard let map, isConnected, let id = selectedRegionID, let exit = LatticeGlobeView.coordinates[id],
                       let camera = map.camera.copy() as? MKMapCamera else { return }
-                let tau = max(0, Double(LatticeGlobeView.demoStep) * 0.5 - 2)
+                // Move only when the step changes. Setting the camera on every frame keeps
+                // the map from ever finishing its drawing.
+                let step = LatticeGlobeView.demoStep
+                guard step != demoAppliedStep else { return }
+                demoAppliedStep = step
+                let tau = max(0, Double(step) * 0.5 - 2)
                 var longitude = exit.longitude + Self.degreesPerSecond * tau
                 if longitude > 180 { longitude -= 360 }
                 let latitude = 18 + (exit.latitude - 18) * exp(-0.4 * tau)

@@ -5,6 +5,7 @@ import ai.latticevpn.android.ui.IpState
 import ai.latticevpn.android.ui.LatticeViewModel
 import ai.latticevpn.android.ui.Screen
 import ai.latticevpn.android.ui.components.ConnectControl
+import ai.latticevpn.android.ui.components.GlobePanel
 import ai.latticevpn.android.ui.components.LatticeLogo
 import ai.latticevpn.android.ui.theme.LatticeAmber
 import ai.latticevpn.android.ui.theme.LatticeNavy
@@ -48,6 +49,7 @@ fun HomeScreen(
     val realIp by vm.realIp.collectAsState()
     val cnsa2Detail by vm.cnsa2Detail.collectAsState()
     val cnsa2Error by vm.cnsa2Error.collectAsState()
+    val sessionStats by vm.sessionStats.collectAsState()
 
     val onControlTap: () -> Unit = {
         when (state) {
@@ -130,6 +132,15 @@ fun HomeScreen(
                     region = region,
                     hasConfig = false,
                     onClick = { vm.navigateTo(Screen.REGIONS) },
+                )
+                Spacer(Modifier.height(10.dp))
+                // The globe: every region as a dot, the exit in use lit, and the session's figures.
+                GlobePanel(
+                    selectedRegionId = region?.id,
+                    connected = state == TunnelState.CONNECTED,
+                    stats = sessionStats,
+                    onPick = { picked -> vm.selectRegion(picked) { } },
+                    modifier = Modifier.fillMaxWidth().height(400.dp),
                 )
             }
         }

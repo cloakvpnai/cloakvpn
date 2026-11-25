@@ -65,3 +65,20 @@ object Cnsa2Suite {
     /** The only suite CNSA 2.0 mode offers, so also the only one it can negotiate. */
     const val SUMMARY = "AES-256-GCM, SHA-384, ML-KEM-1024, ML-DSA-87"
 }
+
+/**
+ * What the home screen shows about the current session. Counted in memory by the
+ * tunnel service; nothing here is written to disk or sent anywhere.
+ */
+data class Cnsa2Stats(
+    /** When this session first came up (wall clock), or 0 while there is none. */
+    val connectedAtMs: Long = 0,
+    val rxBytes: Long = 0,
+    val txBytes: Long = 0,
+    /** How many times the keys have been replaced since connecting. */
+    val keyChanges: Int = 0,
+    /** Round trip to the gateway through the tunnel, or -1 when not measured yet. */
+    val latencyMs: Int = -1,
+    val latencyBestMs: Int = -1,
+    val latencyAverageMs: Int = -1,
+)

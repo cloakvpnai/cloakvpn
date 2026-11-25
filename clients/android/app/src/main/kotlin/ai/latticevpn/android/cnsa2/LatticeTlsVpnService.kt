@@ -3,6 +3,7 @@ package ai.latticevpn.android.cnsa2
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2Config
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2IdentityStore
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2State
+import ai.latticevpn.android.vpn.cnsa2.Cnsa2Stats
 import ai.latticevpn.android.vpn.cnsa2.tls.TunnelException
 import ai.latticevpn.android.vpn.cnsa2.tls.TunnelIdentity
 import ai.latticevpn.android.vpn.cnsa2.tls.TunnelSession
@@ -62,6 +63,15 @@ class LatticeTlsVpnService : VpnService() {
     private var tunOut: FileOutputStream? = null
     private var tunSettings: TunnelSettings? = null
 
+    // Session figures for the home screen's globe panel. Engine thread only.
+    private var rxBytes = 0L
+    private var txBytes = 0L
+    private var connectedAtMs = 0L
+    private var ticks = 0
+    private var echoToken: ByteArray? = null
+    private var echoSentAt = 0L
+    private val latencies = ArrayList<Int>()
+
     private var network: Network? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
@@ -100,6 +110,8 @@ class LatticeTlsVpnService : VpnService() {
         running = true
         config = cfg
         retryDelay = RETRY_FIRST_MS
+        rxBytes = 0; txBytes = 0; connectedAtMs = 0; ticks = 0; echoToken = null; latencies.clear()
+        _stats.value = Cnsa2Stats()
         File(filesDir, STATUS_FILE).delete()
         report("starting")
         publish(Cnsa2State.CONNECTING)
@@ -133,9 +145,12 @@ class LatticeTlsVpnService : VpnService() {
                 }
             }
             t.onPacket = { packet ->
-                try {
-                    tunOut?.write(packet)
-                } catch (_: Exception) {
+                if (!takeEchoReply(packet)) {
+                    rxBytes += packet.size
+                    try {
+                        tunOut?.write(packet)
+                    } catch (_: Exception) {
+                    }
                 }
             }
             t.log = { report(it) }
@@ -143,7 +158,7 @@ class LatticeTlsVpnService : VpnService() {
             session = t
 
             Thread({ receiveLoop(s, t, mine) }, "cnsa2-receive").start()
-            ticker = engine.scheduleWithFixedDelay({ if (mine == generation) t.tick(now()) }, TICK_MS, TICK_MS, TimeUnit.MILLISECONDS)
+            ticker = engine.scheduleWithFixedDelay({ if (mine == generation) { t.tick(now()); everyTick(t) } }, TICK_MS, TICK_MS, TimeUnit.MILLISECONDS)
             t.start(now())
         } catch (e: PermanentFailure) {
             stop(e.message)
@@ -184,6 +199,8 @@ class LatticeTlsVpnService : VpnService() {
                     return
                 }
                 retryDelay = RETRY_FIRST_MS
+                if (connectedAtMs == 0L) connectedAtMs = System.currentTimeMillis()
+                publishStats(t)
                 report("connected ${t.suite} address ${t.settings.address}")
                 publish(Cnsa2State.CONNECTED)
                 showNotification("Connected with the CNSA 2.0 suite")
@@ -246,6 +263,7 @@ class LatticeTlsVpnService : VpnService() {
         dropConnection()
         unwatchNetwork()
         closeTun()
+        _stats.value = Cnsa2Stats()
         report(if (failure == null) "stopped" else "failed: $failure")
         if (failure == null) publish(Cnsa2State.OFF) else publish(Cnsa2State.FAILED, failure)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -304,7 +322,12 @@ class LatticeTlsVpnService : VpnService() {
                     if (n < 0) break
                     if (n == 0) continue
                     val packet = buffer.copyOf(n)
-                    engine.execute { session?.sendPacket(packet, now()) }
+                    engine.execute {
+                        session?.let {
+                            it.sendPacket(packet, now())
+                            txBytes += packet.size
+                        }
+                    }
                 }
             }
         } catch (_: Exception) {
@@ -328,6 +351,86 @@ class LatticeTlsVpnService : VpnService() {
         val value = ((a[0].toLong() and 0xff) shl 24) or ((a[1].toLong() and 0xff) shl 16) or ((a[2].toLong() and 0xff) shl 8) or (a[3].toLong() and 0xff)
         val masked = if (prefix == 0) 0L else value and (0xffffffffL shl (32 - prefix) and 0xffffffffL)
         return "${masked ushr 24 and 0xff}.${masked ushr 16 and 0xff}.${masked ushr 8 and 0xff}.${masked and 0xff}"
+    }
+
+    // ---- session figures ---------------------------------------------------
+
+    /** Runs with the session's own tick, five times a second. */
+    private fun everyTick(t: TunnelSession) {
+        ticks++
+        if (tunSettings == null) return
+        if (ticks % 5 == 0) publishStats(t)
+        if (ticks % 15 == 0) sendEcho(t)
+    }
+
+    private fun publishStats(t: TunnelSession) {
+        _stats.value = Cnsa2Stats(
+            connectedAtMs = connectedAtMs,
+            rxBytes = rxBytes,
+            txBytes = txBytes,
+            keyChanges = t.rekeyCount,
+            latencyMs = latencies.lastOrNull() ?: -1,
+            latencyBestMs = latencies.minOrNull() ?: -1,
+            latencyAverageMs = if (latencies.isEmpty()) -1 else latencies.sum() / latencies.size,
+        )
+    }
+
+    /**
+     * Times one echo to the gateway and back. The request is built here and sent straight
+     * down the tunnel, and the reply is picked out of the tunnel's incoming packets, so it
+     * needs no socket and is not counted in the session's data figures.
+     */
+    private fun sendEcho(t: TunnelSession) {
+        val source = tunSettings?.address?.split(".")?.mapNotNull { it.toIntOrNull() } ?: return
+        if (source.size != 4) return
+        // A reply that never came: forget it after three seconds and try again.
+        if (echoToken != null && now() - echoSentAt < 3000) return
+        val token = ByteArray(8).also { java.security.SecureRandom().nextBytes(it) }
+        val icmp = ByteArray(16)
+        icmp[0] = 8 // echo request
+        icmp[4] = token[0]; icmp[5] = token[1] // identifier
+        icmp[7] = 1 // sequence
+        System.arraycopy(token, 0, icmp, 8, 8)
+        val icmpSum = checksum(icmp)
+        icmp[2] = (icmpSum shr 8).toByte(); icmp[3] = icmpSum.toByte()
+        val ip = ByteArray(20)
+        ip[0] = 0x45
+        ip[3] = (20 + icmp.size).toByte()
+        ip[4] = token[2]; ip[5] = token[3] // identification
+        ip[8] = 64 // time to live
+        ip[9] = 1 // ICMP
+        for (i in 0 until 4) ip[12 + i] = source[i].toByte()
+        System.arraycopy(GATEWAY_IN_TUNNEL, 0, ip, 16, 4)
+        val ipSum = checksum(ip)
+        ip[10] = (ipSum shr 8).toByte(); ip[11] = ipSum.toByte()
+        echoToken = token
+        echoSentAt = now()
+        t.sendPacket(ip + icmp, echoSentAt)
+    }
+
+    /** True when [packet] is the reply to the echo in flight; it is then kept from the system. */
+    private fun takeEchoReply(packet: ByteArray): Boolean {
+        val token = echoToken ?: return false
+        if (packet.size < 36 || (packet[0].toInt() and 0xf0) != 0x40 || packet[9].toInt() != 1) return false
+        val header = (packet[0].toInt() and 0x0f) * 4
+        if (packet.size < header + 16 || packet[header].toInt() != 0) return false
+        for (i in 0 until 8) if (packet[header + 8 + i] != token[i]) return false
+        echoToken = null
+        latencies.add(maxOf(1, (now() - echoSentAt).toInt()))
+        if (latencies.size > 20) latencies.removeAt(0)
+        return true
+    }
+
+    private fun checksum(bytes: ByteArray): Int {
+        var sum = 0L
+        var i = 0
+        while (i + 1 < bytes.size) {
+            sum += ((bytes[i].toInt() and 0xff) shl 8) or (bytes[i + 1].toInt() and 0xff)
+            i += 2
+        }
+        if (bytes.size % 2 == 1) sum += (bytes[bytes.size - 1].toInt() and 0xff) shl 8
+        while (sum shr 16 != 0L) sum = (sum and 0xffff) + (sum shr 16)
+        return sum.toInt().inv() and 0xffff
     }
 
     // ---- network changes ---------------------------------------------------
@@ -433,6 +536,13 @@ class LatticeTlsVpnService : VpnService() {
         private val _detail = MutableStateFlow<String?>(null)
         val state: StateFlow<Cnsa2State> = _state.asStateFlow()
         val detail: StateFlow<String?> = _detail.asStateFlow()
+
+        private val _stats = MutableStateFlow(Cnsa2Stats())
+        /** Figures about the current session, refreshed once a second while the tunnel is up. */
+        val stats: StateFlow<Cnsa2Stats> = _stats.asStateFlow()
+
+        /** The gateway's own address inside every CNSA 2.0 tunnel. */
+        private val GATEWAY_IN_TUNNEL = byteArrayOf(10, 88, 0, 1)
 
         const val ACTION_START = "ai.latticevpn.android.cnsa2.START"
         const val ACTION_STOP = "ai.latticevpn.android.cnsa2.STOP"
