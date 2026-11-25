@@ -133,20 +133,30 @@ struct ConnectionPopoverView: View {
             HStack(spacing: 16) {
                 ipColumn(label: "Your IP",  value: shownPublicIP)
                 Divider().frame(height: 38)
-                ipColumn(label: "Exit IP",  value: connection.tunnelIP ?? "—")
+                ipColumn(label: "Exit IP",  value: shownExitIP)
             }
             primaryActionButton
         }
     }
 
-    /// The address shown as "Your IP". Debug builds can show a placeholder, so store
-    /// screenshots do not carry a real home address.
+    /// The address shown as "Your IP". Debug builds can mask it, so store screenshots
+    /// carry no real address.
     private var shownPublicIP: String {
         #if DEBUG
-        if let demo = UserDefaults.standard.string(forKey: "LatticeDemoIP") { return demo }
+        if UserDefaults.standard.string(forKey: "LatticeDemoIP") != nil { return Self.maskedIP }
         #endif
         return connection.publicIP ?? "—"
     }
+
+    /// The exit address, masked the same way for store screenshots.
+    private var shownExitIP: String {
+        #if DEBUG
+        if UserDefaults.standard.string(forKey: "LatticeDemoIP") != nil, connection.tunnelIP != nil { return Self.maskedIP }
+        #endif
+        return connection.tunnelIP ?? "—"
+    }
+
+    private static let maskedIP = "•••.•••.•••.•••"
 
     private var statusPill: some View {
         HStack(spacing: 8) {
