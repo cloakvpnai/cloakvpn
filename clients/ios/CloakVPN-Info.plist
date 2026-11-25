@@ -17,7 +17,5 @@
 			</dict>
 		</dict>
 	</dict>
-	<key>CLOAK_BOOTSTRAP_KEY</key>
-	<string>$(CLOAK_BOOTSTRAP_KEY)</string>
 </dict>
 </plist>

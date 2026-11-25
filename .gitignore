@@ -91,3 +91,7 @@ server/cloak-rpd/build.log
 
 # Swift package build output
 .build/
+
+# Local secrets file, wherever it sits
+Secrets.xcconfig
+**/Secrets.xcconfig
