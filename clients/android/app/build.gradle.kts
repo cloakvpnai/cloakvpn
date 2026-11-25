@@ -32,8 +32,8 @@ android {
         applicationId = "ai.latticevpn.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "1.1.0"
+        versionCode = 9
+        versionName = "2.0.0"
 
         ndk {
             // The ABIs the tunnel engine (liblatticetls.so) is built for.
