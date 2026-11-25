@@ -85,6 +85,31 @@ enum CNSA2Renewal {
         }
     }
 
+    /// Requests a fresh certificate now, whatever the age of the current one. Used once
+    /// when a gateway will not accept this device at the start of a connection: the usual
+    /// cause is that the account reached its device limit and this device was removed to
+    /// make room. Asking again puts this device back on the account (the least recently
+    /// used device gives up its place). At most once every 10 minutes, so a bad network
+    /// cannot turn into a stream of requests.
+    static func renewAfterRefusal() async -> Bool {
+        let key = "LatticeRefusalRenewalAt"
+        let last = UserDefaults.standard.double(forKey: key)
+        let now = Date().timeIntervalSince1970
+        guard now - last > 600, CNSA2Identity.certificate() != nil,
+              let number = AppGroupKeyStore.loadAccountNumber() else { return false }
+        UserDefaults.standard.set(now, forKey: key)
+        do {
+            let reply = try await issue(accountNumber: number)
+            os_log("certificate replaced after a refused connection, valid to %{public}s", log: log, type: .default,
+                   ISO8601DateFormatter().string(from: reply.notAfter))
+            return true
+        } catch {
+            os_log("could not replace the certificate after a refused connection: %{public}s", log: log, type: .error,
+                   error.localizedDescription)
+            return false
+        }
+    }
+
     /// Requests a certificate for this device's key (creating the key on first use),
     /// checks the reply, and stores the certificate and its expiry in the keychain.
     static func issue(accountNumber: String) async throws -> Reply {

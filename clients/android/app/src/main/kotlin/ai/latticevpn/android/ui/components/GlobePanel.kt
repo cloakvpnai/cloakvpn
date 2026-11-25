@@ -504,7 +504,7 @@ private fun GlobeHeader(liveRegion: LatticeRegion?) {
 private fun GlobeTiles(lit: Boolean, stats: Cnsa2Stats, connected: Boolean, open: GlobeTile?, onTap: (GlobeTile) -> Unit) {
     val now by sessionClock()
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        GlobeFact("SESSION", sessionText(connected, stats, now), lit, open == GlobeTile.SESSION, Modifier.weight(1f)) { onTap(GlobeTile.SESSION) }
+        GlobeFact("SESSION", if (connected && stats.connectedAtMs > 0) sessionText(connected, stats, now) else "--", lit, open == GlobeTile.SESSION, Modifier.weight(1f)) { onTap(GlobeTile.SESSION) }
         GlobeFact("DOWN / UP", tileTraffic(connected, stats), lit, open == GlobeTile.TRAFFIC, Modifier.weight(1.25f)) { onTap(GlobeTile.TRAFFIC) }
         GlobeFact("LATENCY", latencyText(connected, stats), lit, open == GlobeTile.LATENCY, Modifier.weight(0.85f)) { onTap(GlobeTile.LATENCY) }
         GlobeFact("NEW KEYS", keysText(connected, stats).removePrefix("Every "), lit, open == GlobeTile.KEYS, Modifier.weight(1.1f)) { onTap(GlobeTile.KEYS) }

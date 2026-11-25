@@ -32,7 +32,7 @@ android {
         applicationId = "ai.latticevpn.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
+        versionCode = 11
         versionName = "2.0.0"
 
         ndk {

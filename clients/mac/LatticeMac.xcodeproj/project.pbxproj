@@ -433,7 +433,7 @@
 				CODE_SIGN_ENTITLEMENTS = LatticeMac/Resources/LatticeMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = LatticeMac/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -515,7 +515,7 @@
 				CODE_SIGN_ENTITLEMENTS = LatticeMacTunnel/LatticeMacTunnel.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				ENABLE_HARDENED_RUNTIME = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/../apple-tls/Sources/CLatticeTLS/include $(SRCROOT)/../apple-tls/Vendor/openssl-macos/include";
 				INFOPLIST_FILE = "LatticeMacTunnel/LatticeMacTunnel-Info.plist";
@@ -610,7 +610,7 @@
 				CODE_SIGN_ENTITLEMENTS = LatticeMac/Resources/LatticeMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = LatticeMac/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -691,7 +691,7 @@
 				CODE_SIGN_ENTITLEMENTS = LatticeMacTunnel/LatticeMacTunnel.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				ENABLE_HARDENED_RUNTIME = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/../apple-tls/Sources/CLatticeTLS/include $(SRCROOT)/../apple-tls/Vendor/openssl-macos/include";
 				INFOPLIST_FILE = "LatticeMacTunnel/LatticeMacTunnel-Info.plist";
@@ -778,7 +778,7 @@
 				CODE_SIGN_ENTITLEMENTS = LatticeMac/Resources/LatticeMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = LatticeMac/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -801,7 +801,7 @@
 				CODE_SIGN_ENTITLEMENTS = LatticeMac/Resources/LatticeMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = LatticeMac/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -822,7 +822,7 @@
 				CODE_SIGN_ENTITLEMENTS = LatticeMacTunnel/LatticeMacTunnel.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				ENABLE_HARDENED_RUNTIME = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/../apple-tls/Sources/CLatticeTLS/include $(SRCROOT)/../apple-tls/Vendor/openssl-macos/include";
 				INFOPLIST_FILE = "LatticeMacTunnel/LatticeMacTunnel-Info.plist";
@@ -849,7 +849,7 @@
 				CODE_SIGN_ENTITLEMENTS = LatticeMacTunnel/LatticeMacTunnel.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				ENABLE_HARDENED_RUNTIME = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/../apple-tls/Sources/CLatticeTLS/include $(SRCROOT)/../apple-tls/Vendor/openssl-macos/include";
 				INFOPLIST_FILE = "LatticeMacTunnel/LatticeMacTunnel-Info.plist";

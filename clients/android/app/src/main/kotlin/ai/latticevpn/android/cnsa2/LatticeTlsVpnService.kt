@@ -1,6 +1,9 @@
 package ai.latticevpn.android.cnsa2
 
+import ai.latticevpn.android.data.AccountClient
+import ai.latticevpn.android.data.AccountStore
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2Config
+import ai.latticevpn.android.vpn.cnsa2.Cnsa2Enroller
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2IdentityStore
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2State
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2Stats
@@ -56,6 +59,7 @@ class LatticeTlsVpnService : VpnService() {
     private var ticker: ScheduledFuture<*>? = null
     private var retry: ScheduledFuture<*>? = null
     private var retryDelay = RETRY_FIRST_MS
+    private var renewedAfterRefusal = false
     private var generation = 0
     private var sessionKey: ByteArray? = null
 
@@ -112,6 +116,9 @@ class LatticeTlsVpnService : VpnService() {
             if (cfg.host == config?.host && cfg.port == config?.port) return
             report("changing gateway; traffic is held")
             config = cfg
+            // latency figures belong to one gateway: start them again for the new one
+            latencies.clear()
+            echoToken = null
             session?.close(now())
             dropConnection()
             retry?.cancel(false)
@@ -122,6 +129,7 @@ class LatticeTlsVpnService : VpnService() {
             return
         }
         running = true
+        renewedAfterRefusal = false
         config = cfg
         retryDelay = RETRY_FIRST_MS
         rxBytes = 0; txBytes = 0; connectedAtMs = 0; ticks = 0; echoToken = null; latencies.clear()
@@ -222,11 +230,59 @@ class LatticeTlsVpnService : VpnService() {
             }
             is TunnelSession.State.Failed -> {
                 dropConnection()
-                if (PERMANENT.any { state.reason.contains(it, ignoreCase = true) }) stop(state.reason)
+                if (tunSettings == null && !renewedAfterRefusal &&
+                    NOT_FIXED_BY_RENEWAL.none { state.reason.contains(it, ignoreCase = true) }
+                ) {
+                    // The first connection did not come up. If this device was removed from the
+                    // account to make room for another, a fresh certificate lets it back in.
+                    renewedAfterRefusal = true
+                    renewThenConnect(state.reason)
+                } else if (PERMANENT.any { state.reason.contains(it, ignoreCase = true) }) stop(state.reason)
                 else scheduleRetry(state.reason)
             }
             else -> {}
         }
+    }
+
+    /**
+     * Asks the account service for a fresh certificate once, then connects again. Asking
+     * puts this device back on the account if it was removed to make room (the least
+     * recently used device gives up its place). At most once every 10 minutes, so a bad
+     * network cannot turn into a stream of requests. The account service is reached over
+     * the ordinary network, not the held VPN interface.
+     */
+    private fun renewThenConnect(reason: String) {
+        val permanent = PERMANENT.any { reason.contains(it, ignoreCase = true) }
+        val prefs = getSharedPreferences("cnsa2-service", MODE_PRIVATE)
+        val nowMs = System.currentTimeMillis()
+        if (nowMs - prefs.getLong("refusal_renewal_at", 0L) < 10 * 60_000L) {
+            if (permanent) stop(reason) else scheduleRetry(reason)
+            return
+        }
+        prefs.edit().putLong("refusal_renewal_at", nowMs).apply()
+        report("first connection failed ($reason); asking for a fresh certificate once")
+        Thread({
+            val renewed = try {
+                val number = AccountStore(applicationContext).accountNumber()
+                if (number == null) false else {
+                    kotlinx.coroutines.runBlocking {
+                        Cnsa2Enroller(applicationContext, AccountClient(applicationContext)).enroll(number)
+                    }
+                    true
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "could not replace the certificate after a refused connection: ${e.message}")
+                false
+            }
+            engine.execute {
+                if (!running) return@execute
+                if (renewed) {
+                    report("certificate replaced; connecting again")
+                    retryDelay = RETRY_FIRST_MS
+                    connect()
+                } else if (permanent) stop(reason) else scheduleRetry(reason)
+            }
+        }, "cnsa2-renew").start()
     }
 
     private fun scheduleRetry(reason: String) {
@@ -601,6 +657,9 @@ class LatticeTlsVpnService : VpnService() {
         private const val TUN_MTU = 1400
 
         /** Failures that trying again cannot fix. */
+        /** First-connection failures a fresh certificate cannot fix, so none is asked for. */
+        private val NOT_FIXED_BY_RENEWAL = listOf("outside the CNSA", "chose cipher", "compression", "did not agree",
+            "device key", "not enrolled")
         private val PERMANENT = listOf("certificate rejected", "refused this device", "outside the CNSA", "chose cipher",
             "compression", "did not agree", "device certificate", "device key")
     }

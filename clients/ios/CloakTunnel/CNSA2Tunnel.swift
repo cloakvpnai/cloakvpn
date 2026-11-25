@@ -232,6 +232,26 @@ final class CNSA2TunnelController {
         case .failed(let reason):
             os_log("cnsa2: connection ended: %{public}s", log: log, type: .error, reason)
             teardown()
+            if startCompletion != nil, !stopping, !renewedAfterRefusal, config["clientKeyPKCS8"] == nil,
+               !Self.notFixedByRenewal.contains(where: { reason.localizedCaseInsensitiveContains($0) }) {
+                // The first connection did not come up. If this device was removed from the
+                // account to make room for another, a fresh certificate lets it back in.
+                renewedAfterRefusal = true
+                os_log("cnsa2: first connection failed; asking for a fresh certificate once", log: log, type: .default)
+                Task { [weak self] in
+                    let renewed = await CNSA2Renewal.renewAfterRefusal()
+                    guard let self else { return }
+                    self.queue.async {
+                        guard !self.stopping, let completion = self.startCompletion else { return }
+                        if renewed {
+                            do { try self.connect(); return } catch { self.teardown() }
+                        }
+                        self.startCompletion = nil
+                        completion(LatticeTunnelError(reason))
+                    }
+                }
+                return
+            }
             if let completion = startCompletion {
                 startCompletion = nil
                 completion(LatticeTunnelError(reason))
@@ -246,6 +266,11 @@ final class CNSA2TunnelController {
             break
         }
     }
+
+    /// First-connection failures a fresh certificate cannot fix, so none is asked for.
+    private static let notFixedByRenewal = ["outside the CNSA", "chose cipher", "compression", "did not agree",
+                                            "device key", "not enrolled"]
+    private var renewedAfterRefusal = false
 
     /// Failures that trying again cannot fix.
     private static let permanent = ["certificate rejected", "refused this device", "outside the CNSA", "chose cipher",
