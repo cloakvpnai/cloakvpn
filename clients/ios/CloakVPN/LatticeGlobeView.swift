@@ -34,6 +34,38 @@ struct LatticeGlobeView: View {
 
     private func f(_ size: CGFloat) -> CGFloat { size * scale }
 
+    #if DEBUG
+    /// Store preview capture (`-LatticeDemoStep <seconds>`): the globe and the session
+    /// clock advance in fixed steps, so one still per step can be joined into a video.
+    static let demoStepSeconds: Double = UserDefaults.standard.double(forKey: "LatticeDemoStep")
+    static var demoStart = Date()
+    static var demoStep: Int {
+        demoStepSeconds > 0 ? max(0, Int(Date().timeIntervalSince(demoStart) / demoStepSeconds)) : 0
+    }
+    /// True for the first part of a step, while the clock may not have caught up yet.
+    static var demoStepIsFresh: Bool {
+        demoStepSeconds > 0 && Date().timeIntervalSince(demoStart).truncatingRemainder(dividingBy: demoStepSeconds) < 1.6
+    }
+
+    /// The step number as a row of squares a script can read back from a still.
+    private var demoMarker: some View {
+        TimelineView(.periodic(from: .now, by: 0.2)) { _ in
+            let n = Self.demoStep
+            HStack(spacing: 0) {
+                Rectangle().fill(Color(red: 1, green: 0, blue: 0)).frame(width: 8, height: 8)
+                ForEach(0..<7, id: \.self) { bit in
+                    Rectangle().fill((n >> bit) & 1 == 1 ? Color.white : Color(white: 0.3)).frame(width: 8, height: 8)
+                }
+                Rectangle().fill(Self.demoStepIsFresh ? Color.white : Color(white: 0.3)).frame(width: 8, height: 8)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .padding(.top, 16)
+            .padding(.trailing, 16)
+            .allowsHitTesting(false)
+        }
+    }
+    #endif
+
     @State private var stats: CNSA2SessionStats?
     @State private var latency: TimeInterval?
     @State private var latencySamples: [TimeInterval] = []
@@ -72,6 +104,9 @@ struct LatticeGlobeView: View {
     var body: some View {
         ZStack {
             GlobeMap(selectedRegionID: selectedRegionID, isConnected: isConnected, onPick: onPick)
+            #if DEBUG
+            if Self.demoStepSeconds > 0, isConnected { demoMarker }
+            #endif
 
             VStack(spacing: 8) {
                 if open == nil {
@@ -101,6 +136,9 @@ struct LatticeGlobeView: View {
             latency = nil
             latencySamples = []
             guard isConnected else { return }
+            #if DEBUG
+            Self.demoStart = Date()
+            #endif
             while !Task.isCancelled {
                 stats = await loadStats()
                 if let trip = stats?.latency {
@@ -202,7 +240,7 @@ struct LatticeGlobeView: View {
                     }
                     if let region = liveRegion {
                         line("Exit", "\(region.countryFlag)  \(region.displayName)")
-                        line("Exit address", region.endpointIP)
+                        line("Exit address", shownExitAddress(region))
                         if let since = connectedSince {
                             line("Connected at", since.formatted(date: .omitted, time: .shortened))
                         }
@@ -246,6 +284,17 @@ struct LatticeGlobeView: View {
         }
         .buttonStyle(.plain)
         .accessibilityHint("Closes the detail")
+    }
+
+    /// The exit's address. Debug builds started with `-LatticeDemoIP` show an example
+    /// address instead, so store screenshots and previews carry no real server address.
+    private func shownExitAddress(_ region: CloakRegion) -> String {
+        #if DEBUG
+        if UserDefaults.standard.string(forKey: "LatticeDemoIP") != nil {
+            return UserDefaults.standard.string(forKey: "LatticeDemoExitIP") ?? "198.51.100.77"
+        }
+        #endif
+        return region.endpointIP
     }
 
     private func detailTitle(_ tile: Tile) -> String {
@@ -325,6 +374,9 @@ struct LatticeGlobeView: View {
 
     private func sessionText(at now: Date) -> String {
         guard isConnected, let start = connectedSince else { return "Not connected" }
+        #if DEBUG
+        if Self.demoStepSeconds > 0 { return String(format: "00:00:%02d", 12 + Self.demoStep / 2) }
+        #endif
         let s = max(0, Int(now.timeIntervalSince(start)))
         return String(format: "%02d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60)
     }
@@ -437,6 +489,22 @@ private struct GlobeMap: PlatformRepresentable {
 
         @objc private func frame(_ link: CADisplayLink) {
             defer { lastFrame = link.timestamp }
+            #if DEBUG
+            if LatticeGlobeView.demoStepSeconds > 0 {
+                // Capture mode: rest on the exit for two seconds of video, then turn at the
+                // usual three degrees per second, half a second of video per step.
+                guard let map, isConnected, let id = selectedRegionID, let exit = LatticeGlobeView.coordinates[id],
+                      let camera = map.camera.copy() as? MKMapCamera else { return }
+                let tau = max(0, Double(LatticeGlobeView.demoStep) * 0.5 - 2)
+                var longitude = exit.longitude + Self.degreesPerSecond * tau
+                if longitude > 180 { longitude -= 360 }
+                let latitude = 18 + (exit.latitude - 18) * exp(-0.4 * tau)
+                camera.centerCoordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+                camera.heading = 0
+                map.camera = camera
+                return
+            }
+            #endif
             guard let map, lastFrame > 0, link.timestamp >= holdUntil, map.window != nil else { return }
             if reduceMotionOn { return }
             let dt = min(link.timestamp - lastFrame, 0.1)
@@ -550,7 +618,14 @@ private final class RegionDotView: MKAnnotationView {
         ring.strokeColor = mint.cgColor
         ring.removeAllAnimations()
         ring.opacity = 0
-        if live && !reduceMotionOn {
+        var still = reduceMotionOn
+        #if DEBUG
+        if LatticeGlobeView.demoStepSeconds > 0 {
+            still = true
+            if live { ring.opacity = 0.6 }
+        }
+        #endif
+        if live && !still {
             let scale = CABasicAnimation(keyPath: "transform.scale")
             scale.fromValue = 0.4
             scale.toValue = 1.0
