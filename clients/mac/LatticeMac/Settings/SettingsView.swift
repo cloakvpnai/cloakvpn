@@ -18,29 +18,155 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var connection: ConnectionViewModel
 
+    private enum Page: String, CaseIterable, Identifiable {
+        case connect = "Connect", general = "General", account = "Account", subscription = "Subscription", about = "About"
+        var id: String { rawValue }
+        var symbol: String {
+            switch self {
+            case .connect: return "shield.lefthalf.filled"
+            case .general: return "gearshape"
+            case .account: return "person.crop.circle"
+            case .subscription: return "creditcard"
+            case .about: return "info.circle"
+            }
+        }
+    }
+
+    @State private var page: Page = .connect
+
     var body: some View {
-        TabView {
-            // Same controls as the menu bar panel: status, Connect, regions.
-            ConnectionPopoverView(inWindow: true)
-                .tabItem { Label("Connect", systemImage: "shield.lefthalf.filled") }
+        VStack(spacing: 0) {
+            // A tab bar of our own: the system's tabs are too small to read on a large display.
+            HStack(spacing: 10) {
+                ForEach(Page.allCases) { item in
+                    Button {
+                        page = item
+                    } label: {
+                        Label(item.rawValue, systemImage: item.symbol)
+                            .font(.system(size: 21, weight: .semibold))
+                            .foregroundStyle(page == item ? LatticeTheme.text : LatticeTheme.muted)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 11)
+                            .background(Capsule().fill(page == item ? LatticeTheme.navyRaised : Color.clear))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(page == item ? .isSelected : [])
+                }
+            }
+            .padding(.top, 6)
+            .padding(.bottom, 14)
 
-            GeneralSettingsView()
-                .tabItem { Label("General", systemImage: "gearshape") }
-
-            AccountSettingsView()
-                .tabItem { Label("Account", systemImage: "person.crop.circle") }
-
-            SubscriptionSettingsView()
-                .tabItem { Label("Subscription", systemImage: "creditcard") }
-
-            AboutSettingsView()
-                .tabItem { Label("About", systemImage: "info.circle") }
+            Group {
+                switch page {
+                // Same controls as the menu bar panel, plus the globe.
+                case .connect: ConnectionPopoverView(inWindow: true)
+                case .general: GeneralSettingsView()
+                case .account: AccountSettingsView()
+                case .subscription: SubscriptionSettingsView()
+                case .about: AboutSettingsView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(20)
         .background(LatticeTheme.navy)
-        .font(.system(size: 16))
-        .controlSize(.large)
+        .font(.system(size: 21))
+        .controlSize(.extraLarge)
         .frame(minWidth: 1240, idealWidth: 1500, minHeight: 800, idealHeight: 900)
+    }
+}
+
+// MARK: - Page style
+
+/// A page of the window: cards stacked down the full width, on the dark blue background.
+private struct LatticePage<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                content
+            }
+            .padding(34)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// One titled block on a page.
+private struct LatticeCard<Content: View>: View {
+    let title: String?
+    @ViewBuilder var content: Content
+
+    init(_ title: String?, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            if let title {
+                Text(title)
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(LatticeTheme.text)
+            }
+            content
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(LatticeTheme.navyRaised))
+    }
+}
+
+/// A label on the left and its value on the right.
+private struct LatticeRow: View {
+    let label: String
+    let value: String
+
+    init(_ label: String, _ value: String) {
+        self.label = label
+        self.value = value
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label).foregroundStyle(.secondary)
+            Spacer(minLength: 16)
+            Text(value).fontWeight(.medium)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// Buttons sized to match the page text. The system's buttons keep small text on the Mac.
+private struct LatticeButtonStyle: ButtonStyle {
+    var prominent = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 22, weight: .semibold))
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            .background(
+                Capsule().fill(prominent ? Color.accentColor : LatticeTheme.navy)
+            )
+            .overlay(Capsule().stroke(LatticeTheme.muted.opacity(prominent ? 0 : 0.45), lineWidth: 1))
+            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.45)
+            .contentShape(Capsule())
+    }
+}
+
+private extension View {
+    /// Text and control sizes shared by the pages.
+    func latticePage() -> some View {
+        self
+            .font(.system(size: 24))
+            .controlSize(.extraLarge)
+            .buttonStyle(LatticeButtonStyle())
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(LatticeTheme.navy)
     }
 }
 
@@ -48,21 +174,19 @@ struct SettingsView: View {
 
 struct GeneralSettingsView: View {
     var body: some View {
-        Form {
-            Section("Lattice VPN") {
+        LatticePage {
+            LatticeCard("Lattice VPN") {
                 Text("Lattice lives in your menu bar. Click the shield icon at the top of the screen to choose a region and connect.")
                 Text("Every connection uses a TLS 1.3 tunnel with the CNSA 2.0 algorithm suite: ML-KEM-1024, ML-DSA-87 and AES-256. All traffic goes through the tunnel while you are connected.")
                     .foregroundStyle(.secondary)
             }
-            Section("Getting started") {
+            LatticeCard("Getting started") {
                 Text("1. Subscribe or restore your purchase on the Subscription tab. If you already have a Lattice account number, enter it on the Account tab instead.")
                 Text("2. Click the shield icon in the menu bar, pick a region, and click Connect.")
                 Text("3. The first time you connect, macOS asks for permission to add a VPN configuration.")
             }
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .background(LatticeTheme.navy)
+        .latticePage()
     }
 }
 
@@ -75,8 +199,8 @@ struct AccountSettingsView: View {
     @State private var confirmSignOut = false
 
     var body: some View {
-        Form {
-            Section("Lattice account") {
+        LatticePage {
+            LatticeCard("Lattice account") {
                 if connection.isSignedIn {
                     Label("Signed in", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
@@ -95,9 +219,9 @@ struct AccountSettingsView: View {
                         .accessibilityIdentifier("lattice-account-number")
                     HStack {
                         Button("Sign in") { signIn() }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(LatticeButtonStyle(prominent: true))
                             .disabled(connection.signInBusy || accountNumber.isEmpty)
-                        if connection.signInBusy { ProgressView().controlSize(.small) }
+                        if connection.signInBusy { ProgressView().controlSize(.regular) }
                     }
                     if let signInError {
                         Text(signInError).foregroundStyle(.red)
@@ -105,9 +229,7 @@ struct AccountSettingsView: View {
                 }
             }
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .background(LatticeTheme.navy)
+        .latticePage()
         .confirmationDialog("Sign out of Lattice? This disconnects the VPN.", isPresented: $confirmSignOut) {
             Button("Sign out", role: .destructive) { Task { await connection.signOut() } }
         }
@@ -151,30 +273,31 @@ struct SubscriptionSettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section("Current plan") {
+        LatticePage {
+            LatticeCard("Current plan") {
                 SubscriptionStatusContent()
             }
 
             if !hasActivePlan {
-                Section("Choose a plan") {
+                LatticeCard("Choose a plan") {
                     plans
                 }
             }
 
-            Section {
+            LatticeCard(nil) {
                 HStack {
                     Button("Restore Purchases") { restore() }
                         .disabled(anyBusy)
                         .accessibilityIdentifier("lattice-restore-purchases")
-                    if restoring { ProgressView().controlSize(.small) }
+                    if restoring { ProgressView().controlSize(.regular) }
                     Spacer()
                     Button("Manage Subscription") { openURL(manageURL) }
                 }
                 if let message {
                     Text(message).foregroundStyle(.red)
                 }
-            } footer: {
+            }
+            LatticeCard(nil) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Payment is charged to your Apple Account at confirmation of purchase. Subscriptions renew automatically for the same price and duration unless cancelled at least 24 hours before the end of the current period. Manage or cancel any time in your Apple Account settings.")
                     HStack(spacing: 14) {
@@ -183,13 +306,11 @@ struct SubscriptionSettingsView: View {
                     }
                     .buttonStyle(.link)
                 }
-                .font(.system(size: 14))
+                .font(.system(size: 21))
                 .foregroundStyle(.secondary)
             }
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .background(LatticeTheme.navy)
+        .latticePage()
         .task { await store.loadProducts() }
     }
 
@@ -197,7 +318,7 @@ struct SubscriptionSettingsView: View {
     private var plans: some View {
         if store.loadState == .loading && store.products.isEmpty {
             HStack {
-                ProgressView().controlSize(.small)
+                ProgressView().controlSize(.regular)
                 Text("Loading plans…").foregroundStyle(.secondary)
             }
         }
@@ -208,21 +329,21 @@ struct SubscriptionSettingsView: View {
         ForEach(store.sortedProducts, id: \.id) { product in
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(product.displayName).font(.system(size: 18, weight: .semibold))
+                    Text(product.displayName).font(.system(size: 30, weight: .semibold))
                     Text(product.description)
-                        .font(.system(size: 16))
+                        .font(.system(size: 24))
                         .foregroundStyle(.secondary)
                     if let period = product.subscription?.subscriptionPeriod {
                         Text("\(product.displayPrice) per \(Self.unitName(period))")
-                            .font(.system(size: 16))
+                            .font(.system(size: 24))
                     }
                 }
                 Spacer()
                 if busyProductID == product.id {
-                    ProgressView().controlSize(.small)
+                    ProgressView().controlSize(.regular)
                 } else {
                     Button("Subscribe") { buy(product) }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(LatticeButtonStyle(prominent: true))
                         .disabled(anyBusy)
                 }
             }
@@ -303,15 +424,15 @@ private struct SubscriptionStatusContent: View {
                 .foregroundStyle(.secondary)
         } else {
             if let error = connection.accountStatusError {
-                Text("Subscription could not be verified").font(.system(size: 18, weight: .semibold))
+                Text("Subscription could not be verified").font(.system(size: 30, weight: .semibold))
                 Text(error).foregroundStyle(.red)
             } else if let status = connection.accountStatus, connection.accountStatusVerifiedAt != nil {
                 Text(status.isActive ? "Active subscription" : "No active subscription")
-                    .font(.system(size: 18, weight: .semibold))
-                LabeledContent("Plan", value: status.tier.isEmpty ? "None" : status.tier.capitalized)
-                LabeledContent("Devices", value: "\(status.deviceCount) of \(status.deviceLimit)")
+                    .font(.system(size: 30, weight: .semibold))
+                LatticeRow("Plan", status.tier.isEmpty ? "None" : status.tier.capitalized)
+                LatticeRow("Devices", "\(status.deviceCount) of \(status.deviceLimit)")
                 if let expiry = status.activeUntilDate, expiry > Date(timeIntervalSince1970: 0) {
-                    LabeledContent("Paid through", value: expiry.formatted(date: .abbreviated, time: .shortened))
+                    LatticeRow("Paid through", expiry.formatted(date: .abbreviated, time: .shortened))
                 }
             } else {
                 Text("Checking your subscription…").foregroundStyle(.secondary)
@@ -319,7 +440,7 @@ private struct SubscriptionStatusContent: View {
             HStack {
                 Button("Refresh") { Task { await connection.refreshAccountStatus() } }
                     .disabled(connection.accountRefreshBusy)
-                if connection.accountRefreshBusy { ProgressView().controlSize(.small) }
+                if connection.accountRefreshBusy { ProgressView().controlSize(.regular) }
             }
         }
     }
@@ -331,22 +452,20 @@ struct AboutSettingsView: View {
     @Environment(\.openURL) private var openURL
 
     var body: some View {
-        Form {
-            Section("Lattice VPN") {
-                LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
-                LabeledContent("Build", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "")
-                LabeledContent("Encryption", value: "CNSA 2.0 (TLS 1.3)")
+        LatticePage {
+            LatticeCard("Lattice VPN") {
+                LatticeRow("Version", Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
+                LatticeRow("Build", Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "")
+                LatticeRow("Encryption", "CNSA 2.0 (TLS 1.3)")
             }
-            Section("Support") {
+            LatticeCard("Support") {
                 Button("support@latticevpn.ai") {
                     if let url = URL(string: "mailto:support@latticevpn.ai") { openURL(url) }
                 }
                 .buttonStyle(.link)
             }
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .background(LatticeTheme.navy)
+        .latticePage()
     }
 }
 
