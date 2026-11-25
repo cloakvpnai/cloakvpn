@@ -66,35 +66,6 @@ data class AccountDevice(
     val createdAt: String,
 )
 
-/**
- * The WireGuard + Rosenpass material the server returns on provisioning.
- * Mirrors `wg.ClientConfig` on the server (JSON keys are PascalCase, and
- * the private-key fields are intentionally absent — the device keeps its
- * own secrets).
- */
-data class ProvisionedConfig(
-    val interfacePublicKey: String,
-    val interfaceAddress: String,
-    val interfaceDNS: String,
-    val peerPublicKey: String,
-    val peerEndpoint: String,
-    val peerAllowedIPs: String,
-    val rosenpassPeerPub: String,
-    val rosenpassListen: String,
-    val rosenpassClientPK: String,
-    val assignedIP: String,
-    /** "ML-KEM-768" when the region derived the PSK from an ML-KEM-768 exchange. */
-    val pqKem: String = "",
-    /** Base64 ML-KEM-768 ciphertext for the device to decapsulate. */
-    val mlkem768Ciphertext: String = "",
-)
-
-/** Result of a successful POST /v1/device. */
-data class DeviceProvision(
-    val config: ProvisionedConfig,
-    val tier: String,
-    val deviceId: Long,
-)
 
 /** One CNSA 2.0 gateway. [name] is the name in its certificate, which the tunnel checks. */
 data class Cnsa2Gateway(val id: String, val host: String, val port: Int, val name: String)
@@ -202,59 +173,6 @@ class AccountClient(private val context: Context) {
                 .build()
             parseAccount(execute(request))
         }
-
-    /**
-     * POST /v1/device — register this device as a WireGuard + Rosenpass
-     * peer in [region]. Only the device's *public* keys are sent; the
-     * private keys are generated on-device and never leave it.
-     *
-     * The central API routes the peer onto the chosen region's
-     * concentrator; switching [region] for a device already provisioned
-     * elsewhere tears down the old peer and re-provisions on the new box.
-     */
-    suspend fun provisionDevice(
-        accountNumber: String,
-        wgPubkeyB64: String,
-        rosenpassPubkeyB64: String,
-        region: String,
-    ): DeviceProvision = withContext(Dispatchers.IO) {
-        val payload = JSONObject()
-            .put("wg_pubkey", wgPubkeyB64)
-            .put("rosenpass_pubkey", rosenpassPubkeyB64)
-            .put("region", region)
-            .toString()
-        val request = Request.Builder()
-            .url("${LatticeApi.BASE_URL}/v1/device")
-            .header("Authorization", bearer(accountNumber))
-            .post(payload.toRequestBody(JSON))
-            .build()
-        parseProvision(execute(request))
-    }
-
-    /**
-     * POST /v1/device with an ML-KEM-768 encapsulation key instead of a
-     * Rosenpass key. The region encapsulates against [mlkem768PubkeyB64],
-     * installs the derived key as the WireGuard preshared key, and returns
-     * the ciphertext in [ProvisionedConfig.mlkem768Ciphertext].
-     */
-    suspend fun provisionDeviceMlKem768(
-        accountNumber: String,
-        wgPubkeyB64: String,
-        mlkem768PubkeyB64: String,
-        region: String,
-    ): DeviceProvision = withContext(Dispatchers.IO) {
-        val payload = JSONObject()
-            .put("wg_pubkey", wgPubkeyB64)
-            .put("mlkem768_pubkey", mlkem768PubkeyB64)
-            .put("region", region)
-            .toString()
-        val request = Request.Builder()
-            .url("${LatticeApi.BASE_URL}/v1/device")
-            .header("Authorization", bearer(accountNumber))
-            .post(payload.toRequestBody(JSON))
-            .build()
-        parseProvision(execute(request))
-    }
 
     /**
      * DELETE /v1/device?id=… — release a device slot, so a customer at
@@ -414,31 +332,6 @@ class AccountClient(private val context: Context) {
             deviceCount = j.optInt("device_count"),
             activeUntil = j.optString("active_until"),
             devices = devices,
-        )
-    }
-
-    private fun parseProvision(body: String): DeviceProvision {
-        val j = jsonOf(body)
-        val c = j.optJSONObject("config")
-            ?: throw AccountException("The server response was missing the tunnel config.")
-        val device = j.optJSONObject("device")
-        return DeviceProvision(
-            config = ProvisionedConfig(
-                interfacePublicKey = c.optString("InterfacePublicKey"),
-                interfaceAddress = c.optString("InterfaceAddress"),
-                interfaceDNS = c.optString("InterfaceDNS"),
-                peerPublicKey = c.optString("PeerPublicKey"),
-                peerEndpoint = c.optString("PeerEndpoint"),
-                peerAllowedIPs = c.optString("PeerAllowedIPs"),
-                rosenpassPeerPub = c.optString("RosenpassPeerPub"),
-                rosenpassListen = c.optString("RosenpassListen"),
-                rosenpassClientPK = c.optString("RosenpassClientPK"),
-                assignedIP = c.optString("AssignedIP"),
-                pqKem = c.optString("PQKEM"),
-                mlkem768Ciphertext = c.optString("MLKEM768Ciphertext"),
-            ),
-            tier = j.optString("tier"),
-            deviceId = device?.optLong("ID") ?: 0L,
         )
     }
 

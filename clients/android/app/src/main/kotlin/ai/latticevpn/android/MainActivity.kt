@@ -21,7 +21,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
  * The activity owns everything that needs an `Activity` rather than a
  * `ViewModel`: the `VpnService.prepare` consent flow, the runtime
  * notification permission, and the launch-time auto-connect decision.
- * All other state lives in [LatticeViewModel] / `TunnelManager`.
+ * All other state lives in [LatticeViewModel].
  */
 class MainActivity : ComponentActivity() {
 
@@ -53,12 +53,10 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Honor the auto-connect preference on a fresh launch — but only
-        // once the customer is signed in and a config has been provisioned.
+        // Honor the auto-connect preference on a fresh launch, once the customer is signed in.
         if (savedInstanceState == null &&
             viewModel.isSignedIn() &&
-            viewModel.autoConnectEnabled() &&
-            viewModel.hasConfig()
+            viewModel.autoConnectEnabled()
         ) {
             startTunnel()
         }

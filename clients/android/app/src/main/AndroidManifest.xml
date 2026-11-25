@@ -30,19 +30,7 @@
             </intent-filter>
         </activity>
 
-        <!--
-            The VpnService is provided by the wireguard-android library:
-            com.wireguard.android.backend.GoBackend$VpnService is declared
-            in the tunnel AAR's manifest and merged in automatically — we
-            do not declare our own. GoBackend owns the tunnel lifecycle.
-        -->
-        <!-- The WireGuard service that the tunnel library declares is taken out of the app:
-             CNSA 2.0 is the only way it connects, so nothing, including Android's
-             always-on VPN setting, can start a WireGuard tunnel. -->
-        <service
-            android:name="com.wireguard.android.backend.GoBackend$VpnService"
-            tools:node="remove" />
-        <!-- The CNSA 2.0 tunnel (TLS 1.3). -->
+        <!-- The tunnel: TLS 1.3 with the CNSA 2.0 suite. It is the app's only VPN service. -->
         <service
             android:name=".cnsa2.LatticeTlsVpnService"
             android:exported="false"

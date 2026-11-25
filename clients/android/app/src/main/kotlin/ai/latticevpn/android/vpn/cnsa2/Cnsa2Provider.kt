@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The Lattice TLS 1.3 tunnel client. Null on a device whose processor type the
- * native library was not built for, in which case the app offers WireGuard only.
+ * native library was not built for, in which case the app cannot connect and says so.
  */
 object Cnsa2Provider {
     private val engineLoads: Boolean by lazy {

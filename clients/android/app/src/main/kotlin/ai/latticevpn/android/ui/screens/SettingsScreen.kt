@@ -11,7 +11,6 @@ import ai.latticevpn.android.ui.components.SectionHeader
 import ai.latticevpn.android.ui.components.SettingsCard
 import ai.latticevpn.android.ui.components.SettingsItem
 import ai.latticevpn.android.ui.components.SettingsToggle
-import ai.latticevpn.android.vpn.RosenpassStatus
 import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
@@ -46,7 +45,6 @@ fun SettingsScreen(vm: LatticeViewModel) {
     val cnsa2Enrolling by vm.cnsa2Enrolling.collectAsState()
     val cnsa2Error by vm.cnsa2Error.collectAsState()
 
-    var showImport by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -147,7 +145,7 @@ fun SettingsScreen(vm: LatticeViewModel) {
                 RowDivider()
                 SettingsItem(
                     title = "Open-source licenses",
-                    subtitle = "WireGuard, Rosenpass, liboqs, and other " +
+                    subtitle = "OpenSSL, Bouncy Castle, and other " +
                         "software Lattice is built on.",
                     onClick = { vm.navigateTo(Screen.LICENSES) },
                 )
@@ -157,75 +155,5 @@ fun SettingsScreen(vm: LatticeViewModel) {
         }
     }
 
-    if (showImport) {
-        ImportConfigDialog(vm = vm, onDismiss = { showImport = false })
-    }
 }
 
-/** The manual paste-config dialog, preserved from the Phase 0 flow. */
-@Composable
-private fun ImportConfigDialog(vm: LatticeViewModel, onDismiss: () -> Unit) {
-    var configText by remember { mutableStateOf("") }
-    val importError by vm.importError.collectAsState()
-
-    AlertDialog(
-        onDismissRequest = {
-            vm.clearImportError()
-            onDismiss()
-        },
-        title = { Text("Import configuration") },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = configText,
-                    onValueChange = { configText = it },
-                    placeholder = { Text("Paste config block…") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(260.dp),
-                    shape = RoundedCornerShape(8.dp),
-                )
-                if (importError != null) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = importError ?: "",
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = configText.isNotBlank(),
-                onClick = {
-                    vm.importConfig(configText) {
-                        vm.navigateHome()
-                        onDismiss()
-                    }
-                },
-            ) { Text("Save") }
-        },
-        dismissButton = {
-            TextButton(onClick = {
-                vm.clearImportError()
-                onDismiss()
-            }) { Text("Cancel") }
-        },
-    )
-}
-
-// ---- Copy helpers ---------------------------------------------------------
-
-private fun rosenpassLabel(status: RosenpassStatus): String = when (status) {
-    RosenpassStatus.Idle -> "Idle"
-    RosenpassStatus.Connecting -> "Connecting"
-    RosenpassStatus.Handshaking -> "Handshaking"
-    is RosenpassStatus.Established -> "Active · ${status.rotations} rotations"
-    is RosenpassStatus.Error -> "Error: ${status.message}"
-}
-
-private fun keyFingerprint(publicKeyB64: String?): String {
-    if (publicKeyB64.isNullOrEmpty()) return "Generating…"
-    return publicKeyB64.take(20) + "…"
-}

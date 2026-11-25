@@ -9,7 +9,6 @@ import ai.latticevpn.android.ui.components.LatticeLogo
 import ai.latticevpn.android.ui.theme.LatticeAmber
 import ai.latticevpn.android.ui.theme.LatticeNavy
 import ai.latticevpn.android.ui.theme.LatticeNavyElevated
-import ai.latticevpn.android.vpn.RosenpassStatus
 import ai.latticevpn.android.vpn.TunnelState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -44,13 +43,9 @@ fun HomeScreen(
     onConnect: () -> Unit,
 ) {
     val state by vm.tunnelState.collectAsState()
-    val config by vm.tunnelConfig.collectAsState()
     val region by vm.selectedRegion.collectAsState()
-    val rosenpass by vm.rosenpassStatus.collectAsState()
-    val handshakeVerified by vm.handshakeVerified.collectAsState()
     val ipState by vm.publicIp.collectAsState()
     val realIp by vm.realIp.collectAsState()
-    val cnsa2Mode by vm.cnsa2Mode.collectAsState()
     val cnsa2Detail by vm.cnsa2Detail.collectAsState()
     val cnsa2Error by vm.cnsa2Error.collectAsState()
 
@@ -58,8 +53,7 @@ fun HomeScreen(
         when (state) {
             TunnelState.CONNECTED, TunnelState.CONNECTING -> vm.disconnect()
             TunnelState.DISCONNECTING -> { /* already tearing down */ }
-            TunnelState.DISCONNECTED, TunnelState.ERROR ->
-                if (config == null && !cnsa2Mode) vm.navigateTo(Screen.REGIONS) else onConnect()
+            TunnelState.DISCONNECTED, TunnelState.ERROR -> onConnect()
         }
     }
 
@@ -113,14 +107,14 @@ fun HomeScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = if (cnsa2Mode) (cnsa2Error?.takeIf { state == TunnelState.DISCONNECTED } ?: cnsa2Subtitle(state, cnsa2Detail)) else statusSubtitle(state, config != null, region),
+                    text = cnsa2Error?.takeIf { state == TunnelState.DISCONNECTED } ?: cnsa2Subtitle(state, cnsa2Detail),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center,
                 )
 
                 Spacer(Modifier.height(14.dp))
-                PqcChip(state = state, rosenpass = rosenpass, handshakeVerified = handshakeVerified, cnsa2Mode = cnsa2Mode)
+                SuiteChip(state = state)
 
                 Spacer(Modifier.height(22.dp))
 
@@ -134,7 +128,7 @@ fun HomeScreen(
                 Spacer(Modifier.height(10.dp))
                 LocationCard(
                     region = region,
-                    hasConfig = config != null,
+                    hasConfig = false,
                     onClick = { vm.navigateTo(Screen.REGIONS) },
                 )
             }
@@ -142,11 +136,10 @@ fun HomeScreen(
     }
 }
 
-/** The post-quantum status pill shown beneath the connect control. */
+/** The pill beneath the connect control that names the suite protecting the tunnel. */
 @Composable
-private fun PqcChip(state: TunnelState, rosenpass: RosenpassStatus, handshakeVerified: Boolean, cnsa2Mode: Boolean = false) {
-    val active = state == TunnelState.CONNECTED &&
-        (cnsa2Mode || rosenpass is RosenpassStatus.Established || (rosenpass is RosenpassStatus.Idle && handshakeVerified))
+private fun SuiteChip(state: TunnelState) {
+    val active = state == TunnelState.CONNECTED
     val dotColor =
         if (active) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.onSurfaceVariant
@@ -163,7 +156,7 @@ private fun PqcChip(state: TunnelState, rosenpass: RosenpassStatus, handshakeVer
             Box(Modifier.size(8.dp).background(dotColor, CircleShape))
             Spacer(Modifier.width(8.dp))
             Text(
-                text = if (cnsa2Mode) cnsa2Line(state) else pqcLine(state, rosenpass, handshakeVerified),
+                text = cnsa2Line(state),
                 color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 12.sp,
                 maxLines = 1,
@@ -367,21 +360,7 @@ private fun statusHeadline(state: TunnelState): String = when (state) {
     TunnelState.DISCONNECTED -> "Not connected"
 }
 
-private fun statusSubtitle(
-    state: TunnelState,
-    hasConfig: Boolean,
-    region: LatticeRegion?,
-): String = when (state) {
-    TunnelState.CONNECTED -> region?.let { "Tunnel active · ${it.displayName}" }
-        ?: "Secure tunnel active"
-    TunnelState.CONNECTING -> "Establishing a secure tunnel"
-    TunnelState.DISCONNECTING -> "Closing the tunnel"
-    TunnelState.ERROR -> "Tap the shield to try again"
-    TunnelState.DISCONNECTED ->
-        if (!hasConfig) "Choose a location to get started" else "Tap the shield to connect"
-}
-
-/** CNSA 2.0 mode offers one suite only, so connected means that suite is in use. */
+/** The app offers one suite only, so connected means that suite is in use. */
 private fun cnsa2Line(state: TunnelState): String =
     if (state == TunnelState.CONNECTED) "CNSA 2.0 · active · ML-KEM-1024 · ML-DSA-87"
     else "CNSA 2.0 · ML-KEM-1024 · ML-DSA-87"
@@ -394,19 +373,3 @@ private fun cnsa2Subtitle(state: TunnelState, detail: String?): String = when (s
     TunnelState.DISCONNECTED -> "Tap the shield to connect with CNSA 2.0"
 }
 
-private fun pqcLine(
-    state: TunnelState,
-    rosenpass: RosenpassStatus,
-    handshakeVerified: Boolean,
-): String = when {
-    state != TunnelState.CONNECTED -> "ML-KEM-768 post-quantum key exchange"
-    // Rosenpass idle while connected means the ML-KEM-768 path (no rotator).
-    rosenpass is RosenpassStatus.Idle && handshakeVerified -> "ML-KEM-768 key exchange active"
-    rosenpass is RosenpassStatus.Idle -> "ML-KEM-768: verifying tunnel…"
-    rosenpass is RosenpassStatus.Established ->
-        "Post-quantum active · ${rosenpass.rotations} key rotations"
-    rosenpass is RosenpassStatus.Handshaking -> "Post-quantum handshake…"
-    rosenpass is RosenpassStatus.Connecting -> "Starting post-quantum channel…"
-    rosenpass is RosenpassStatus.Error -> "Post-quantum: ${rosenpass.message}"
-    else -> "Post-quantum encryption ready"
-}

@@ -85,8 +85,9 @@ fun AccountScreen(vm: LatticeViewModel) {
 
     val accountNumber = remember { vm.accountNumber().orEmpty() }
     val state by vm.accountState.collectAsState()
-    val tunnelConfig by vm.tunnelConfig.collectAsState()
-    val thisDeviceIp = tunnelConfig?.addressV4?.substringBefore("/")
+    // Devices were matched to this phone by their WireGuard address. CNSA 2.0 devices have
+    // no such address, so no row is marked as this device for now.
+    val thisDeviceIp: String? = null
 
     var pendingRemoval by remember { mutableStateOf<AccountDevice?>(null) }
     var signOutAsk by remember { mutableStateOf(false) }

@@ -8,8 +8,7 @@ import ai.latticevpn.android.data.AccountStore
 import ai.latticevpn.android.data.GooglePlayIapClient
 import ai.latticevpn.android.data.IpAddressClient
 import ai.latticevpn.android.data.LatticeRegion
-import ai.latticevpn.android.vpn.RosenpassStatus
-import ai.latticevpn.android.vpn.TunnelManager
+import ai.latticevpn.android.data.RegionStore
 import ai.latticevpn.android.vpn.TunnelState
 import android.app.Activity
 import android.app.Application
@@ -29,7 +28,7 @@ import ai.latticevpn.android.vpn.cnsa2.Cnsa2RenewalWorker
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2Provider
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2State
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 /** The top-level destinations in the UI. */
@@ -50,17 +49,12 @@ sealed class AccountUiState {
 }
 
 /**
- * UI-facing state holder for Phase A6.
- *
- * Almost all real state already lives in the process-wide
- * [TunnelManager] (Phase A5) — this view model is a thin Compose-shaped
- * layer over it. It adds three things the manager has no opinion on:
- * in-app navigation, app-local preferences (auto-connect), and a
- * coroutine scope for firing the manager's `suspend` actions.
+ * UI-facing state holder: the tunnel (always the CNSA 2.0 suite), the selected
+ * region, the account, in-app navigation and app preferences.
  */
 class LatticeViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val tm = TunnelManager.get(app)
+    private val regions = RegionStore.get(app)
     private val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val ipClient = IpAddressClient()
     private val accountStore = AccountStore(app)
@@ -72,9 +66,7 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
         onPlayPurchase(token, productId)
     }
 
-    // ---- Tunnel / region state — delegated straight from TunnelManager ----
-
-    // ---- CNSA 2.0 mode (only in builds that carry the engine) -------------
+    // ---- The tunnel: TLS 1.3 with the CNSA 2.0 suite ------------------------
 
     private val cnsa2: Cnsa2Backend? = Cnsa2Provider.backend()
     private val cnsa2Enroller = Cnsa2Enroller(app, accountClient)
@@ -83,17 +75,13 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     /** True when this build has the engine. The device enrolls itself the first time it connects. */
     val cnsa2Available: Boolean = cnsa2 != null
 
-    // The CNSA 2.0 suite is the only way this app connects. There is no setting and no WireGuard fallback.
-    private val _cnsa2Mode = MutableStateFlow(true)
-    val cnsa2Mode: StateFlow<Boolean> = _cnsa2Mode.asStateFlow()
     val cnsa2Detail: StateFlow<String?> = cnsa2?.detail ?: MutableStateFlow(null)
 
     init {
         // Keeps the daily renewal scheduled for a device that is already enrolled.
         if (cnsa2Available && Cnsa2Config.load(app) != null) Cnsa2RenewalWorker.schedule(app)
-        // A WireGuard tunnel left up by an older build of the app is taken down. The next
-        // connection is made with the CNSA 2.0 suite.
-        if (tm.tunnelState.value != TunnelState.DISCONNECTED && cnsa2?.state?.value == Cnsa2State.OFF) tm.disconnect()
+        // Keys and configurations left on the device by a WireGuard-based version are erased.
+        regions.eraseLegacyTunnelData()
     }
 
     private val _cnsa2Enrolling = MutableStateFlow(false)
@@ -127,23 +115,19 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     val tunnelState: StateFlow<TunnelState> =
-        if (cnsa2 == null) tm.tunnelState
-        else combine(tm.tunnelState, cnsa2.state, _cnsa2Mode) { wireGuard, suite, mode ->
-            if (!mode && suite == Cnsa2State.OFF) wireGuard
-            else when (suite) {
+        if (cnsa2 == null) MutableStateFlow(TunnelState.DISCONNECTED)
+        else cnsa2.state.map { suite ->
+            when (suite) {
                 Cnsa2State.OFF -> TunnelState.DISCONNECTED
                 Cnsa2State.CONNECTING, Cnsa2State.RECONNECTING -> TunnelState.CONNECTING
                 Cnsa2State.CONNECTED -> TunnelState.CONNECTED
                 Cnsa2State.FAILED -> TunnelState.ERROR
             }
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, tm.tunnelState.value)
-    val tunnelConfig get() = tm.tunnelConfig
-    val selectedRegion: StateFlow<LatticeRegion?> get() = tm.selectedRegion
-    val regionSelectionInProgress: StateFlow<Boolean> get() = tm.regionSelectionInProgress
-    val lastRegionError: StateFlow<String?> get() = tm.lastRegionError
-    val rosenpassStatus: StateFlow<RosenpassStatus> get() = tm.rosenpassStatus
-    val handshakeVerified: StateFlow<Boolean> get() = tm.handshakeVerified
-    val localRosenpassPublicKeyB64: StateFlow<String?> get() = tm.localRosenpassPublicKeyB64
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, TunnelState.DISCONNECTED)
+    val selectedRegion: StateFlow<LatticeRegion?> get() = regions.selectedRegion
+    /** Picking a region is immediate now; kept so the region list has one shape of state. */
+    val regionSelectionInProgress: StateFlow<Boolean> = MutableStateFlow(false)
+    val lastRegionError: StateFlow<String?> = MutableStateFlow(null)
 
     // ---- Public IP -------------------------------------------------------
 
@@ -182,30 +166,9 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     /** Synchronous read for the launch-time auto-connect decision. */
     fun autoConnectEnabled(): Boolean = _autoConnect.value
 
-    /** True once a config has been imported (region-provisioned or pasted). */
-    fun hasConfig(): Boolean = tm.tunnelConfig.value != null
-
-    // ---- Manual config import (Settings → Advanced) ----------------------
-
-    private val _importError = MutableStateFlow<String?>(null)
-    val importError: StateFlow<String?> = _importError.asStateFlow()
-
-    fun clearImportError() { _importError.value = null }
-
     // ---- Lifecycle -------------------------------------------------------
 
     init {
-        // Warm-up: generate the device identity keypairs and pre-provision
-        // the preferred region in the background so the first region tap is
-        // a local cache hit. All failures are swallowed — this is purely an
-        // optimization and the user-driven path re-runs every step anyway.
-        viewModelScope.launch {
-            runCatching {
-                tm.ensureLocalKeypair()
-                tm.ensureLocalWgKeypair()
-                tm.warmUpPreferredRegion()
-            }
-        }
         // Refresh the displayed public IP whenever the tunnel settles.
         // collect() replays the current value, so this also performs the
         // initial lookup on launch.
@@ -222,16 +185,12 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Actions ---------------------------------------------------------
 
-    /**
-     * Provision (or switch to) [region] and, on success, return to Home.
-     * [TunnelManager.selectRegion] never throws — it records any failure
-     * in [lastRegionError] — so the completion is keyed off that flow.
-     */
+    /** Pick [region]. A live tunnel moves to that region's gateway. */
     fun selectRegion(region: LatticeRegion, onComplete: (error: String?) -> Unit) {
         viewModelScope.launch {
             val wasUp = cnsa2 != null && cnsa2.state.value != Cnsa2State.OFF
-            tm.selectRegion(region)
-            onComplete(tm.lastRegionError.value)
+            regions.select(region)
+            onComplete(null)
             // A live tunnel moves to the new region's gateway.
             if (wasUp) {
                 cnsa2?.disconnect(getApplication())
@@ -244,19 +203,16 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     fun connect() {
         val engine = cnsa2
         if (engine == null) {
-            // The engine did not load on this device. Refuse; do not connect any other way.
-            tm.disconnect()
+            // The engine did not load on this device. Refuse; there is no other way to connect.
             _cnsa2Error.value = "This device cannot run the CNSA 2.0 tunnel."
             return
         }
         run {
-            // never falls back to WireGuard: the app connects with the CNSA 2.0 suite or not at all
-            tm.disconnect()
             viewModelScope.launch {
                 ensureCnsa2Enrolled() ?: return@launch
                 // The gateway follows the selected region. Refreshing the list is best effort.
                 accountStore.accountNumber()?.let { number -> runCatching { cnsa2Enroller.refreshGateways(number) } }
-                val config = cnsa2Enroller.configFor(tm.selectedRegion.value?.id)
+                val config = cnsa2Enroller.configFor(regions.selectedRegion.value?.id)
                 if (config == null) {
                     _cnsa2Error.value = "That region has no CNSA 2.0 gateway yet. Pick another region."
                     return@launch
@@ -275,7 +231,6 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun disconnect() {
         if (cnsa2 != null && cnsa2.state.value != Cnsa2State.OFF) cnsa2.disconnect(getApplication())
-        tm.disconnect()
     }
 
     // ---- Public IP -------------------------------------------------------
@@ -313,19 +268,6 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
     /** User-triggered retry of the public-IP lookup. */
     fun refreshPublicIp() = scheduleIpRefresh(0L)
 
-    /** Parse and apply a manually pasted config block. */
-    fun importConfig(text: String, onSuccess: () -> Unit) {
-        viewModelScope.launch {
-            try {
-                tm.importConfig(text)
-                _importError.value = null
-                onSuccess()
-            } catch (e: Exception) {
-                _importError.value = e.message ?: "That config could not be parsed."
-            }
-        }
-    }
-
     // ---- Account: sign-in, sign-out, subscription status -----------------
 
     /** True once a validated account number is stored. */
@@ -358,18 +300,7 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
                 e.message ?: "Sign-in failed. Please try again."
             }
             _signInBusy.value = false
-            if (error == null) {
-                _screen.value = Screen.HOME
-                // Signed in — generate the device identity keys and
-                // pre-provision in the background so the first connect is quick.
-                viewModelScope.launch {
-                    runCatching {
-                        tm.ensureLocalKeypair()
-                        tm.ensureLocalWgKeypair()
-                        tm.warmUpPreferredRegion()
-                    }
-                }
-            }
+            if (error == null) _screen.value = Screen.HOME
             onResult(error)
         }
     }
@@ -384,7 +315,7 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
             androidx.work.WorkManager.getInstance(getApplication()).cancelUniqueWork(Cnsa2RenewalWorker.WORK_NAME)
             accountStore.accountNumber()?.let { number -> viewModelScope.launch { cnsa2Enroller.forget(number) } }
         }
-        tm.signOutCleanup()
+        regions.clear()
         accountStore.clear()
         _accountState.value = AccountUiState.Loading
         _screen.value = Screen.SIGN_IN
@@ -494,15 +425,6 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
                 } else {
                     accountStore.save(number)
                     _screen.value = Screen.HOME
-                    // Signed in — warm up device keys + preferred region so the
-                    // first connect is quick (mirrors signIn()).
-                    viewModelScope.launch {
-                        runCatching {
-                            tm.ensureLocalKeypair()
-                            tm.ensureLocalWgKeypair()
-                            tm.warmUpPreferredRegion()
-                        }
-                    }
                 }
             } catch (e: AccountException) {
                 _purchaseError.value = e.message

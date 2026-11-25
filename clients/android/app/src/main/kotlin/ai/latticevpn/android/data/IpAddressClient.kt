@@ -15,7 +15,7 @@ class IpLookupException(message: String) : Exception(message)
  * Hits ipify (`https://api.ipify.org`), which returns the caller's IP
  * as plain text and nothing else. The result depends on the current
  * route: with the VPN down it returns the user's real ISP address;
- * with the tunnel up the request travels through WireGuard, so ipify
+ * with the tunnel up the request travels through the tunnel, so ipify
  * sees — and returns — the Cloak concentrator's exit address. The home
  * screen relies on exactly that to show "your IP" before connecting and
  * the server's IP afterwards.
