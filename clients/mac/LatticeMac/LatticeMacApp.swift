@@ -31,7 +31,7 @@ struct LatticeMacApp: App {
         Settings {
             SettingsView()
                 .environmentObject(appDelegate.connection)
-                .frame(minWidth: 1240, minHeight: 800)
+                .frame(minWidth: 1240, minHeight: 740)
         }
         .commands {
             CommandGroup(replacing: .appSettings) {

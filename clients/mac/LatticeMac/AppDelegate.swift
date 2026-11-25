@@ -109,6 +109,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.backgroundColor = NSColor(LatticeTheme.navy)
             window.titlebarAppearsTransparent = true
             window.center()
+            #if DEBUG
+            // `-LatticeWindowFrame 1280x800` sets an exact window size, for store screenshots.
+            if let wanted = UserDefaults.standard.string(forKey: "LatticeWindowFrame") {
+                let parts = wanted.split(separator: "x").compactMap { Double($0) }
+                if parts.count == 2 {
+                    window.setFrame(NSRect(x: 160, y: 160, width: parts[0], height: parts[1]), display: true)
+                }
+            }
+            #endif
             settingsWindow = window
         }
         settingsWindow?.makeKeyAndOrderFront(nil)

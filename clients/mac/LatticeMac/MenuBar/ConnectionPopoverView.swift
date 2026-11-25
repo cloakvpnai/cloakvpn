@@ -131,12 +131,21 @@ struct ConnectionPopoverView: View {
         VStack(spacing: 12) {
             statusPill
             HStack(spacing: 16) {
-                ipColumn(label: "Your IP",  value: connection.publicIP ?? "—")
+                ipColumn(label: "Your IP",  value: shownPublicIP)
                 Divider().frame(height: 38)
                 ipColumn(label: "Exit IP",  value: connection.tunnelIP ?? "—")
             }
             primaryActionButton
         }
+    }
+
+    /// The address shown as "Your IP". Debug builds can show a placeholder, so store
+    /// screenshots do not carry a real home address.
+    private var shownPublicIP: String {
+        #if DEBUG
+        if let demo = UserDefaults.standard.string(forKey: "LatticeDemoIP") { return demo }
+        #endif
+        return connection.publicIP ?? "—"
     }
 
     private var statusPill: some View {

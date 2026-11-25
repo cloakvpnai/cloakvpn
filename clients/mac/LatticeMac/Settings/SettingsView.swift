@@ -73,7 +73,7 @@ struct SettingsView: View {
         .background(LatticeTheme.navy)
         .font(.system(size: 21))
         .controlSize(.extraLarge)
-        .frame(minWidth: 1240, idealWidth: 1500, minHeight: 800, idealHeight: 900)
+        .frame(minWidth: 1240, idealWidth: 1500, minHeight: 740, idealHeight: 900)
     }
 }
 
