@@ -137,7 +137,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: ai.cloakvpn.CloakVPN
         PRODUCT_NAME: LatticeMac
         MARKETING_VERSION: '2.0.0'
-        CURRENT_PROJECT_VERSION: '4'
+        CURRENT_PROJECT_VERSION: '5'
         CODE_SIGN_STYLE: Automatic
         ENABLE_HARDENED_RUNTIME: 'YES'
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -229,7 +229,7 @@ targets:
         LIBRARY_SEARCH_PATHS: "$(SRCROOT)/../apple-tls/Vendor/openssl-macos/lib"
         OTHER_LDFLAGS: "-lssl -lcrypto"
         MARKETING_VERSION: '2.0.0'
-        CURRENT_PROJECT_VERSION: '4'
+        CURRENT_PROJECT_VERSION: '5'
         CODE_SIGN_STYLE: Automatic
         ENABLE_HARDENED_RUNTIME: 'YES'
         PRODUCT_TYPE: com.apple.product-type.app-extension
