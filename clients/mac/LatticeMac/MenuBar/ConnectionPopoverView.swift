@@ -139,24 +139,24 @@ struct ConnectionPopoverView: View {
         }
     }
 
-    /// The address shown as "Your IP". Debug builds can mask it, so store screenshots
-    /// carry no real address.
+    /// The address shown as "Your IP". Debug builds can show a placeholder from the
+    /// documentation address ranges, so store screenshots carry no real address.
     private var shownPublicIP: String {
         #if DEBUG
-        if UserDefaults.standard.string(forKey: "LatticeDemoIP") != nil { return Self.maskedIP }
+        if let demo = UserDefaults.standard.string(forKey: "LatticeDemoIP") { return demo }
         #endif
         return connection.publicIP ?? "—"
     }
 
-    /// The exit address, masked the same way for store screenshots.
+    /// The exit address, replaced the same way for store screenshots.
     private var shownExitIP: String {
         #if DEBUG
-        if UserDefaults.standard.string(forKey: "LatticeDemoIP") != nil, connection.tunnelIP != nil { return Self.maskedIP }
+        if UserDefaults.standard.string(forKey: "LatticeDemoIP") != nil, connection.tunnelIP != nil {
+            return UserDefaults.standard.string(forKey: "LatticeDemoExitIP") ?? "198.51.100.77"
+        }
         #endif
         return connection.tunnelIP ?? "—"
     }
-
-    private static let maskedIP = "•••.•••.•••.•••"
 
     private var statusPill: some View {
         HStack(spacing: 8) {
