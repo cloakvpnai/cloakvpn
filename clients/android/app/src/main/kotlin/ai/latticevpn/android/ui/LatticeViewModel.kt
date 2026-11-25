@@ -28,6 +28,7 @@ import ai.latticevpn.android.vpn.cnsa2.Cnsa2RenewalWorker
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2Provider
 import ai.latticevpn.android.vpn.cnsa2.Cnsa2State
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
@@ -117,13 +118,20 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * True from the moment the customer picks another region on a live tunnel until the
+     * tunnel service has taken the change over. The screen shows "connecting" for that
+     * time, so it never names the new region while traffic still leaves through the old one.
+     */
+    private val regionChanging = MutableStateFlow(false)
+
     val tunnelState: StateFlow<TunnelState> =
         if (cnsa2 == null) MutableStateFlow(TunnelState.DISCONNECTED)
-        else cnsa2.state.map { suite ->
+        else combine(cnsa2.state, regionChanging) { suite, changing ->
             when (suite) {
                 Cnsa2State.OFF -> TunnelState.DISCONNECTED
                 Cnsa2State.CONNECTING, Cnsa2State.RECONNECTING -> TunnelState.CONNECTING
-                Cnsa2State.CONNECTED -> TunnelState.CONNECTED
+                Cnsa2State.CONNECTED -> if (changing) TunnelState.CONNECTING else TunnelState.CONNECTED
                 Cnsa2State.FAILED -> TunnelState.ERROR
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, TunnelState.DISCONNECTED)
@@ -194,9 +202,19 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
             val wasUp = cnsa2 != null && cnsa2.state.value != Cnsa2State.OFF
             regions.select(region)
             onComplete(null)
-            // A live tunnel moves to the new region's gateway.
-            // The tunnel service changes gateway in place, so traffic stays held.
-            if (wasUp) connect()
+            // A live tunnel moves to the new region's gateway. The tunnel service changes
+            // gateway in place, so traffic stays held. The saved gateway list is used as it
+            // is: waiting on a refresh here once delayed the change by 30 seconds.
+            val engine = cnsa2
+            if (wasUp && engine != null) {
+                regionChanging.value = true
+                try {
+                    startTunnel(engine, refreshFirst = false)
+                    delay(1500) // the service reports "reconnecting" within this time
+                } finally {
+                    regionChanging.value = false
+                }
+            }
         }
     }
 
@@ -207,15 +225,31 @@ class LatticeViewModel(app: Application) : AndroidViewModel(app) {
             _cnsa2Error.value = "This device cannot run the CNSA 2.0 tunnel."
             return
         }
+        viewModelScope.launch { startTunnel(engine, refreshFirst = true) }
+    }
+
+    /**
+     * Starts the tunnel through the selected region, or moves a running tunnel there.
+     * [refreshFirst] fetches the gateway list before choosing; without it the saved list
+     * is used and fetched only if it has no gateway for the region.
+     */
+    private suspend fun startTunnel(engine: ai.latticevpn.android.vpn.cnsa2.Cnsa2Backend, refreshFirst: Boolean) {
         run {
-            viewModelScope.launch {
-                ensureCnsa2Enrolled() ?: return@launch
+            run {
+                ensureCnsa2Enrolled() ?: return
                 // The gateway follows the selected region. Refreshing the list is best effort.
-                accountStore.accountNumber()?.let { number -> runCatching { cnsa2Enroller.refreshGateways(number) } }
-                val config = cnsa2Enroller.configFor(regions.selectedRegion.value?.id)
+                suspend fun refresh() {
+                    accountStore.accountNumber()?.let { number -> runCatching { cnsa2Enroller.refreshGateways(number) } }
+                }
+                if (refreshFirst) refresh()
+                var config = cnsa2Enroller.configFor(regions.selectedRegion.value?.id)
+                if (config == null && !refreshFirst) {
+                    refresh()
+                    config = cnsa2Enroller.configFor(regions.selectedRegion.value?.id)
+                }
                 if (config == null) {
                     _cnsa2Error.value = "That region has no CNSA 2.0 gateway yet. Pick another region."
-                    return@launch
+                    return
                 }
                 _cnsa2Error.value = null
                 cnsa2Config = config
