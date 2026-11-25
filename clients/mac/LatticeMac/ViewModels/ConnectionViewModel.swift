@@ -85,6 +85,11 @@ final class ConnectionViewModel: ObservableObject {
 
     func renewCNSA2IfDue() async { await tunnel?.renewCNSA2IfDue() }
 
+    /// When the current tunnel came up, and its counters, for the globe panel.
+    var connectedSince: Date? { tunnel?.connectedSince }
+    func sessionStats() async -> CNSA2SessionStats? { await tunnel?.cnsa2SessionStats() }
+    func gatewayLatency() async -> TimeInterval? { await tunnel?.gatewayLatency() }
+
     /// Always true: the CNSA 2.0 suite is the only mode.
     @Published private(set) var isCNSA2Mode = true
     var cnsa2GatewayRegionName: String? { tunnel?.cnsa2GatewayRegionName }

@@ -16,6 +16,26 @@ enum LatticePing {
         }
     }
 
+    #if os(macOS)
+    /// The interface that holds this device's address inside the tunnel (10.88.0.0/19).
+    private static func tunnelInterfaceIndex() -> UInt32 {
+        var list: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&list) == 0 else { return 0 }
+        defer { freeifaddrs(list) }
+        var cursor = list
+        while let entry = cursor {
+            defer { cursor = entry.pointee.ifa_next }
+            guard let address = entry.pointee.ifa_addr, address.pointee.sa_family == sa_family_t(AF_INET) else { continue }
+            let ip = address.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { UInt32(bigEndian: $0.pointee.sin_addr.s_addr) }
+            // 10.88.0.0/19
+            if ip & 0xFFFF_E000 == 0x0A58_0000 {
+                return if_nametoindex(entry.pointee.ifa_name)
+            }
+        }
+        return 0
+    }
+    #endif
+
     private static func blocking(_ host: String, _ timeout: TimeInterval) -> TimeInterval? {
         let fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP)
         guard fd >= 0 else { return nil }
@@ -25,6 +45,15 @@ enum LatticePing {
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         address.sin_family = sa_family_t(AF_INET)
         guard inet_pton(AF_INET, host, &address.sin_addr) == 1 else { return nil }
+
+        #if os(macOS)
+        // Inside the tunnel extension the system keeps the extension's own traffic out of
+        // the tunnel, so name the tunnel's interface for this one socket.
+        var index = tunnelInterfaceIndex()
+        if index != 0 {
+            setsockopt(fd, IPPROTO_IP, IP_BOUND_IF, &index, socklen_t(MemoryLayout<UInt32>.size))
+        }
+        #endif
 
         var wait = timeval(tv_sec: Int(timeout), tv_usec: 0)
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &wait, socklen_t(MemoryLayout<timeval>.size))

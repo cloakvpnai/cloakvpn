@@ -512,6 +512,18 @@ final class TunnelManager: ObservableObject {
     var connectedSince: Date? { manager?.connection.connectedDate }
 
     /// Traffic and key changes for the running session, asked of the tunnel extension.
+    /// Round trip to the gateway through the tunnel, in seconds.
+    func gatewayLatency() async -> TimeInterval? {
+        guard status == .connected else { return nil }
+        #if os(macOS)
+        guard let data = try? await Self.sendProviderMessageAsync(Data([0x01]), manager: manager),
+              let text = String(data: data, encoding: .utf8), let trip = Double(text), trip > 0 else { return nil }
+        return trip
+        #else
+        return await LatticePing.roundTrip(to: LatticePing.gatewayInTunnel)
+        #endif
+    }
+
     func cnsa2SessionStats() async -> CNSA2SessionStats? {
         guard status == .connected,
               let data = try? await Self.sendProviderMessageAsync(Data([0x00]), manager: manager),

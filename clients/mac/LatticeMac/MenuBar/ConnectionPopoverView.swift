@@ -29,6 +29,7 @@ struct ConnectionPopoverView: View {
     @State private var regionListAtBottom = true
 
     var body: some View {
+        HStack(alignment: .top, spacing: 18) {
         VStack(spacing: 0) {
             header
             Divider().padding(.horizontal, -16)
@@ -49,10 +50,24 @@ struct ConnectionPopoverView: View {
                 footer
             }
         }
+        .frame(maxWidth: inWindow ? 660 : .infinity)
+        if inWindow {
+            // The same globe and session tiles as the iPhone app.
+            LatticeGlobeView(selectedRegionID: connection.selectedRegion?.id,
+                             isConnected: connection.status.isConnected,
+                             connectedSince: connection.connectedSince,
+                             loadStats: { await connection.sessionStats() },
+                             onPick: { region in Task { await connection.connect(to: RegionSummary(region)) } },
+                             scale: 1.45,
+                             loadLatency: { await connection.gatewayLatency() })
+                .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
+        }
+        }
         .padding(.horizontal, 16)
         .padding(.top, 14)
         .padding(.bottom, 12)
-        .background(inWindow ? Color.clear : Color(NSColor.windowBackgroundColor))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(LatticeTheme.navy)
         .alert("Lattice VPN", isPresented: Binding(
             get: { connection.lastError != nil },
             set: { if !$0 { connection.clearError() } }
@@ -323,7 +338,7 @@ struct ConnectionPopoverView: View {
         case .connected:                      return .green.opacity(0.08)
         case .connecting, .reconnecting:      return .yellow.opacity(0.10)
         case .error:                          return .red.opacity(0.10)
-        case .disconnected:                   return Color(NSColor.controlBackgroundColor)
+        case .disconnected:                   return LatticeTheme.navyRaised
         }
     }
 

@@ -7,12 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		050369D8C42DAA0BC5975735 /* LatticePing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C25316E1FD149CFD3228A55B /* LatticePing.swift */; };
 		06A8D73A5E1017556ACBD1A5 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CF941E9EA2FA5B0FE324BFE /* MenuBarController.swift */; };
 		12843FDFDAB4C97D40E92340 /* CNSA2Enrollment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00ABB9BDFF81E52035F6F80F /* CNSA2Enrollment.swift */; };
 		1310D17ECFB9880B7225AF99 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A891D2E5644988BC3B2347F3 /* PacketTunnelProvider.swift */; };
 		193371A69A8F22F5FE2D22C3 /* StatusItemIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF5A9BE1ACE81A2DD9B0E53C /* StatusItemIcon.swift */; };
 		19BF97C9AC9B5B02D7D6D054 /* AppGroupKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2B61018460812E8825BC010 /* AppGroupKeyStore.swift */; };
+		1BD30AFF29CBAE3D0A81759B /* LatticePing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C25316E1FD149CFD3228A55B /* LatticePing.swift */; };
 		20AA99BB72332FFD78A8B74A /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4900BA82D6EBAED828485DDA /* AppDelegate.swift */; };
+		276DC8CD752A8CB08B2E9659 /* LatticeTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1955B9BA46ED5BE3D7E4493B /* LatticeTheme.swift */; };
 		4574E08ADCC960CE3490CFD8 /* Region.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53012357CF1AF36AA615A567 /* Region.swift */; };
 		4D4DC44E7F6FB3DBFE31252E /* TLSSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D49A4CC46578A93346F9E722 /* TLSSession.swift */; };
 		576FC7D6A3A28C3D10D10605 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0DE105A1B7C2E33A3BC85485 /* PrivacyInfo.xcprivacy */; };
@@ -20,6 +23,7 @@
 		594863332E13623F7885336D /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2B74DCCF5CB538A5BCA897F /* Session.swift */; };
 		59E4D3CD18A7AEABF5D20141 /* LatticeMacTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8927E4ACEA21E973CD56CE9E /* LatticeMacTunnelProvider.swift */; };
 		5BBB5A5836B21CED710AC400 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = CCA0020F0B2A8EB30F0B7E29 /* PrivacyInfo.xcprivacy */; };
+		602579021845E56CB82F341E /* LatticeGlobeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 783BBD054E0045CC989D5F23 /* LatticeGlobeView.swift */; };
 		68D29DC82865F201DA968A52 /* LatticeAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AAC0F6409163575246BDDF9 /* LatticeAPI.swift */; };
 		6E8118E16CD87273D4F93EB0 /* CNSA2Identity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96D59D6045089D2946A9E0FB /* CNSA2Identity.swift */; };
 		7C15BFD12E672C91FF0F9930 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9718F30ACF02DE97C1304779 /* Assets.xcassets */; };
@@ -71,6 +75,7 @@
 		00BD704E8A34413253646D15 /* lattice_tls.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = lattice_tls.h; sourceTree = "<group>"; };
 		0CF941E9EA2FA5B0FE324BFE /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		0DE105A1B7C2E33A3BC85485 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		1955B9BA46ED5BE3D7E4493B /* LatticeTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticeTheme.swift; sourceTree = "<group>"; };
 		1F16C55A4580D4F594F8FC03 /* ConnectionPopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionPopoverView.swift; sourceTree = "<group>"; };
 		23A76637DAF36D4A08A21FEB /* LatticeAccountClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticeAccountClient.swift; sourceTree = "<group>"; };
 		248EA2AACC0AF36FA694C8FE /* SubscriptionInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionInfo.swift; sourceTree = "<group>"; };
@@ -79,6 +84,7 @@
 		4900BA82D6EBAED828485DDA /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		53012357CF1AF36AA615A567 /* Region.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Region.swift; sourceTree = "<group>"; };
 		588EB77FE56779DD2E458442 /* ConnectionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionViewModel.swift; sourceTree = "<group>"; };
+		783BBD054E0045CC989D5F23 /* LatticeGlobeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticeGlobeView.swift; sourceTree = "<group>"; };
 		7DF378B550EA977D2C5708B8 /* CNSA2Renewal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CNSA2Renewal.swift; sourceTree = "<group>"; };
 		837A3C21740DA4B4915CFDE7 /* Wire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Wire.swift; sourceTree = "<group>"; };
 		8927E4ACEA21E973CD56CE9E /* LatticeMacTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticeMacTunnelProvider.swift; sourceTree = "<group>"; };
@@ -88,6 +94,7 @@
 		A891D2E5644988BC3B2347F3 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
 		B8127F371BCD2324A33A6E3F /* LatticeMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticeMacApp.swift; sourceTree = "<group>"; };
 		BF5A9BE1ACE81A2DD9B0E53C /* StatusItemIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemIcon.swift; sourceTree = "<group>"; };
+		C25316E1FD149CFD3228A55B /* LatticePing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatticePing.swift; sourceTree = "<group>"; };
 		C70211E508CDEF32A95D730E /* LatticeMacTunnel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LatticeMacTunnel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		CCA0020F0B2A8EB30F0B7E29 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		D49A4CC46578A93346F9E722 /* TLSSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TLSSession.swift; sourceTree = "<group>"; };
@@ -166,6 +173,7 @@
 				4900BA82D6EBAED828485DDA /* AppDelegate.swift */,
 				9718F30ACF02DE97C1304779 /* Assets.xcassets */,
 				B8127F371BCD2324A33A6E3F /* LatticeMacApp.swift */,
+				1955B9BA46ED5BE3D7E4493B /* LatticeTheme.swift */,
 				0DE105A1B7C2E33A3BC85485 /* PrivacyInfo.xcprivacy */,
 			);
 			path = LatticeMac;
@@ -215,6 +223,8 @@
 				7DF378B550EA977D2C5708B8 /* CNSA2Renewal.swift */,
 				23A76637DAF36D4A08A21FEB /* LatticeAccountClient.swift */,
 				2AAC0F6409163575246BDDF9 /* LatticeAPI.swift */,
+				783BBD054E0045CC989D5F23 /* LatticeGlobeView.swift */,
+				C25316E1FD149CFD3228A55B /* LatticePing.swift */,
 				53012357CF1AF36AA615A567 /* Region.swift */,
 				2CE382357D5C5383A99245BC /* StoreManager.swift */,
 				248EA2AACC0AF36FA694C8FE /* SubscriptionInfo.swift */,
@@ -373,7 +383,10 @@
 				A848AFC600E98731ECADE270 /* ConnectionViewModel.swift in Sources */,
 				EAFFFD6133D38C2D7A905A0D /* LatticeAPI.swift in Sources */,
 				BD7E11B34B2390845C974194 /* LatticeAccountClient.swift in Sources */,
+				602579021845E56CB82F341E /* LatticeGlobeView.swift in Sources */,
 				B98EA2B1AFF3B0E29256B127 /* LatticeMacApp.swift in Sources */,
+				1BD30AFF29CBAE3D0A81759B /* LatticePing.swift in Sources */,
+				276DC8CD752A8CB08B2E9659 /* LatticeTheme.swift in Sources */,
 				06A8D73A5E1017556ACBD1A5 /* MenuBarController.swift in Sources */,
 				4574E08ADCC960CE3490CFD8 /* Region.swift in Sources */,
 				D198FCCAF2CBFB76EB563E2F /* SettingsView.swift in Sources */,
@@ -394,6 +407,7 @@
 				C6BFD28B72372E2B251C638E /* CNSA2Tunnel.swift in Sources */,
 				68D29DC82865F201DA968A52 /* LatticeAPI.swift in Sources */,
 				59E4D3CD18A7AEABF5D20141 /* LatticeMacTunnelProvider.swift in Sources */,
+				050369D8C42DAA0BC5975735 /* LatticePing.swift in Sources */,
 				1310D17ECFB9880B7225AF99 /* PacketTunnelProvider.swift in Sources */,
 				CBC890E0A4F62154200B3DCD /* Region.swift in Sources */,
 				594863332E13623F7885336D /* Session.swift in Sources */,

@@ -37,9 +37,10 @@ struct SettingsView: View {
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
         .padding(20)
+        .background(LatticeTheme.navy)
         .font(.system(size: 16))
         .controlSize(.large)
-        .frame(minWidth: 760, idealWidth: 860, minHeight: 780, idealHeight: 820)
+        .frame(minWidth: 1240, idealWidth: 1500, minHeight: 800, idealHeight: 900)
     }
 }
 
@@ -60,6 +61,8 @@ struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(LatticeTheme.navy)
     }
 }
 
@@ -103,6 +106,8 @@ struct AccountSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(LatticeTheme.navy)
         .confirmationDialog("Sign out of Lattice? This disconnects the VPN.", isPresented: $confirmSignOut) {
             Button("Sign out", role: .destructive) { Task { await connection.signOut() } }
         }
@@ -183,6 +188,8 @@ struct SubscriptionSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(LatticeTheme.navy)
         .task { await store.loadProducts() }
     }
 
@@ -338,6 +345,8 @@ struct AboutSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(LatticeTheme.navy)
     }
 }
 

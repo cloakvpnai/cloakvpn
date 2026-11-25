@@ -102,9 +102,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 SettingsView().environmentObject(connection))
             let window = NSWindow(contentViewController: controller)
             window.title = "Lattice VPN"
-            window.setContentSize(NSSize(width: 860, height: 820))
+            window.setContentSize(NSSize(width: 1500, height: 900))
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.isReleasedWhenClosed = false
+            window.appearance = NSAppearance(named: .darkAqua)
+            window.backgroundColor = NSColor(LatticeTheme.navy)
+            window.titlebarAppearsTransparent = true
             window.center()
             settingsWindow = window
         }

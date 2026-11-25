@@ -1,8 +1,25 @@
 import SwiftUI
 import MapKit
 import QuartzCore
+#if os(macOS)
+import AppKit
+private typealias PlatformColor = NSColor
+private typealias PlatformRepresentable = NSViewRepresentable
+#else
+import UIKit
+private typealias PlatformColor = UIColor
+private typealias PlatformRepresentable = UIViewRepresentable
+#endif
 
-/// The panel under the region list on wide screens (the open iPhone Duo and iPad):
+private var reduceMotionOn: Bool {
+    #if os(macOS)
+    return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    #else
+    return UIAccessibility.isReduceMotionEnabled
+    #endif
+}
+
+/// The panel beside the region list on wide screens (the open iPhone Duo, iPad and the Mac window):
 /// a globe that turns continuously, one dot per region, the exit in use lit, and a
 /// strip of facts about the current session. It shows this device's own connection
 /// only. Nothing about other customers is fetched or drawn.
@@ -12,6 +29,12 @@ struct LatticeGlobeView: View {
     let connectedSince: Date?
     let loadStats: () async -> CNSA2SessionStats?
     let onPick: (CloakRegion) -> Void
+    /// Text size multiplier. The Mac window uses larger text than the phone.
+    var scale: CGFloat = 1
+    /// How to measure the round trip to the exit. Nil means an echo sent from the app.
+    var loadLatency: (() async -> TimeInterval?)? = nil
+
+    private func f(_ size: CGFloat) -> CGFloat { size * scale }
 
     @State private var stats: CNSA2SessionStats?
     @State private var latency: TimeInterval?
@@ -34,6 +57,14 @@ struct LatticeGlobeView: View {
         "in1": .init(latitude: 19.08, longitude: 72.88),
         "jp1": .init(latitude: 35.68, longitude: 139.69),
     ]
+
+    #if os(macOS)
+    private static let pickHint = "Click a dot to pick a region"
+    private static let connectHint = "Click Connect, or a dot on the globe, to connect."
+    #else
+    private static let pickHint = "Tap a dot to pick a region"
+    private static let connectHint = "Tap the power button, or a dot on the globe, to connect."
+    #endif
 
     private var liveRegion: CloakRegion? {
         guard isConnected, let id = selectedRegionID else { return nil }
@@ -74,7 +105,9 @@ struct LatticeGlobeView: View {
             guard isConnected else { return }
             while !Task.isCancelled {
                 stats = await loadStats()
-                if let trip = await LatticePing.roundTrip(to: LatticePing.gatewayInTunnel) {
+                let measured: TimeInterval?
+                if let loadLatency { measured = await loadLatency() } else { measured = await LatticePing.roundTrip(to: LatticePing.gatewayInTunnel) }
+                if let trip = measured {
                     latency = trip
                     latencySamples.append(trip)
                     if latencySamples.count > 20 { latencySamples.removeFirst() }
@@ -93,12 +126,12 @@ struct LatticeGlobeView: View {
                     .fill(liveRegion == nil ? LatticeTheme.muted : LatticeTheme.mint)
                     .frame(width: 6, height: 6)
                 Text(liveRegion == nil ? "REGIONS" : "LIVE CONNECTION")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: f(11), weight: .semibold))
                     .tracking(1.0)
                     .foregroundStyle(LatticeTheme.muted)
             }
-            Text(liveRegion.map { "\($0.countryFlag)  \($0.displayName)" } ?? "Tap a dot to pick a region")
-                .font(.system(size: 14, weight: .semibold))
+            Text(liveRegion.map { "\($0.countryFlag)  \($0.displayName)" } ?? Self.pickHint)
+                .font(.system(size: f(14), weight: .semibold))
                 .foregroundStyle(liveRegion == nil ? LatticeTheme.text : LatticeTheme.mintText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -128,11 +161,11 @@ struct LatticeGlobeView: View {
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: f(9), weight: .semibold))
                     .tracking(0.8)
                     .foregroundStyle(isOpen ? LatticeTheme.mint : LatticeTheme.muted)
                 Text(value)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: f(12), weight: .semibold, design: .monospaced))
                     .foregroundStyle(lit ? LatticeTheme.mintText : LatticeTheme.text)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
@@ -158,12 +191,12 @@ struct LatticeGlobeView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(detailTitle(tile))
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: f(11), weight: .semibold))
                         .tracking(1.0)
                         .foregroundStyle(LatticeTheme.mint)
                     Spacer()
                     Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: f(11), weight: .bold))
                         .foregroundStyle(LatticeTheme.muted)
                 }
                 switch tile {
@@ -178,7 +211,7 @@ struct LatticeGlobeView: View {
                             line("Connected at", since.formatted(date: .omitted, time: .shortened))
                         }
                     } else {
-                        note("Tap the power button, or a dot on the globe, to connect.")
+                        note(Self.connectHint)
                     }
                 case .traffic:
                     if liveRegion != nil, let s = stats {
@@ -230,7 +263,7 @@ struct LatticeGlobeView: View {
 
     private func big(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 26, weight: .bold, design: .monospaced))
+            .font(.system(size: f(26), weight: .bold, design: .monospaced))
             .foregroundStyle(liveRegion == nil ? LatticeTheme.text : LatticeTheme.mintText)
             .lineLimit(1)
             .minimumScaleFactor(0.6)
@@ -239,11 +272,11 @@ struct LatticeGlobeView: View {
     private func pair(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: f(10), weight: .semibold))
                 .tracking(0.8)
                 .foregroundStyle(LatticeTheme.muted)
             Text(value)
-                .font(.system(size: 19, weight: .bold, design: .monospaced))
+                .font(.system(size: f(19), weight: .bold, design: .monospaced))
                 .foregroundStyle(LatticeTheme.mintText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
@@ -253,11 +286,11 @@ struct LatticeGlobeView: View {
     private func line(_ label: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label)
-                .font(.system(size: 12))
+                .font(.system(size: f(12)))
                 .foregroundStyle(LatticeTheme.muted)
             Spacer(minLength: 8)
             Text(value)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .font(.system(size: f(12), weight: .semibold, design: .monospaced))
                 .foregroundStyle(LatticeTheme.text)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -266,7 +299,7 @@ struct LatticeGlobeView: View {
 
     private func note(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11))
+            .font(.system(size: f(11)))
             .foregroundStyle(LatticeTheme.muted)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -305,14 +338,14 @@ struct LatticeGlobeView: View {
 
 /// MKMapView driven by a display link, so the turn is one continuous motion and not
 /// a chain of short animations.
-private struct GlobeMap: UIViewRepresentable {
+private struct GlobeMap: PlatformRepresentable {
     let selectedRegionID: String?
     let isConnected: Bool
     let onPick: (CloakRegion) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
 
-    func makeUIView(context: Context) -> MKMapView {
+    private func build(_ context: Context) -> MKMapView {
         let map = MKMapView(frame: .zero)
         map.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: .realistic)
         map.showsCompass = false
@@ -327,6 +360,7 @@ private struct GlobeMap: UIViewRepresentable {
             guard let c = LatticeGlobeView.coordinates[region.id] else { continue }
             map.addAnnotation(RegionAnnotation(region: region, coordinate: c))
         }
+        #if !os(macOS)
         for recognizer in [UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.touched)),
                            UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.touched)),
                            UIRotationGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.touched))] as [UIGestureRecognizer] {
@@ -334,21 +368,28 @@ private struct GlobeMap: UIViewRepresentable {
             recognizer.cancelsTouchesInView = false
             map.addGestureRecognizer(recognizer)
         }
+        #endif
         context.coordinator.attach(map)
         context.coordinator.apply(selectedRegionID: selectedRegionID, isConnected: isConnected, animated: false)
         return map
     }
 
-    func updateUIView(_ map: MKMapView, context: Context) {
+    private func refresh(_ map: MKMapView, _ context: Context) {
         context.coordinator.onPick = onPick
         context.coordinator.apply(selectedRegionID: selectedRegionID, isConnected: isConnected, animated: true)
     }
 
-    static func dismantleUIView(_ map: MKMapView, coordinator: Coordinator) {
-        coordinator.detach()
-    }
+    #if os(macOS)
+    func makeNSView(context: Context) -> MKMapView { build(context) }
+    func updateNSView(_ map: MKMapView, context: Context) { refresh(map, context) }
+    static func dismantleNSView(_ map: MKMapView, coordinator: Coordinator) { coordinator.detach() }
+    #else
+    func makeUIView(context: Context) -> MKMapView { build(context) }
+    func updateUIView(_ map: MKMapView, context: Context) { refresh(map, context) }
+    static func dismantleUIView(_ map: MKMapView, coordinator: Coordinator) { coordinator.detach() }
+    #endif
 
-    final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
+    final class Coordinator: NSObject, MKMapViewDelegate {
         static let altitude: CLLocationDistance = 24_000_000
         /// One full turn in about two minutes.
         private static let degreesPerSecond = 3.0
@@ -362,12 +403,28 @@ private struct GlobeMap: UIViewRepresentable {
         private var selectedRegionID: String?
         private var isConnected = false
         private var applied = false
+        #if os(macOS)
+        private var monitor: Any?
+        #endif
 
         init(onPick: @escaping (CloakRegion) -> Void) { self.onPick = onPick }
 
         func attach(_ map: MKMapView) {
             self.map = map
+            #if os(macOS)
+            let link = map.displayLink(target: self, selector: #selector(frame(_:)))
+            // The Mac has no touch recognizers to hang on the map. Watch for the mouse
+            // working inside it, and let the event carry on untouched.
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .scrollWheel, .magnify, .rotate]) { [weak self] event in
+                if let map = self?.map, event.window === map.window,
+                   map.bounds.contains(map.convert(event.locationInWindow, from: nil)) {
+                    self?.touched()
+                }
+                return event
+            }
+            #else
             let link = CADisplayLink(target: self, selector: #selector(frame(_:)))
+            #endif
             link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
             link.add(to: .main, forMode: .common)
             self.link = link
@@ -376,12 +433,16 @@ private struct GlobeMap: UIViewRepresentable {
         func detach() {
             link?.invalidate()
             link = nil
+            #if os(macOS)
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            #endif
         }
 
         @objc private func frame(_ link: CADisplayLink) {
             defer { lastFrame = link.timestamp }
             guard let map, lastFrame > 0, link.timestamp >= holdUntil, map.window != nil else { return }
-            if UIAccessibility.isReduceMotionEnabled { return }
+            if reduceMotionOn { return }
             let dt = min(link.timestamp - lastFrame, 0.1)
             guard let camera = map.camera.copy() as? MKMapCamera else { return }
             var c = camera.centerCoordinate
@@ -397,8 +458,6 @@ private struct GlobeMap: UIViewRepresentable {
         @objc func touched() {
             holdUntil = CACurrentMediaTime() + Self.restAfterTouch
         }
-
-        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
 
         func apply(selectedRegionID: String?, isConnected: Bool, animated: Bool) {
             let changed = !applied || selectedRegionID != self.selectedRegionID || isConnected != self.isConnected
@@ -425,14 +484,20 @@ private struct GlobeMap: UIViewRepresentable {
             return view
         }
 
-        func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
-            mapView.deselectAnnotation(annotation, animated: false)
-            guard let a = annotation as? RegionAnnotation else { return }
+        func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
+            guard let a = view.annotation as? RegionAnnotation else { return }
+            mapView.deselectAnnotation(a, animated: false)
             touched()
             onPick(a.region)
         }
     }
 }
+
+#if !os(macOS)
+extension GlobeMap.Coordinator: UIGestureRecognizerDelegate {
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+}
+#endif
 
 private final class RegionAnnotation: NSObject, MKAnnotation {
     let region: CloakRegion
@@ -457,32 +522,39 @@ private final class RegionDotView: MKAnnotationView {
         canShowCallout = false
         displayPriority = .required
         collisionMode = .none
+        #if os(macOS)
+        wantsLayer = true
+        let host: CALayer? = layer
+        setAccessibilityElement(true)
+        #else
         backgroundColor = .clear
-        ring.fillColor = UIColor.clear.cgColor
+        let host: CALayer? = layer
+        isAccessibilityElement = true
+        #endif
+        ring.fillColor = PlatformColor.clear.cgColor
         ring.lineWidth = 2
         ring.frame = bounds
-        ring.path = UIBezierPath(ovalIn: bounds.insetBy(dx: 5, dy: 5)).cgPath
+        ring.path = CGPath(ellipseIn: bounds.insetBy(dx: 5, dy: 5), transform: nil)
         ring.opacity = 0
-        layer.addSublayer(ring)
-        dot.strokeColor = UIColor.black.withAlphaComponent(0.55).cgColor
+        host?.addSublayer(ring)
+        dot.strokeColor = PlatformColor.black.withAlphaComponent(0.55).cgColor
         dot.lineWidth = 1.5
         dot.frame = bounds
-        layer.addSublayer(dot)
-        isAccessibilityElement = true
+        host?.addSublayer(dot)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func show(live: Bool, selected: Bool) {
-        let mint = UIColor(LatticeTheme.mint)
+        let mint = PlatformColor(LatticeTheme.mint)
         let size: CGFloat = live ? 15 : 10
         let rect = CGRect(x: (bounds.width - size) / 2, y: (bounds.height - size) / 2, width: size, height: size)
-        dot.path = UIBezierPath(ovalIn: rect).cgPath
-        dot.fillColor = (live ? mint : (selected ? UIColor(LatticeTheme.mintText) : UIColor.white.withAlphaComponent(0.88))).cgColor
+        dot.path = CGPath(ellipseIn: rect, transform: nil)
+        dot.fillColor = (live ? mint : (selected ? PlatformColor(LatticeTheme.mintText) : PlatformColor.white.withAlphaComponent(0.88))).cgColor
         ring.strokeColor = mint.cgColor
         ring.removeAllAnimations()
         ring.opacity = 0
-        if live && !UIAccessibility.isReduceMotionEnabled {
+        if live && !reduceMotionOn {
             let scale = CABasicAnimation(keyPath: "transform.scale")
             scale.fromValue = 0.4
             scale.toValue = 1.0
@@ -498,7 +570,12 @@ private final class RegionDotView: MKAnnotationView {
             ring.add(group, forKey: "pulse")
         }
         if let a = annotation as? RegionAnnotation {
-            accessibilityLabel = live ? "\(a.region.displayName), connected" : a.region.displayName
+            let label = live ? "\(a.region.displayName), connected" : a.region.displayName
+            #if os(macOS)
+            setAccessibilityLabel(label)
+            #else
+            accessibilityLabel = label
+            #endif
         }
     }
 }

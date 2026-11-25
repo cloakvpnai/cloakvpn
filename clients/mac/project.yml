@@ -76,6 +76,8 @@ targets:
       - path: ../ios/CloakVPN/StoreManager.swift
       - path: ../ios/CloakVPN/Region.swift
       - path: ../ios/CloakVPN/SubscriptionInfo.swift
+      - path: ../ios/CloakVPN/LatticeGlobeView.swift
+      - path: ../ios/CloakVPN/LatticePing.swift
 
     # ---- Info.plist (FULL contents declared inline) -----------
     info:
@@ -164,6 +166,7 @@ targets:
       # Shared PTP logic from iOS (target-membership cross-cut)
       - path: ../ios/CloakTunnel/PacketTunnelProvider.swift
       - path: ../ios/CloakTunnel/CNSA2Tunnel.swift
+      - path: ../ios/CloakVPN/LatticePing.swift
       # CNSA 2.0 tunnel client (TLS 1.3). The C file is the only code that
       # touches OpenSSL; build it first with ../apple-tls/build-openssl.sh.
       - path: ../apple-tls/Sources/LatticeTLS
