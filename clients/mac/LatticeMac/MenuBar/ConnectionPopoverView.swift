@@ -108,13 +108,13 @@ struct ConnectionPopoverView: View {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
                 .interpolation(.high)
-                .frame(width: 46, height: 46)
+                .frame(width: inWindow ? 68 : 50, height: inWindow ? 68 : 50)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 0) {
                 Text("Lattice VPN")
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.system(size: inWindow ? 34 : 24, weight: .bold))
                 Text("CNSA 2.0")
-                    .font(.system(size: 14))
+                    .font(.system(size: inWindow ? 19 : 15, weight: .medium))
                     .foregroundStyle(.secondary)
             }
             Spacer()
