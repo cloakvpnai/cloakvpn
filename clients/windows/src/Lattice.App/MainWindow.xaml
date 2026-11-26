@@ -16,7 +16,7 @@
             </Grid.RowDefinitions>
 
             <!-- soft light behind the power button; mint when protected -->
-            <Ellipse x:Name="Aura" Grid.RowSpan="2" Width="520" Height="520" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-120,-150,0,0" IsHitTestVisible="False" Opacity="0.55">
+            <Ellipse x:Name="Aura" Grid.RowSpan="2" Width="520" Height="520" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-120,-150,0,0" IsHitTestVisible="False" Opacity="0.28">
                 <Ellipse.Fill>
                     <RadialGradientBrush>
                         <GradientStop x:Name="AuraColour" Color="#3A2E6BFF" Offset="0"/>
@@ -55,21 +55,32 @@
                 <!-- left: the power button, status, session tiles -->
                 <DockPanel Grid.Column="0" LastChildFill="False">
                     <Grid DockPanel.Dock="Top" Height="176">
-                        <Ellipse x:Name="Pulse1" Width="132" Height="132" Stroke="{StaticResource Mint}" StrokeThickness="2" Opacity="0" RenderTransformOrigin="0.5,0.5" IsHitTestVisible="False">
+                        <Ellipse x:Name="Pulse1" Width="118" Height="118" Stroke="{StaticResource Mint}" StrokeThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5" IsHitTestVisible="False">
                             <Ellipse.RenderTransform><ScaleTransform/></Ellipse.RenderTransform>
                         </Ellipse>
-                        <Ellipse x:Name="Pulse2" Width="132" Height="132" Stroke="{StaticResource Mint}" StrokeThickness="2" Opacity="0" RenderTransformOrigin="0.5,0.5" IsHitTestVisible="False">
+                        <Ellipse x:Name="Pulse2" Width="118" Height="118" Stroke="{StaticResource Mint}" StrokeThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5" IsHitTestVisible="False">
                             <Ellipse.RenderTransform><ScaleTransform/></Ellipse.RenderTransform>
                         </Ellipse>
-                        <Button x:Name="PowerButton" Width="132" Height="132" Click="OnPower" Cursor="Hand" FocusVisualStyle="{x:Null}"
+                        <Button x:Name="PowerButton" Width="118" Height="118" Click="OnPower" Cursor="Hand" FocusVisualStyle="{x:Null}"
                                 BorderBrush="{StaticResource OffRing}" Background="{StaticResource OffFill}" AutomationProperties.Name="Connect or disconnect">
                             <Button.Template>
                                 <ControlTemplate TargetType="Button">
                                     <Grid>
-                                        <Ellipse x:Name="halo" Fill="{TemplateBinding BorderBrush}" Opacity="0.22" Margin="-7"/>
-                                        <Ellipse x:Name="ring" Fill="{TemplateBinding BorderBrush}"/>
-                                        <Ellipse x:Name="disc" Fill="{TemplateBinding Background}" Margin="9"/>
-                                        <Ellipse x:Name="sheen" Margin="9" Opacity="0.10" IsHitTestVisible="False">
+                                        <!-- a thin ring that glows softly in the state colour, on a dark dial -->
+                                        <Ellipse x:Name="halo" Stroke="{TemplateBinding BorderBrush}" StrokeThickness="3" Opacity="0.45" IsHitTestVisible="False">
+                                            <Ellipse.Effect><BlurEffect Radius="16"/></Ellipse.Effect>
+                                        </Ellipse>
+                                        <Ellipse x:Name="disc" Margin="2">
+                                            <Ellipse.Fill>
+                                                <LinearGradientBrush StartPoint="0.3,0" EndPoint="0.7,1">
+                                                    <GradientStop Color="#182132" Offset="0"/>
+                                                    <GradientStop Color="#0A0F18" Offset="1"/>
+                                                </LinearGradientBrush>
+                                            </Ellipse.Fill>
+                                        </Ellipse>
+                                        <Ellipse x:Name="ring" Stroke="{TemplateBinding BorderBrush}" StrokeThickness="1.5"/>
+                                        <Ellipse Margin="9" Stroke="#12FFFFFF" StrokeThickness="1" IsHitTestVisible="False"/>
+                                        <Ellipse x:Name="sheen" Margin="2" Opacity="0.04" IsHitTestVisible="False">
                                             <Ellipse.Fill>
                                                 <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
                                                     <GradientStop Color="White" Offset="0"/>
@@ -81,21 +92,21 @@
                                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
                                     <ControlTemplate.Triggers>
-                                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="sheen" Property="Opacity" Value="0.2"/><Setter TargetName="halo" Property="Opacity" Value="0.32"/></Trigger>
-                                        <Trigger Property="IsPressed" Value="True"><Setter TargetName="disc" Property="Margin" Value="11"/></Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="sheen" Property="Opacity" Value="0.09"/><Setter TargetName="halo" Property="Opacity" Value="0.7"/></Trigger>
+                                        <Trigger Property="IsPressed" Value="True"><Setter TargetName="disc" Property="Margin" Value="4"/></Trigger>
                                         <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="focus" Property="Opacity" Value="0.6"/></Trigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
                             </Button.Template>
-                            <TextBlock x:Name="PowerGlyph" Text="&#xE7E8;" FontFamily="{StaticResource Icons}" FontSize="50" Foreground="{StaticResource Muted}"/>
+                            <TextBlock x:Name="PowerGlyph" Text="&#xE7E8;" FontFamily="{StaticResource Icons}" FontSize="34" Foreground="{StaticResource Muted}"/>
                         </Button>
                     </Grid>
 
-                    <TextBlock x:Name="StatusTitle" DockPanel.Dock="Top" Text="Not connected" FontFamily="{StaticResource Display}" FontSize="23" FontWeight="Bold" HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="StatusTitle" DockPanel.Dock="Top" Text="Not connected" FontFamily="{StaticResource Display}" FontSize="21" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                     <TextBlock x:Name="StatusSub" DockPanel.Dock="Top" Text="" Foreground="{StaticResource Muted}" FontSize="12.5" HorizontalAlignment="Center"
                                TextAlignment="Center" TextWrapping="Wrap" Margin="6,3,6,0"/>
-                    <Border x:Name="Pill" DockPanel.Dock="Top" HorizontalAlignment="Center" Margin="0,11,0,0" Background="{StaticResource Card}" BorderBrush="{StaticResource CardLine}"
-                            BorderThickness="1" CornerRadius="14" Padding="12,5">
+                    <Border x:Name="Pill" DockPanel.Dock="Top" HorizontalAlignment="Center" Margin="0,12,0,0" Background="Transparent" BorderBrush="{StaticResource CardLine}"
+                            BorderThickness="1" CornerRadius="5" Padding="10,4">
                         <StackPanel Orientation="Horizontal">
                             <Ellipse x:Name="PillDot" Width="7" Height="7" Fill="{StaticResource Faint}" VerticalAlignment="Center"/>
                             <TextBlock x:Name="PillText" Text="CNSA 2.0 suite" FontSize="11.5" Foreground="{StaticResource Muted}" Margin="7,0,0,0"/>
@@ -106,7 +117,7 @@
                 </DockPanel>
 
                 <!-- centre: the globe -->
-                <Border x:Name="GlobeView" Grid.Column="2" BorderBrush="{StaticResource CardLine}" BorderThickness="1" CornerRadius="16">
+                <Border x:Name="GlobeView" Grid.Column="2" BorderBrush="{StaticResource CardLine}" BorderThickness="1" CornerRadius="10">
                     <Grid x:Name="GlobeClip" SizeChanged="OnGlobeSize">
                         <local:GlobeControl x:Name="Globe"/>
                         <DockPanel Margin="10" LastChildFill="False">
@@ -138,13 +149,13 @@
                     <StackPanel x:Name="RegionList"/>
                 </DockPanel>
 
-                <Border x:Name="AccountView" Grid.Column="2" Grid.ColumnSpan="3" Visibility="Collapsed" Background="{StaticResource Card}" BorderBrush="{StaticResource CardLine}" BorderThickness="1" CornerRadius="16" Padding="24,20">
+                <Border x:Name="AccountView" Grid.Column="2" Grid.ColumnSpan="3" Visibility="Collapsed" Background="{StaticResource Card}" BorderBrush="{StaticResource CardLine}" BorderThickness="1" CornerRadius="10" Padding="26,22">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
                         <StackPanel x:Name="AccountStack" Margin="0,0,14,0"/>
                     </ScrollViewer>
                 </Border>
 
-                <Border x:Name="AboutView" Grid.Column="2" Grid.ColumnSpan="3" Visibility="Collapsed" Background="{StaticResource Card}" BorderBrush="{StaticResource CardLine}" BorderThickness="1" CornerRadius="16" Padding="24,20">
+                <Border x:Name="AboutView" Grid.Column="2" Grid.ColumnSpan="3" Visibility="Collapsed" Background="{StaticResource Card}" BorderBrush="{StaticResource CardLine}" BorderThickness="1" CornerRadius="10" Padding="26,22">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
                         <StackPanel x:Name="AboutStack" Margin="0,0,14,0"/>
                     </ScrollViewer>

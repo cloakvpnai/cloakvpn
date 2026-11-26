@@ -6,25 +6,28 @@
         <!-- The Lattice look, taken from the phone apps and the store artwork:
              near-black navy, raised navy cards, bright mint for "protected",
              amber (the nodes of the shield) for "working on it". -->
-        <SolidColorBrush x:Key="Card" Color="#101C35"/>
-        <SolidColorBrush x:Key="CardHover" Color="#15254A"/>
-        <SolidColorBrush x:Key="CardLine" Color="#1D2B48"/>
-        <SolidColorBrush x:Key="Chip" Color="#1A2948"/>
-        <SolidColorBrush x:Key="PanelFill" Color="#E6091426"/>
-        <SolidColorBrush x:Key="Ink" Color="#EEF2F8"/>
-        <SolidColorBrush x:Key="Muted" Color="#8F9DB5"/>
-        <SolidColorBrush x:Key="Faint" Color="#5B6A85"/>
+        <!-- Second pass: quieter. Surfaces are near-black with hairline edges, type is
+             lighter, and mint is kept for small marks (a ring, a dot, a tick) so that
+             it reads as a signal and not as decoration. -->
+        <SolidColorBrush x:Key="Card" Color="#0C131F"/>
+        <SolidColorBrush x:Key="CardHover" Color="#121B2B"/>
+        <SolidColorBrush x:Key="CardLine" Color="#172132"/>
+        <SolidColorBrush x:Key="Chip" Color="#131C2C"/>
+        <SolidColorBrush x:Key="PanelFill" Color="#D905090F"/>
+        <SolidColorBrush x:Key="Ink" Color="#E8ECF2"/>
+        <SolidColorBrush x:Key="Muted" Color="#8590A3"/>
+        <SolidColorBrush x:Key="Faint" Color="#4E596B"/>
         <SolidColorBrush x:Key="Mint" Color="#5FE3B5"/>
         <SolidColorBrush x:Key="MintInk" Color="#BFF3DC"/>
         <SolidColorBrush x:Key="MintFill" Color="#27665F"/>
         <SolidColorBrush x:Key="Amber" Color="#FFB13B"/>
         <SolidColorBrush x:Key="AmberFill" Color="#5A4320"/>
         <SolidColorBrush x:Key="Danger" Color="#FF8A8A"/>
-        <SolidColorBrush x:Key="OffRing" Color="#34435F"/>
-        <SolidColorBrush x:Key="OffFill" Color="#121E38"/>
-        <LinearGradientBrush x:Key="WindowFill" StartPoint="0,0" EndPoint="0.35,1">
-            <GradientStop Color="#0D1A33" Offset="0"/>
-            <GradientStop Color="#070D1B" Offset="1"/>
+        <SolidColorBrush x:Key="OffRing" Color="#2B3547"/>
+        <SolidColorBrush x:Key="OffFill" Color="#0E1522"/>
+        <LinearGradientBrush x:Key="WindowFill" StartPoint="0,0" EndPoint="0.3,1">
+            <GradientStop Color="#0A101B" Offset="0"/>
+            <GradientStop Color="#05080E" Offset="1"/>
         </LinearGradientBrush>
         <FontFamily x:Key="Ui">Segoe UI Variable Text, Segoe UI</FontFamily>
         <FontFamily x:Key="Display">Segoe UI Variable Display, Segoe UI</FontFamily>
@@ -49,16 +52,16 @@
             <Setter Property="Background" Value="{StaticResource Card}"/>
             <Setter Property="BorderBrush" Value="{StaticResource CardLine}"/>
             <Setter Property="FontFamily" Value="{StaticResource Ui}"/>
-            <Setter Property="FontSize" Value="13.5"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="Padding" Value="14,7"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="1" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                                BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -82,23 +85,24 @@
             <Setter Property="Foreground" Value="{StaticResource Muted}"/>
             <Setter Property="FontFamily" Value="{StaticResource Ui}"/>
             <Setter Property="FontSize" Value="12.5"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontWeight" Value="Normal"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Margin" Value="0,0,2,0"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
-                        <Border x:Name="b" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="8" Padding="11,5">
+                        <!-- text only, with a thin mint rule under the tab in view -->
+                        <Border x:Name="b" Background="Transparent" BorderBrush="Transparent" BorderThickness="0,0,0,1.5" Padding="2,6,2,5" Margin="10,0">
                             <ContentPresenter/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True"><Setter Property="Foreground" Value="{StaticResource Ink}"/></Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="b" Property="Background" Value="{StaticResource Chip}"/>
+                                <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource Mint}"/>
                                 <Setter Property="Foreground" Value="{StaticResource Ink}"/>
                             </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="{StaticResource Mint}"/></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="{StaticResource Ink}"/></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>

@@ -142,15 +142,16 @@ public partial class MainWindow : Window
         {
             var flag = new Border
             {
-                Width = 28, Height = 20, CornerRadius = new CornerRadius(4), VerticalAlignment = VerticalAlignment.Center,
+                // a small, slightly muted flag with a hairline edge: a marker, not a sticker
+                Width = 22, Height = 15.5, CornerRadius = new CornerRadius(2), VerticalAlignment = VerticalAlignment.Center, Opacity = 0.9,
                 Background = new ImageBrush(Flag(region.Id)) { Stretch = Stretch.UniformToFill },
-                BorderBrush = new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)), BorderThickness = new Thickness(0.5),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)), BorderThickness = new Thickness(0.5),
             };
             RenderOptions.SetBitmapScalingMode(flag, BitmapScalingMode.HighQuality);
-            var name = new TextBlock { Text = region.Name, FontSize = 13, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(10, 0, 6, 0) };
-            var chipText = new TextBlock { Text = region.Short, FontFamily = F("Mono"), FontSize = 9.5, FontWeight = FontWeights.SemiBold, Foreground = B("Muted") };
-            var chip = new Border { Child = chipText, Background = B("Chip"), CornerRadius = new CornerRadius(5), Padding = new Thickness(6, 2, 6, 2), VerticalAlignment = VerticalAlignment.Center };
-            var check = new TextBlock { Text = "", FontFamily = F("Icons"), FontSize = 14, FontWeight = FontWeights.Bold, Foreground = B("Mint"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 3, 0), Visibility = Visibility.Collapsed };
+            var name = new TextBlock { Text = region.Name, FontSize = 13, FontWeight = FontWeights.Normal, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(12, 0, 6, 0) };
+            var chipText = new TextBlock { Text = region.Short, FontFamily = F("Mono"), FontSize = 9.5, Foreground = B("Faint") };
+            var chip = new Border { Child = chipText, Background = Brushes.Transparent, VerticalAlignment = VerticalAlignment.Center };
+            var check = new TextBlock { Text = "", FontFamily = F("Icons"), FontSize = 12, Foreground = B("Mint"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 1, 0), Visibility = Visibility.Collapsed };
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition());
@@ -159,8 +160,8 @@ public partial class MainWindow : Window
             grid.Children.Add(flag); grid.Children.Add(name); grid.Children.Add(chip); grid.Children.Add(check);
             var card = new Border
             {
-                Child = grid, CornerRadius = new CornerRadius(11), Padding = new Thickness(11, 0, 10, 0), Height = 40, Margin = new Thickness(0, 0, 0, 5),
-                Background = B("Card"), BorderBrush = B("CardLine"), BorderThickness = new Thickness(1),
+                Child = grid, CornerRadius = new CornerRadius(6), Padding = new Thickness(11, 0, 11, 0), Height = 41, Margin = new Thickness(0, 0, 0, 4),
+                Background = Brushes.Transparent, BorderBrush = Brushes.Transparent, BorderThickness = new Thickness(1),
                 Cursor = Cursors.Hand, Focusable = true, FocusVisualStyle = null,
             };
             System.Windows.Automation.AutomationProperties.SetName(card, region.Name);
@@ -181,12 +182,12 @@ public partial class MainWindow : Window
         foreach ((Tile tile, string label) in new[] { (Tile.Session, "SESSION"), (Tile.Traffic, "DOWN / UP"), (Tile.Latency, "LATENCY"), (Tile.Keys, "NEW KEYS") })
         {
             var l = new TextBlock { Text = label, Style = (Style)FindResource("Label"), FontSize = 9.5 };
-            var v = new TextBlock { Text = "--", FontFamily = F("Mono"), FontSize = 13, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0) };
+            var v = new TextBlock { Text = "--", FontFamily = F("Mono"), FontSize = 13, FontWeight = FontWeights.Normal, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 4, 0, 0) };
             var stack = new StackPanel(); stack.Children.Add(l); stack.Children.Add(v);
             var box = new Border
             {
-                Child = stack, Background = B("Card"), BorderBrush = B("CardLine"), BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(11), Padding = new Thickness(11, 8, 8, 9), Margin = new Thickness(3), Cursor = Cursors.Hand, Focusable = true, FocusVisualStyle = null,
+                Child = stack, Background = Brushes.Transparent, BorderBrush = B("CardLine"), BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6), Padding = new Thickness(11, 8, 8, 9), Margin = new Thickness(3), Cursor = Cursors.Hand, Focusable = true, FocusVisualStyle = null,
             };
             Tile t = tile;
             void Toggle() { _open = _open == t ? null : t; if (_open is not null) TabGlobe.IsChecked = true; Paint(); }
@@ -198,7 +199,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private TextBlock Heading(string text) => new() { Text = text, FontFamily = F("Display"), FontSize = 20, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 12) };
+    private TextBlock Heading(string text) => new() { Text = text, FontFamily = F("Display"), FontSize = 19, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 14) };
     private TextBlock Para(string text, bool muted = true) => new() { Text = text, FontSize = 13.5, Foreground = muted ? B("Muted") : B("Ink"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 9), LineHeight = 20 };
     private TextBlock Section(string text) => new() { Text = text, Style = (Style)FindResource("Label"), Margin = new Thickness(0, 8, 0, 8) };
 
@@ -418,7 +419,7 @@ public partial class MainWindow : Window
     }
 
     private void OnGlobeSize(object sender, SizeChangedEventArgs e) =>
-        GlobeClip.Clip = new RectangleGeometry(new Rect(0, 0, GlobeClip.ActualWidth, GlobeClip.ActualHeight), 15, 15);
+        GlobeClip.Clip = new RectangleGeometry(new Rect(0, 0, GlobeClip.ActualWidth, GlobeClip.ActualHeight), 9, 9);
 
     private void OnCloseDetail(object sender, MouseButtonEventArgs e) { _open = null; Paint(); }
 
@@ -429,9 +430,11 @@ public partial class MainWindow : Window
         {
             bool selected = id == current, live = selected && _status.Connected;
             bool offered = _status.Regions.Count == 0 || _status.Regions.Contains(id);
-            row.Card.Background = live ? new SolidColorBrush(Color.FromRgb(0x12, 0x2B, 0x3A)) : row.Card.IsMouseOver || selected ? B("CardHover") : B("Card");
-            row.Card.BorderBrush = live ? B("Mint") : row.Card.IsKeyboardFocused ? B("Ink") : selected ? (_status.Busy ? B("Amber") : B("Faint")) : B("CardLine");
-            row.Name.Foreground = live ? B("MintInk") : B("Ink");
+            // Rows are flat. The one in use gets a faint fill and a hairline in the state colour.
+            row.Card.Background = live ? new SolidColorBrush(Color.FromArgb(0x16, 0x5F, 0xE3, 0xB5)) : selected ? B("CardHover") : row.Card.IsMouseOver ? B("Card") : Brushes.Transparent;
+            row.Card.BorderBrush = live ? new SolidColorBrush(Color.FromArgb(0x66, 0x5F, 0xE3, 0xB5)) : row.Card.IsKeyboardFocused ? B("Muted")
+                : selected ? (_status.Busy ? new SolidColorBrush(Color.FromArgb(0x80, 0xFF, 0xB1, 0x3B)) : B("CardLine")) : Brushes.Transparent;
+            row.Name.Foreground = selected || row.Card.IsMouseOver ? B("Ink") : new SolidColorBrush(Color.FromRgb(0xC2, 0xC9, 0xD4));
             row.Check.Visibility = live ? Visibility.Visible : Visibility.Collapsed;
             row.Chip.Visibility = live ? Visibility.Collapsed : Visibility.Visible;
             row.Card.Opacity = offered ? 1 : 0.4;
@@ -443,7 +446,7 @@ public partial class MainWindow : Window
     {
         if (on == _pulsing) return;
         _pulsing = on;
-        foreach ((System.Windows.Shapes.Ellipse ring, double delay) in new[] { (Pulse1, 0.0), (Pulse2, 1.1) })
+        foreach ((System.Windows.Shapes.Ellipse ring, double delay) in new[] { (Pulse1, 0.0), (Pulse2, 1.6) })
         {
             var scale = (ScaleTransform)ring.RenderTransform;
             if (!on || !SystemParameters.ClientAreaAnimation)
@@ -455,8 +458,8 @@ public partial class MainWindow : Window
                 continue;
             }
             var ease = new QuadraticEase { EasingMode = EasingMode.EaseOut };
-            var grow = new DoubleAnimation(1.0, 1.32, TimeSpan.FromSeconds(2.2)) { RepeatBehavior = RepeatBehavior.Forever, BeginTime = TimeSpan.FromSeconds(delay), EasingFunction = ease };
-            var fade = new DoubleAnimation(0.7, 0, TimeSpan.FromSeconds(2.2)) { RepeatBehavior = RepeatBehavior.Forever, BeginTime = TimeSpan.FromSeconds(delay), EasingFunction = ease };
+            var grow = new DoubleAnimation(1.0, 1.26, TimeSpan.FromSeconds(3.2)) { RepeatBehavior = RepeatBehavior.Forever, BeginTime = TimeSpan.FromSeconds(delay), EasingFunction = ease };
+            var fade = new DoubleAnimation(0.32, 0, TimeSpan.FromSeconds(3.2)) { RepeatBehavior = RepeatBehavior.Forever, BeginTime = TimeSpan.FromSeconds(delay), EasingFunction = ease };
             scale.BeginAnimation(ScaleTransform.ScaleXProperty, grow);
             scale.BeginAnimation(ScaleTransform.ScaleYProperty, grow);
             ring.BeginAnimation(OpacityProperty, fade);
