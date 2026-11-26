@@ -10,6 +10,11 @@
     <!-- Windows Installer reports Windows 10 and 11 as version 603. -->
     <Launch Condition="Installed OR VersionNT64 >= 603" Message="Lattice VPN needs 64 bit Windows 10 or Windows 11." />
 
+    <!-- The window and tray icon are closed before files are replaced or removed, so an
+         upgrade or uninstall never ends by asking for a restart. The tunnel belongs to
+         the service, which Windows Installer stops and starts itself. -->
+    <util:CloseApplication Id="CloseLatticeApp" Target="LatticeVPN.exe" EndSessionMessage="yes" TerminateProcess="0" Timeout="3" RebootPrompt="no" />
+
     <Icon Id="LatticeIcon" SourceFile="..\src\Lattice.App\Assets\lattice.ico" />
     <Property Id="ARPPRODUCTICON" Value="LatticeIcon" />
     <Property Id="ARPURLINFOABOUT" Value="https://latticevpn.ai" />
@@ -46,6 +51,14 @@
       </ServiceInstall>
       <ServiceControl Id="LatticeServiceControl" Name="LatticeVPN" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
     </Component>
+
+    <!-- Removing Lattice VPN for good (not an upgrade): once the service has stopped and
+         while its files are still there, free this PC's place on the account and erase
+         its key and stored account number. Never blocks the uninstall if it fails. -->
+    <CustomAction Id="ForgetDevice" FileRef="ServiceExe" ExeCommand="--forget" Execute="deferred" Impersonate="no" Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="ForgetDevice" After="StopServices" Condition="(REMOVE=&quot;ALL&quot;) AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
 
     <Component Id="App" Directory="INSTALLFOLDER">
       <File Id="AppExe" Source="$(var.Stage)\LatticeVPN.exe" KeyPath="yes">

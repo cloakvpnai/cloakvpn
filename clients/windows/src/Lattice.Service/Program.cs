@@ -21,6 +21,10 @@ public static class Program
 
     public static void Main(string[] args)
     {
+        // Run by the installer, as the system, when Lattice VPN is removed for good
+        // (not when it is upgraded): see LatticeVPN.wxs.
+        if (args.Length == 1 && args[0] == "--forget") { Worker.Forget(); return; }
+
         HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
         builder.Services.AddWindowsService(o => o.ServiceName = ServiceName);
         builder.Services.AddHostedService<Worker>();
@@ -81,6 +85,31 @@ public sealed class Worker : BackgroundService
         s.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null), PipeAccessRights.FullControl, AccessControlType.Allow));
         s.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.InteractiveSid, null), PipeAccessRights.ReadWrite, AccessControlType.Allow));
         return s;
+    }
+
+    /// <summary>
+    /// Uninstall: frees this PC's place on the account, so it does not go on counting
+    /// against the device limit, then erases the device key, the certificate, the stored
+    /// account number and the logs. The server is given 15 seconds; if it cannot be
+    /// reached the local data is erased all the same, and the device can be removed
+    /// from the account in any other Lattice app.
+    /// </summary>
+    public static void Forget()
+    {
+        if (!Directory.Exists(DataDir)) return;
+        try
+        {
+            var log = new FileLog(Path.Combine(DataDir, "logs"));
+            log.Write("uninstall: removing this PC from the account");
+            using (var controller = new VpnController(DataDir, Environment.ProcessPath!, log.Write))
+            {
+                try { controller.SignOutAsync().Wait(TimeSpan.FromSeconds(15)); }
+                catch (AggregateException) { /* no network, or the server said no: carry on and erase */ }
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException) { }
+        try { Directory.Delete(DataDir, recursive: true); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stop)

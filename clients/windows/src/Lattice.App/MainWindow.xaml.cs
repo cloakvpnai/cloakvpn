@@ -64,6 +64,9 @@ public partial class MainWindow : Window
             if (Array.IndexOf(args, "--tile") is int t and >= 0 && t + 1 < args.Length && Enum.TryParse(args[t + 1], true, out Tile tile)) _open = tile;
             if (Array.IndexOf(args, "--tab") is int tab and >= 0 && tab + 1 < args.Length)
                 Loaded += (_, _) => { if (args[tab + 1] == "account") TabAccount.IsChecked = true; else if (args[tab + 1] == "about") TabAbout.IsChecked = true; };
+            // --update <file contents>: shows what the update notice would do with that reply.
+            if (Array.IndexOf(args, "--update") is int u and >= 0 && u + 1 < args.Length)
+                Loaded += (_, _) => ShowUpdate(UpdateCheck.Read(args[u + 1].Replace('\'', '"'), new Version(2, 0, 0)));
             _poll.Tick += (_, _) => Paint();
             Loaded += (_, _) => { Paint(); _poll.Start(); };
             return;
@@ -71,6 +74,35 @@ public partial class MainWindow : Window
 #endif
         _poll.Tick += async (_, _) => await Poll();
         Loaded += async (_, _) => { await Poll(); _poll.Start(); };
+        // Look for a newer version shortly after opening, then once a day while the app stays open.
+        _updates.Tick += async (_, _) => { _updates.Interval = TimeSpan.FromHours(24); await LookForUpdate(); };
+        Loaded += (_, _) => _updates.Start();
+    }
+
+    private readonly DispatcherTimer _updates = new() { Interval = TimeSpan.FromSeconds(20) };
+
+    private async System.Threading.Tasks.Task LookForUpdate()
+    {
+        Version current = typeof(MainWindow).Assembly.GetName().Version ?? new Version(0, 0, 0);
+        ShowUpdate(await UpdateCheck.CheckAsync(new Version(current.Major, current.Minor, Math.Max(0, current.Build))));
+    }
+
+    private void ShowUpdate(UpdateCheck.Result? update)
+    {
+        if (update is null) { UpdateBanner.Visibility = Visibility.Collapsed; return; }
+        UpdateText.Text = update.Required
+            ? $"This version is no longer supported. Version {update.Latest.ToString(3)} is required."
+            : $"Lattice VPN {update.Latest.ToString(3)} is available.";
+        UpdateDismiss.Visibility = update.Required ? Visibility.Collapsed : Visibility.Visible;
+        UpdateBanner.Visibility = Visibility.Visible;
+    }
+
+    private void UpdateBanner_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) => OpenWeb(UpdateCheck.DownloadPage);
+
+    private void UpdateDismiss_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        UpdateBanner.Visibility = Visibility.Collapsed;
     }
 
     [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
