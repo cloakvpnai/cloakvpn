@@ -108,12 +108,13 @@ public partial class MainWindow : Window
     [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 
-    /// <summary>Rounded corners and a navy edge on Windows 11. Older Windows ignores these.</summary>
+    /// <summary>Rounded corners and a thin white edge on Windows 11. Older Windows ignores these
+    /// and shows the white line drawn in the window itself.</summary>
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
         IntPtr hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-        int dark = 1, round = 2, edge = 0x004F3122; // colours are blue-green-red
+        int dark = 1, round = 2, edge = 0x00F2ECE8; // colours are blue-green-red
         DwmSetWindowAttribute(hwnd, 20, ref dark, sizeof(int));   // dark frame
         DwmSetWindowAttribute(hwnd, 33, ref round, sizeof(int));  // rounded corners
         DwmSetWindowAttribute(hwnd, 34, ref edge, sizeof(int));   // edge colour

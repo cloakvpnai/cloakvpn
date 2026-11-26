@@ -8,7 +8,8 @@
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="42" GlassFrameThickness="0" CornerRadius="0" ResizeBorderThickness="0" UseAeroCaptionButtons="False"/>
     </WindowChrome.WindowChrome>
-    <Border BorderBrush="#22314F" BorderThickness="1">
+    <!-- a thin white line round the whole window -->
+    <Border BorderBrush="#E8ECF2" BorderThickness="1" SnapsToDevicePixels="True">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="42"/>
