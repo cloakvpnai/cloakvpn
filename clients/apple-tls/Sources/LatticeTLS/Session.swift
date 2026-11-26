@@ -249,6 +249,9 @@ public final class TunnelSession {
                 ks.keyExchangeReceived = true
             } else {
                 try handleControlMessage(record, from: ks)
+                // The gateway may have ended the session (RESTART, HALT, EXIT). Stop here,
+                // or the code below could put a failed session back to connected.
+                guard isLive else { return }
             }
         }
         enqueueTLSOutput(ks)

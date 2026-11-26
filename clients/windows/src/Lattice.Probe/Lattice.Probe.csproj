@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- latticeprobe: a console tool that exercises the Windows tunnel end to end
+       (identity, enrollment, handshake, adapter) without the service or the app.
+       The Windows counterpart of clients/apple-tls/Sources/tlsprobe. Not shipped. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <AssemblyName>latticeprobe</AssemblyName>
+    <RootNamespace>Lattice.Probe</RootNamespace>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Lattice.Tunnel\Lattice.Tunnel.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(LatticeNativeDir)lattice_tls.dll" Link="lattice_tls.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(LatticeNativeDir)wintun.dll" Link="wintun.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

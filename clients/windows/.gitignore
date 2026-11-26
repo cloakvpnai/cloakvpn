@@ -1,0 +1,13 @@
+# build output
+bin/
+obj/
+*.user
+.vs/
+
+# native build products and vendored libraries (rebuilt by the scripts in native/)
+native/Vendor/
+native/out/
+native/obj/
+
+# installer output
+packaging/out/

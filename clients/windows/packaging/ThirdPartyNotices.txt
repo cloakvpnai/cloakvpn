@@ -1,0 +1,36 @@
+Lattice VPN for Windows: third party software
+=============================================
+
+OpenSSL 3.5.9
+  Copyright (c) 1998-2026 The OpenSSL Project Authors.
+  Licensed under the Apache License, Version 2.0. See OpenSSL-LICENSE.txt.
+  Built from the unmodified source release and linked into lattice_tls.dll.
+  https://www.openssl.org/
+
+Wintun 0.14.1
+  Copyright (c) 2018-2021 WireGuard LLC. All Rights Reserved.
+  Distributed as the unmodified, signed wintun.dll under the Wintun
+  prebuilt binaries license. See Wintun-LICENSE.txt. Lattice VPN uses it
+  only through the interface published in wintun.h.
+  "Wintun" and "WireGuard" are trademarks of their owner. Lattice VPN is
+  not affiliated with, sponsored by or endorsed by WireGuard LLC.
+  https://www.wintun.net/
+
+.NET runtime and Windows Presentation Foundation
+  Copyright (c) .NET Foundation and Contributors.
+  Licensed under the MIT License. https://github.com/dotnet/runtime
+
+flag-icons
+  Copyright (c) 2013 Panayiotis Lipiridis.
+  Licensed under the MIT License. See flag-icons-LICENSE.txt.
+  The country flags in the list of locations.
+  https://github.com/lipis/flag-icons
+
+NASA Earth imagery
+  The globe is drawn from NASA imagery, which is not copyrighted. Credit:
+  Blue Marble Next Generation (land, oceans, topography and bathymetry) and
+  Blue Marble clouds: NASA Earth Observatory, Reto Stockli, NASA GSFC.
+  Black Marble 2016 (Earth at night): NASA Earth Observatory images by
+  Joshua Stevens, using Suomi NPP VIIRS data from Miguel Roman, NASA GSFC.
+  Use of this imagery does not imply NASA endorsement of Lattice VPN.
+  https://science.nasa.gov/earth/earth-observatory/

@@ -1,0 +1,179 @@
+<Window x:Class="Lattice.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Lattice.App"
+        Title="Lattice VPN" Width="900" Height="560" ResizeMode="CanMinimize" WindowStyle="None"
+        Background="{StaticResource WindowFill}" WindowStartupLocation="CenterScreen"
+        Icon="Assets/lattice.ico" UseLayoutRounding="True" TextOptions.TextFormattingMode="Ideal">
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="42" GlassFrameThickness="0" CornerRadius="0" ResizeBorderThickness="0" UseAeroCaptionButtons="False"/>
+    </WindowChrome.WindowChrome>
+    <Border BorderBrush="#22314F" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="42"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- soft light behind the power button; mint when protected -->
+            <Ellipse x:Name="Aura" Grid.RowSpan="2" Width="520" Height="520" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-120,-150,0,0" IsHitTestVisible="False" Opacity="0.55">
+                <Ellipse.Fill>
+                    <RadialGradientBrush>
+                        <GradientStop x:Name="AuraColour" Color="#3A2E6BFF" Offset="0"/>
+                        <GradientStop Color="#002E6BFF" Offset="1"/>
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+            </Ellipse>
+
+            <!-- ============ title bar ============ -->
+            <Grid Grid.Row="0">
+                <StackPanel Orientation="Horizontal" Margin="14,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False">
+                    <Image Source="Assets/lattice-logo.png" Width="22" Height="22" RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <TextBlock Text="Lattice VPN" FontFamily="{StaticResource Display}" FontSize="14" FontWeight="SemiBold" Margin="9,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel x:Name="TabBar" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" WindowChrome.IsHitTestVisibleInChrome="True">
+                    <RadioButton x:Name="TabGlobe" Content="Connection" Style="{StaticResource Tab}" IsChecked="True" Checked="OnTab"/>
+                    <RadioButton x:Name="TabAccount" Content="Account" Style="{StaticResource Tab}" Checked="OnTab"/>
+                    <RadioButton x:Name="TabAbout" Content="About" Style="{StaticResource Tab}" Checked="OnTab"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button Style="{StaticResource Caption}" Content="&#xE921;" Tag="#1F2E4D" Click="OnMinimise" AutomationProperties.Name="Minimise"/>
+                    <Button Style="{StaticResource Caption}" Content="&#xE8BB;" Tag="#C42B1C" Click="OnHide" AutomationProperties.Name="Close"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- ============ the signed-in window ============ -->
+            <Grid x:Name="MainView" Grid.Row="1" Margin="16,2,16,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="248"/>
+                    <ColumnDefinition Width="14"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="14"/>
+                    <ColumnDefinition Width="258"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- left: the power button, status, session tiles -->
+                <DockPanel Grid.Column="0" LastChildFill="False">
+                    <Grid DockPanel.Dock="Top" Height="176">
+                        <Ellipse x:Name="Pulse1" Width="132" Height="132" Stroke="{StaticResource Mint}" StrokeThickness="2" Opacity="0" RenderTransformOrigin="0.5,0.5" IsHitTestVisible="False">
+                            <Ellipse.RenderTransform><ScaleTransform/></Ellipse.RenderTransform>
+                        </Ellipse>
+                        <Ellipse x:Name="Pulse2" Width="132" Height="132" Stroke="{StaticResource Mint}" StrokeThickness="2" Opacity="0" RenderTransformOrigin="0.5,0.5" IsHitTestVisible="False">
+                            <Ellipse.RenderTransform><ScaleTransform/></Ellipse.RenderTransform>
+                        </Ellipse>
+                        <Button x:Name="PowerButton" Width="132" Height="132" Click="OnPower" Cursor="Hand" FocusVisualStyle="{x:Null}"
+                                BorderBrush="{StaticResource OffRing}" Background="{StaticResource OffFill}" AutomationProperties.Name="Connect or disconnect">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Grid>
+                                        <Ellipse x:Name="halo" Fill="{TemplateBinding BorderBrush}" Opacity="0.22" Margin="-7"/>
+                                        <Ellipse x:Name="ring" Fill="{TemplateBinding BorderBrush}"/>
+                                        <Ellipse x:Name="disc" Fill="{TemplateBinding Background}" Margin="9"/>
+                                        <Ellipse x:Name="sheen" Margin="9" Opacity="0.10" IsHitTestVisible="False">
+                                            <Ellipse.Fill>
+                                                <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
+                                                    <GradientStop Color="White" Offset="0"/>
+                                                    <GradientStop Color="Transparent" Offset="0.6"/>
+                                                </LinearGradientBrush>
+                                            </Ellipse.Fill>
+                                        </Ellipse>
+                                        <Ellipse x:Name="focus" Stroke="{StaticResource Ink}" StrokeThickness="1" Margin="-11" Opacity="0"/>
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="sheen" Property="Opacity" Value="0.2"/><Setter TargetName="halo" Property="Opacity" Value="0.32"/></Trigger>
+                                        <Trigger Property="IsPressed" Value="True"><Setter TargetName="disc" Property="Margin" Value="11"/></Trigger>
+                                        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="focus" Property="Opacity" Value="0.6"/></Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                            <TextBlock x:Name="PowerGlyph" Text="&#xE7E8;" FontFamily="{StaticResource Icons}" FontSize="50" Foreground="{StaticResource Muted}"/>
+                        </Button>
+                    </Grid>
+
+                    <TextBlock x:Name="StatusTitle" DockPanel.Dock="Top" Text="Not connected" FontFamily="{StaticResource Display}" FontSize="23" FontWeight="Bold" HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="StatusSub" DockPanel.Dock="Top" Text="" Foreground="{StaticResource Muted}" FontSize="12.5" HorizontalAlignment="Center"
+                               TextAlignment="Center" TextWrapping="Wrap" Margin="6,3,6,0"/>
+                    <Border x:Name="Pill" DockPanel.Dock="Top" HorizontalAlignment="Center" Margin="0,11,0,0" Background="{StaticResource Card}" BorderBrush="{StaticResource CardLine}"
+                            BorderThickness="1" CornerRadius="14" Padding="12,5">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse x:Name="PillDot" Width="7" Height="7" Fill="{StaticResource Faint}" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="PillText" Text="CNSA 2.0 suite" FontSize="11.5" Foreground="{StaticResource Muted}" Margin="7,0,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <UniformGrid x:Name="Tiles" DockPanel.Dock="Bottom" Rows="2" Columns="2" Margin="-3,0,-3,-3"/>
+                </DockPanel>
+
+                <!-- centre: the globe -->
+                <Border x:Name="GlobeView" Grid.Column="2" BorderBrush="{StaticResource CardLine}" BorderThickness="1" CornerRadius="16">
+                    <Grid x:Name="GlobeClip" SizeChanged="OnGlobeSize">
+                        <local:GlobeControl x:Name="Globe"/>
+                        <DockPanel Margin="10" LastChildFill="False">
+                            <Border x:Name="GlobeHeader" DockPanel.Dock="Top" HorizontalAlignment="Left" Background="{StaticResource PanelFill}" CornerRadius="10" Padding="11,7" IsHitTestVisible="False">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Ellipse x:Name="LiveDot" Width="6" Height="6" Fill="{StaticResource Muted}" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="LiveLabel" Text="LOCATIONS" Style="{StaticResource Label}" Margin="6,0,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                        <Border x:Name="LiveFlagBox" Width="22" Height="16" CornerRadius="3" Margin="0,0,7,0" Visibility="Collapsed" VerticalAlignment="Center">
+                                            <Border.Background><ImageBrush x:Name="LiveFlag" Stretch="UniformToFill"/></Border.Background>
+                                        </Border>
+                                        <TextBlock x:Name="LiveName" Text="Click a dot to pick a location" FontSize="13.5" FontWeight="SemiBold"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                            <Border x:Name="DetailBox" DockPanel.Dock="Bottom" Visibility="Collapsed" Background="#F5091426" BorderBrush="#735FE3B5" BorderThickness="1"
+                                    CornerRadius="12" Padding="14,11" Cursor="Hand" MouseLeftButtonUp="OnCloseDetail">
+                                <StackPanel x:Name="DetailStack"/>
+                            </Border>
+                        </DockPanel>
+                    </Grid>
+                </Border>
+
+                <!-- right: locations -->
+                <DockPanel x:Name="LocationsView" Grid.Column="4">
+                    <TextBlock DockPanel.Dock="Top" Text="LOCATIONS" Style="{StaticResource Label}" Margin="3,4,0,7"/>
+                    <StackPanel x:Name="RegionList"/>
+                </DockPanel>
+
+                <Border x:Name="AccountView" Grid.Column="2" Grid.ColumnSpan="3" Visibility="Collapsed" Background="{StaticResource Card}" BorderBrush="{StaticResource CardLine}" BorderThickness="1" CornerRadius="16" Padding="24,20">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
+                        <StackPanel x:Name="AccountStack"/>
+                    </ScrollViewer>
+                </Border>
+
+                <Border x:Name="AboutView" Grid.Column="2" Grid.ColumnSpan="3" Visibility="Collapsed" Background="{StaticResource Card}" BorderBrush="{StaticResource CardLine}" BorderThickness="1" CornerRadius="16" Padding="24,20">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
+                        <StackPanel x:Name="AboutStack"/>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+
+            <!-- ============ sign in ============ -->
+            <Grid x:Name="SignInView" Grid.Row="1" Visibility="Collapsed">
+                <StackPanel Width="400" VerticalAlignment="Center" Margin="0,-24,0,0">
+                    <Image Source="Assets/lattice-shield.png" Width="104" Height="104" RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <TextBlock Text="Welcome to Lattice VPN" FontFamily="{StaticResource Display}" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                    <TextBlock Text="Enter your account number to sign in on this PC." Foreground="{StaticResource Muted}" HorizontalAlignment="Center" Margin="0,5,0,18"/>
+                    <Border Background="{StaticResource Card}" BorderBrush="{StaticResource CardLine}" BorderThickness="1" CornerRadius="12" Padding="12,2">
+                        <TextBox x:Name="AccountBox" Background="Transparent" BorderThickness="0" Foreground="{StaticResource Ink}" CaretBrush="{StaticResource Mint}"
+                                 FontFamily="{StaticResource Mono}" FontSize="16" Padding="0,10" MaxLength="40" CharacterCasing="Upper" TextAlignment="Center"
+                                 TextChanged="OnAccountTyped" KeyDown="OnAccountKey" AutomationProperties.Name="Account number"/>
+                    </Border>
+                    <TextBlock x:Name="SignInError" Foreground="{StaticResource Danger}" TextWrapping="Wrap" TextAlignment="Center" Margin="0,9,0,0" MinHeight="20"/>
+                    <Button x:Name="SignInButton" Content="Sign in" Style="{StaticResource Primary}" FontSize="15" Padding="14,11" Margin="0,6,0,0" Click="OnSignIn" IsEnabled="False"/>
+                    <TextBlock Foreground="{StaticResource Faint}" FontSize="12.5" TextAlignment="Center" TextWrapping="Wrap" Margin="0,16,0,0"
+                               Text="Your account number is 25 letters and digits. Find it in the Lattice app on your phone or Mac, or get one at latticevpn.ai."/>
+                </StackPanel>
+            </Grid>
+
+            <!-- ============ the service is not reachable ============ -->
+            <Border x:Name="ServiceBanner" Grid.Row="1" Visibility="Collapsed" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,18"
+                    Background="#3A2A10" BorderBrush="{StaticResource Amber}" BorderThickness="1" CornerRadius="10" Padding="14,8">
+                <TextBlock Text="The Lattice VPN service is not running. Restart the PC or reinstall Lattice VPN." Foreground="#FFE2AE" FontSize="12.5"/>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

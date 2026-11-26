@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The Lattice VPN window and tray icon. Runs as the signed-in user with no
+       special rights; everything privileged is done by the service over a pipe. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>LatticeVPN</AssemblyName>
+    <RootNamespace>Lattice.App</RootNamespace>
+    <ApplicationIcon>Assets\lattice.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\lattice-logo.png" />
+    <Resource Include="Assets\lattice-shield.png" />
+    <Resource Include="Assets\lattice.ico" />
+    <Resource Include="Assets\Earth\*.jpg" />
+    <Resource Include="Assets\Flags\*.png" />
+  </ItemGroup>
+
+</Project>

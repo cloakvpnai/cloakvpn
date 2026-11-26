@@ -1,0 +1,22 @@
+LIBRARY lattice_tls
+EXPORTS
+    ltls_new
+    ltls_free
+    ltls_feed
+    ltls_handshake
+    ltls_drain
+    ltls_write
+    ltls_read
+    ltls_export
+    ltls_describe
+    ltls_error
+    ltls_gcm_seal
+    ltls_gcm_open
+    ltls_random
+    ltls_win_init
+    ltls_win_openssl_version
+    ltls_win_keygen
+    ltls_win_csr
+    ltls_win_cert_matches_key
+    ltls_win_cert_not_after
+    ltls_win_sha384

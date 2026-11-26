@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
+    <PackageReference Include="xunit" Version="2.*" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Lattice.Tunnel\Lattice.Tunnel.csproj" />
+  </ItemGroup>
+
+  <!-- The crypto tests need lattice_tls.dll beside the test assembly. They are
+       skipped, not failed, when it has not been built yet. -->
+  <ItemGroup>
+    <None Include="$(LatticeNativeDir)lattice_tls.dll" Condition="Exists('$(LatticeNativeDir)lattice_tls.dll')"
+          Link="lattice_tls.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

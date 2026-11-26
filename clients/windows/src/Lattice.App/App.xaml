@@ -1,0 +1,136 @@
+<Application x:Class="Lattice.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnExplicitShutdown">
+    <Application.Resources>
+        <!-- The Lattice look, taken from the phone apps and the store artwork:
+             near-black navy, raised navy cards, bright mint for "protected",
+             amber (the nodes of the shield) for "working on it". -->
+        <SolidColorBrush x:Key="Card" Color="#101C35"/>
+        <SolidColorBrush x:Key="CardHover" Color="#15254A"/>
+        <SolidColorBrush x:Key="CardLine" Color="#1D2B48"/>
+        <SolidColorBrush x:Key="Chip" Color="#1A2948"/>
+        <SolidColorBrush x:Key="PanelFill" Color="#E6091426"/>
+        <SolidColorBrush x:Key="Ink" Color="#EEF2F8"/>
+        <SolidColorBrush x:Key="Muted" Color="#8F9DB5"/>
+        <SolidColorBrush x:Key="Faint" Color="#5B6A85"/>
+        <SolidColorBrush x:Key="Mint" Color="#5FE3B5"/>
+        <SolidColorBrush x:Key="MintInk" Color="#BFF3DC"/>
+        <SolidColorBrush x:Key="MintFill" Color="#27665F"/>
+        <SolidColorBrush x:Key="Amber" Color="#FFB13B"/>
+        <SolidColorBrush x:Key="AmberFill" Color="#5A4320"/>
+        <SolidColorBrush x:Key="Danger" Color="#FF8A8A"/>
+        <SolidColorBrush x:Key="OffRing" Color="#34435F"/>
+        <SolidColorBrush x:Key="OffFill" Color="#121E38"/>
+        <LinearGradientBrush x:Key="WindowFill" StartPoint="0,0" EndPoint="0.35,1">
+            <GradientStop Color="#0D1A33" Offset="0"/>
+            <GradientStop Color="#070D1B" Offset="1"/>
+        </LinearGradientBrush>
+        <FontFamily x:Key="Ui">Segoe UI Variable Text, Segoe UI</FontFamily>
+        <FontFamily x:Key="Display">Segoe UI Variable Display, Segoe UI</FontFamily>
+        <FontFamily x:Key="Mono">Cascadia Mono, Consolas</FontFamily>
+        <FontFamily x:Key="Icons">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+
+        <Style TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource Ui}"/>
+            <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+            <Setter Property="FontSize" Value="13.5"/>
+        </Style>
+
+        <Style x:Key="Label" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource Ui}"/>
+            <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+            <Setter Property="FontSize" Value="10.5"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+
+        <Style x:Key="Flat" TargetType="Button">
+            <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+            <Setter Property="Background" Value="{StaticResource Card}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource CardLine}"/>
+            <Setter Property="FontFamily" Value="{StaticResource Ui}"/>
+            <Setter Property="FontSize" Value="13.5"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="{StaticResource CardHover}"/></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="{StaticResource Mint}"/></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="b" Property="Opacity" Value="0.45"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="Primary" TargetType="Button" BasedOn="{StaticResource Flat}">
+            <Setter Property="Background" Value="{StaticResource Mint}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Mint}"/>
+            <Setter Property="Foreground" Value="#062A20"/>
+        </Style>
+
+        <!-- Tabs in the title bar. -->
+        <Style x:Key="Tab" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+            <Setter Property="FontFamily" Value="{StaticResource Ui}"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Margin" Value="0,0,2,0"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="b" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="8" Padding="11,5">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter Property="Foreground" Value="{StaticResource Ink}"/></Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="b" Property="Background" Value="{StaticResource Chip}"/>
+                                <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="b" Property="BorderBrush" Value="{StaticResource Mint}"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Minimise and close, drawn to match the window. -->
+        <Style x:Key="Caption" TargetType="Button">
+            <Setter Property="Width" Value="42"/>
+            <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="FontFamily" Value="{StaticResource Icons}"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="b" Background="{TemplateBinding Background}">
+                            <!-- a TextBlock of its own, so the icon font is not replaced by the app's text font -->
+                            <TextBlock Text="{TemplateBinding Content}" FontFamily="{StaticResource Icons}" FontSize="10"
+                                       Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="b" Property="Background" Value="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Application.Resources>
+</Application>

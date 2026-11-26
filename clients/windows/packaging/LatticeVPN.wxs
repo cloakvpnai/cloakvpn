@@ -1,0 +1,63 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <!-- Lattice VPN for Windows. Installs for the whole PC under Program Files,
+       where only administrators can change the files the service runs. -->
+  <Package Name="Lattice VPN" Manufacturer="KryptoKnightz LLC" Version="$(var.Version)"
+           UpgradeCode="6f0c3b52-8a1e-4d57-9c44-2b7e51d0a9f3" Scope="perMachine" Compressed="yes" InstallerVersion="500">
+    <SummaryInformation Description="Lattice VPN" Manufacturer="KryptoKnightz LLC" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Lattice VPN is already installed." Schedule="afterInstallInitialize"
+                  AllowSameVersionUpgrades="yes" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <!-- Windows Installer reports Windows 10 and 11 as version 603. -->
+    <Launch Condition="Installed OR VersionNT64 >= 603" Message="Lattice VPN needs 64 bit Windows 10 or Windows 11." />
+
+    <Icon Id="LatticeIcon" SourceFile="..\src\Lattice.App\Assets\lattice.ico" />
+    <Property Id="ARPPRODUCTICON" Value="LatticeIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://latticevpn.ai" />
+    <Property Id="ARPHELPLINK" Value="https://latticevpn.ai" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Lattice VPN" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="Main" Title="Lattice VPN" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="Service" />
+      <ComponentRef Id="App" />
+      <ComponentRef Id="StartWithWindows" />
+    </Feature>
+
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.Stage)\**">
+        <Exclude Files="$(var.Stage)\LatticeService.exe" />
+        <Exclude Files="$(var.Stage)\LatticeVPN.exe" />
+      </Files>
+    </ComponentGroup>
+
+    <!-- The service: runs as the system, starts with Windows, and is restarted
+         by Windows if it ever stops unexpectedly so the traffic hold comes back. -->
+    <Component Id="Service" Directory="INSTALLFOLDER">
+      <File Id="ServiceExe" Source="$(var.Stage)\LatticeService.exe" KeyPath="yes" />
+      <ServiceInstall Id="LatticeService" Name="LatticeVPN" DisplayName="Lattice VPN"
+                      Description="Keeps the Lattice VPN tunnel up and holds traffic while it is down."
+                      Type="ownProcess" Start="auto" ErrorControl="normal" Account="LocalSystem">
+        <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart" ThirdFailureActionType="restart"
+                            RestartServiceDelayInSeconds="2" ResetPeriodInDays="1" />
+      </ServiceInstall>
+      <ServiceControl Id="LatticeServiceControl" Name="LatticeVPN" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+    </Component>
+
+    <Component Id="App" Directory="INSTALLFOLDER">
+      <File Id="AppExe" Source="$(var.Stage)\LatticeVPN.exe" KeyPath="yes">
+        <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="Lattice VPN" Description="Lattice VPN"
+                  Advertise="yes" Icon="LatticeIcon" WorkingDirectory="INSTALLFOLDER" />
+      </File>
+    </Component>
+
+    <!-- The shield in the notification area, for everyone who signs in to this PC. -->
+    <Component Id="StartWithWindows" Directory="INSTALLFOLDER">
+      <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="Lattice VPN" Type="string"
+                     Value="&quot;[INSTALLFOLDER]LatticeVPN.exe&quot; --tray" KeyPath="yes" />
+    </Component>
+  </Package>
+</Wix>

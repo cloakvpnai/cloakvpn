@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The Lattice VPN Windows service. Runs as LocalSystem; owns the adapter,
+       the traffic hold, the device key and the connection. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <AssemblyName>LatticeService</AssemblyName>
+    <RootNamespace>Lattice.Service</RootNamespace>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Lattice.Tunnel\Lattice.Tunnel.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(LatticeNativeDir)lattice_tls.dll" Link="lattice_tls.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(LatticeNativeDir)wintun.dll" Link="wintun.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

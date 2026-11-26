@@ -3,7 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#define strcasecmp _stricmp /* MSVC has no <strings.h> */
+#else
 #include <strings.h>
+#endif
 #include <openssl/decoder.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
