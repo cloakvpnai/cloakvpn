@@ -140,13 +140,13 @@
 
                 <Border x:Name="AccountView" Grid.Column="2" Grid.ColumnSpan="3" Visibility="Collapsed" Background="{StaticResource Card}" BorderBrush="{StaticResource CardLine}" BorderThickness="1" CornerRadius="16" Padding="24,20">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
-                        <StackPanel x:Name="AccountStack"/>
+                        <StackPanel x:Name="AccountStack" Margin="0,0,14,0"/>
                     </ScrollViewer>
                 </Border>
 
                 <Border x:Name="AboutView" Grid.Column="2" Grid.ColumnSpan="3" Visibility="Collapsed" Background="{StaticResource Card}" BorderBrush="{StaticResource CardLine}" BorderThickness="1" CornerRadius="16" Padding="24,20">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
-                        <StackPanel x:Name="AboutStack"/>
+                        <StackPanel x:Name="AboutStack" Margin="0,0,14,0"/>
                     </ScrollViewer>
                 </Border>
             </Grid>

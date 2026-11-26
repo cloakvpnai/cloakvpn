@@ -1,0 +1,74 @@
+---
+/**
+ * Download page for Lattice VPN for Windows.
+ *
+ * The Windows app opens this page when it finds a newer version in
+ * /windows/version.json ("Get the update"). Keep the address stable:
+ * it is built into the app.
+ *
+ * To publish a release, fill in `release` below with the signed installers'
+ * addresses and SHA-256 values (sign.ps1 prints them), set `available` to
+ * true, and set the same version in public/windows/version.json. The
+ * installers are too large for Cloudflare Pages (25 MiB a file), so they
+ * are hosted elsewhere and linked from here.
+ *
+ * While `available` is false the page says the app is on its way and
+ * offers no download, so an unsigned build is never linked by accident.
+ */
+import Layout from '@/layouts/Layout.astro';
+
+const release = {
+  available: false,
+  version: '2.0.0',
+  x64:   { url: '', sha256: '' },
+  arm64: { url: '', sha256: '' },
+};
+const builds = [
+  { label: 'Most PCs (Intel or AMD, 64 bit)', ...release.x64 },
+  { label: 'Arm PCs (Snapdragon, Copilot+ PCs)', ...release.arm64 },
+].filter((b) => b.url && b.sha256);
+const live = release.available && builds.length > 0;
+---
+<Layout title="Download for Windows" description="Download Lattice VPN for Windows 10 and Windows 11.">
+  <div class="pt-32 pb-20 mx-auto max-w-2xl px-6">
+    <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 border border-slate-200 px-3 py-1 text-xs font-semibold tracking-wide text-slate-600 mb-6">
+      WINDOWS
+    </span>
+    <h1 class="font-display font-extrabold text-4xl tracking-tight text-slate-900 mb-4">Lattice VPN for Windows</h1>
+
+    {live ? (
+      <>
+        <p class="text-slate-600 mb-8">
+          Version {release.version} for Windows 10 and Windows 11. Signed by KryptoKnightz LLC.
+          Installing over an older version keeps you signed in.
+        </p>
+        <div class="space-y-4">
+          {builds.map((b) => (
+            <div class="soft-card rounded-2xl p-5">
+              <p class="text-sm font-semibold text-slate-900 mb-3">{b.label}</p>
+              <a href={b.url} class="inline-flex items-center gap-2 rounded-full bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm px-6 py-3 transition-colors">
+                Download
+              </a>
+              <p class="mt-4 text-xs text-slate-500">SHA-256</p>
+              <p class="font-mono text-xs text-slate-700 break-all">{b.sha256}</p>
+            </div>
+          ))}
+        </div>
+        <h2 class="font-display font-bold text-xl text-slate-900 mt-10 mb-3">Check the download</h2>
+        <p class="text-slate-600 text-sm mb-2">
+          Right-click the file, choose Properties, then Digital Signatures. The signer should be KryptoKnightz LLC.
+          To compare the SHA-256 value, run this in PowerShell and match it to the value above:
+        </p>
+        <pre class="rounded-xl bg-slate-900 text-slate-100 text-xs p-4 overflow-x-auto">Get-FileHash .\LatticeVPN-{release.version}-x64.msi</pre>
+      </>
+    ) : (
+      <p class="text-slate-600 mb-8">
+        Lattice VPN for Windows is on its way. The Android and iPhone apps are available today.
+      </p>
+    )}
+
+    <p class="mt-10 text-sm text-slate-500">
+      You need a Lattice VPN subscription to connect. <a href="/pricing" class="text-mint-700 hover:text-mint-800 font-semibold">See plans</a>.
+    </p>
+  </div>
+</Layout>
