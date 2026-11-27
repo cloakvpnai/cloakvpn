@@ -193,7 +193,7 @@
                     MouseLeftButtonUp="UpdateBanner_Click">
                 <StackPanel Orientation="Horizontal">
                     <TextBlock x:Name="UpdateText" Foreground="#D9FBEF" FontSize="12.5" VerticalAlignment="Center"/>
-                    <TextBlock Text="Get the update" Foreground="{StaticResource Mint}" FontSize="12.5" FontWeight="SemiBold" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="UpdateAction" Text="Get the update" Foreground="{StaticResource Mint}" FontSize="12.5" FontWeight="SemiBold" Margin="12,0,0,0" VerticalAlignment="Center"/>
                     <TextBlock x:Name="UpdateDismiss" Text="Later" Foreground="#8FA3B8" FontSize="12.5" Margin="14,0,0,0" VerticalAlignment="Center" MouseLeftButtonUp="UpdateDismiss_Click"/>
                 </StackPanel>
             </Border>

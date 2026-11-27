@@ -34,3 +34,14 @@ NASA Earth imagery
   Joshua Stevens, using Suomi NPP VIIRS data from Miguel Roman, NASA GSFC.
   Use of this imagery does not imply NASA endorsement of Lattice VPN.
   https://science.nasa.gov/earth/earth-observatory/
+
+NetSparkle 3.1.0
+  Copyright (c) the NetSparkleUpdater contributors.
+  Licensed under the MIT License.
+  Downloads a newer installer and checks its signature before starting it.
+  https://github.com/NetSparkleUpdater/NetSparkle
+
+Chaos.NaCl (NetSparkleUpdater fork)
+  Ed25519 signature checking used by NetSparkle. See the project for its
+  licence terms.
+  https://github.com/NetSparkleUpdater/Chaos.NaCl

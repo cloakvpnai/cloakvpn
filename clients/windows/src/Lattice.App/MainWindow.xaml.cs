@@ -66,7 +66,12 @@ public partial class MainWindow : Window
                 Loaded += (_, _) => { if (args[tab + 1] == "account") TabAccount.IsChecked = true; else if (args[tab + 1] == "about") TabAbout.IsChecked = true; };
             // --update <file contents>: shows what the update notice would do with that reply.
             if (Array.IndexOf(args, "--update") is int u and >= 0 && u + 1 < args.Length)
-                Loaded += (_, _) => ShowUpdate(UpdateCheck.Read(args[u + 1].Replace('\'', '"'), new Version(2, 0, 0)));
+                Loaded += (_, _) =>
+                {
+                    ShowUpdate(UpdateCheck.Read(args[u + 1].Replace('\'', '"'), new Version(2, 0, 0)));
+                    // --update-go: also press "Get the update", for updater tests.
+                    if (Array.IndexOf(args, "--update-go") >= 0) UpdateBanner_Click(this, null!);
+                };
             _poll.Tick += (_, _) => Paint();
             Loaded += (_, _) => { Paint(); _poll.Start(); };
             return;
@@ -97,7 +102,30 @@ public partial class MainWindow : Window
         UpdateBanner.Visibility = Visibility.Visible;
     }
 
-    private void UpdateBanner_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) => OpenWeb(UpdateCheck.DownloadPage);
+    private readonly Updater _updater = new();
+    private bool _updating;
+
+    /// <summary>Downloads and starts the installer. If that cannot be done, opens the download page.</summary>
+    private async void UpdateBanner_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (_updating) return;
+        _updating = true;
+        string before = UpdateText.Text;
+        UpdateAction.Visibility = Visibility.Collapsed;
+        UpdateDismiss.Visibility = Visibility.Collapsed;
+        UpdateText.Text = "Downloading the update...";
+        void Show(int percent) => Dispatcher.Invoke(() => UpdateText.Text = $"Downloading the update... {percent}%");
+        _updater.Progress += Show;
+        bool started;
+        try { started = await _updater.RunAsync(() => Dispatcher.Invoke(() => { _reallyClose = true; Application.Current.Shutdown(); })); }
+        finally { _updater.Progress -= Show; }
+        if (started) { UpdateText.Text = "Starting the installer..."; return; }
+        // Could not do it here: send the person to the download page, as before.
+        _updating = false;
+        UpdateText.Text = before;
+        UpdateAction.Visibility = Visibility.Visible;
+        OpenWeb(UpdateCheck.DownloadPage);
+    }
 
     private void UpdateDismiss_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {

@@ -10,10 +10,10 @@ namespace Lattice.App;
 /// Tells the person when a newer Lattice VPN for Windows exists. That is all it does.
 ///
 /// It reads one small public file that holds a version number. It sends no account
-/// number, no device name and no identifier. It never downloads or runs anything:
-/// "Get the update" opens the fixed download page below in the browser, and Windows
-/// checks the publisher's signature on the installer when the person runs it. So the
-/// worst a tampered reply can do is show the notice when no update exists.
+/// number, no device name and no identifier. It never downloads or runs anything, so
+/// the worst a tampered reply can do is show the notice when no update exists.
+/// "Get the update" hands over to <see cref="Updater"/>, which trusts only files signed
+/// with the Lattice release key, and falls back to the download page below.
 /// </summary>
 public static class UpdateCheck
 {
