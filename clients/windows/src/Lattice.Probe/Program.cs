@@ -509,7 +509,7 @@ internal static class Program
         // --tcp-host <address>: the gateway's second address, where its TCP listener answers.
         string? tcpHost = Option(args, "--tcp-host");
         bool tcp = args.Contains("--tcp") || tcpHost is not null;
-        var tcpTo = new System.Net.IPEndPoint(tcpHost is null ? t.EndPoint.Address : System.Net.IPAddress.Parse(tcpHost), 443);
+        var tcpTo = new System.Net.IPEndPoint(tcpHost is null ? t.EndPoint.Address : System.Net.IPAddress.Parse(tcpHost), int.TryParse(Option(args, "--tcp-port"), out int tcpPort) ? tcpPort : 443);
         using var engine = new TunnelEngine(identity, tcp ? tcpTo : t.EndPoint, rekey, null, tcp);
         if (tcp) Say($"using TCP, {tcpTo}");
         engine.Log += m => Say($"  session: {m}");
@@ -568,7 +568,7 @@ internal static class Program
         // Do not combine with --full yet: only the first address is kept out of the tunnel.
         string? tcpHost = Option(args, "--tcp-host");
         bool tcp = args.Contains("--tcp") || tcpHost is not null;
-        var tcpTo = new System.Net.IPEndPoint(tcpHost is null ? t.EndPoint.Address : System.Net.IPAddress.Parse(tcpHost), 443);
+        var tcpTo = new System.Net.IPEndPoint(tcpHost is null ? t.EndPoint.Address : System.Net.IPAddress.Parse(tcpHost), int.TryParse(Option(args, "--tcp-port"), out int tcpPort) ? tcpPort : 443);
         if (tcp && full && tcpHost is not null) { Say("--tcp-host cannot be used with --full yet"); return 1; }
         using var engine = new TunnelEngine(identity, tcp ? tcpTo : t.EndPoint, rekey, physical.SourceAddress, tcp);
         if (tcp) Say($"using TCP, {tcpTo}");

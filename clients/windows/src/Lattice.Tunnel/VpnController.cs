@@ -219,6 +219,43 @@ public sealed class VpnController : IDisposable
 
     // ---- commands ----
 
+    /// <summary>
+    /// Checks that a gateway's TCP listener completes a full CNSA 2.0 handshake with this
+    /// device's own certificate. Handshake only: no adapter, no routes, no traffic held, and
+    /// nothing about the normal connection changes. Refused while the tunnel is in use.
+    /// </summary>
+    /// <param name="host">An IPv4 address to use in place of the gateway's own, for a gateway
+    /// whose TCP listener answers on a second address. The gateway's certificate must still match.</param>
+    public string TestTcp(string? region, int port, string? host)
+    {
+        if (port is not (443 or 8443)) return "failed: the port must be 443 or 8443";
+        if (Wanted) return "failed: disconnect first";
+        if (_enroller.NeedsEnrollment(DateTimeOffset.UtcNow)) return "failed: not signed in";
+        Cnsa2Gateway? gateway = _enroller.Choose(string.IsNullOrEmpty(region) ? null : region);
+        if (gateway is null) return "failed: no such region";
+        IPAddress? address;
+        if (string.IsNullOrEmpty(host)) address = _names.Resolve(gateway.Host).FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork);
+        else if (!IPAddress.TryParse(host, out address) || address.AddressFamily != AddressFamily.InterNetwork) return "failed: the address must be IPv4";
+        if (address is null) return "failed: the gateway has no IPv4 address";
+
+        var notes = new List<string>();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        using TunnelIdentity identity = _enroller.IdentityFor(gateway);
+        using var engine = new TunnelEngine(identity, new IPEndPoint(address, port), Cnsa2Enroller.RekeySeconds, null, tcp: true);
+        engine.Log += m => { lock (notes) notes.Add(m); };
+        engine.Start();
+        while (engine.State.Kind == TunnelStateKind.Connecting && clock.Elapsed.TotalSeconds < 20) Thread.Sleep(50);
+        bool connected = engine.State.Kind == TunnelStateKind.Connected;
+        string suite = engine.Suite;
+        TunnelSettings settings = engine.Settings;
+        engine.Stop();
+        string said; lock (notes) said = string.Join(" | ", notes.TakeLast(4));
+        _log($"tcp test {gateway.Id} port {port}: {(connected ? "connected" : "failed")}");
+        return connected
+            ? $"ok: {gateway.Id} over TCP {port} in {clock.ElapsedMilliseconds} ms, {suite}, tunnel address {settings.Address}"
+            : $"failed: {engine.State.Kind} after {clock.ElapsedMilliseconds} ms. {said}";
+    }
+
     /// <summary>Switches the VPN on, or moves a running tunnel to another region in place.</summary>
     public void Connect(string? region)
     {

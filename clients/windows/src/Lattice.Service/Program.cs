@@ -171,7 +171,8 @@ public sealed class Worker : BackgroundService
     /// <summary>One request, one reply, both a single line of JSON.</summary>
     private static async Task<string> HandleAsync(string line, VpnController controller)
     {
-        string command, region = "", account = "";
+        string command, region = "", account = "", host = "";
+        int port = 0;
         try
         {
             using JsonDocument doc = JsonDocument.Parse(line);
@@ -179,6 +180,8 @@ public sealed class Worker : BackgroundService
             command = root.GetProperty("cmd").GetString() ?? "";
             if (root.TryGetProperty("region", out JsonElement r) && r.ValueKind == JsonValueKind.String) region = r.GetString() ?? "";
             if (root.TryGetProperty("account", out JsonElement a) && a.ValueKind == JsonValueKind.String) account = a.GetString() ?? "";
+            if (root.TryGetProperty("host", out JsonElement h) && h.ValueKind == JsonValueKind.String) host = h.GetString() ?? "";
+            if (root.TryGetProperty("port", out JsonElement p) && p.ValueKind == JsonValueKind.Number && p.TryGetInt32(out int number)) port = number;
         }
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { return Error("bad request"); }
 
@@ -192,6 +195,13 @@ public sealed class Worker : BackgroundService
             case "connect":
                 controller.Connect(region.Length > 0 ? region : null);
                 return Ok(controller);
+            case "tcptest":
+            {
+                // A handshake with a gateway's TCP listener and nothing more. See VpnController.TestTcp.
+                if (host.Length > 15) return Error("bad host");
+                string outcome = await Task.Run(() => controller.TestTcp(region, port, host)).ConfigureAwait(false);
+                return JsonSerializer.Serialize(new Dictionary<string, object> { ["ok"] = outcome.StartsWith("ok", StringComparison.Ordinal), ["result"] = outcome });
+            }
             case "disconnect":
                 controller.Disconnect();
                 return Ok(controller);
