@@ -37,25 +37,48 @@ public sealed class TunnelEngine : IDisposable
     public long PacketsIn => Interlocked.Read(ref _packetsIn);
     public long PacketsOut => Interlocked.Read(ref _packetsOut);
 
+    /// <summary>True when this engine reaches the gateway over TCP, for networks that block UDP.</summary>
+    public bool Tcp { get; }
+
     /// <param name="bindTo">Local address of the physical interface to send from, or null to let Windows choose.</param>
-    public TunnelEngine(TunnelIdentity identity, IPEndPoint gateway, double rekeySeconds, IPAddress? bindTo = null)
+    /// <param name="tcp">Carry the tunnel over TCP. The gateway must be listening for it on this port.</param>
+    public TunnelEngine(TunnelIdentity identity, IPEndPoint gateway, double rekeySeconds, IPAddress? bindTo = null, bool tcp = false)
     {
         Gateway = gateway;
-        _session = new TunnelSession(identity, rekeySeconds);
-        _socket = new Socket(gateway.AddressFamily, SocketType.Dgram, ProtocolType.Udp)
+        Tcp = tcp;
+        _session = new TunnelSession(identity, rekeySeconds) { Tcp = tcp };
+        if (tcp)
         {
-            ReceiveBufferSize = 1 << 20,
-            SendBufferSize = 1 << 20,
-            ReceiveTimeout = 500,
-        };
-        // Without this an ICMP "port unreachable" makes the next receive fail on Windows.
-        try { _socket.IOControl(SIO_UDP_CONNRESET, new byte[] { 0, 0, 0, 0 }, null); } catch (SocketException) { }
-        if (bindTo is not null) _socket.Bind(new IPEndPoint(bindTo, 0));
-        _socket.Connect(gateway);
+            _socket = new Socket(gateway.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
+            {
+                NoDelay = true,          // packets are already whole; waiting to batch them only adds delay
+                ReceiveTimeout = 500,
+                SendTimeout = 3000,      // a stalled connection must not hold the session lock for long
+            };
+            if (bindTo is not null) _socket.Bind(new IPEndPoint(bindTo, 0));
+            // Unlike UDP, TCP has to reach the gateway before anything can be sent. Give it a few
+            // seconds; if it fails the session finds out the usual way, by getting no answer.
+            try { if (!_socket.ConnectAsync(gateway).Wait(6000)) _socket.Close(); }
+            catch (AggregateException) { }
+            catch (SocketException) { }
+        }
+        else
+        {
+            _socket = new Socket(gateway.AddressFamily, SocketType.Dgram, ProtocolType.Udp)
+            {
+                ReceiveBufferSize = 1 << 20,
+                SendBufferSize = 1 << 20,
+                ReceiveTimeout = 500,
+            };
+            // Without this an ICMP "port unreachable" makes the next receive fail on Windows.
+            try { _socket.IOControl(SIO_UDP_CONNRESET, new byte[] { 0, 0, 0, 0 }, null); } catch (SocketException) { }
+            if (bindTo is not null) _socket.Bind(new IPEndPoint(bindTo, 0));
+            _socket.Connect(gateway);
+        }
 
         _session.Send = datagram =>
         {
-            try { _socket.Send(datagram); }
+            try { _socket.Send(tcp ? TcpFraming.Frame(datagram) : datagram); }
             catch (SocketException) { /* the network is down; the session's timers handle it */ }
             catch (ObjectDisposedException) { }
         };
@@ -99,6 +122,7 @@ public sealed class TunnelEngine : IDisposable
 
     private void SocketLoop()
     {
+        if (Tcp) { StreamLoop(); return; }
         var buffer = new byte[65535];
         while (_running)
         {
@@ -114,6 +138,28 @@ public sealed class TunnelEngine : IDisposable
             Buffer.BlockCopy(buffer, 0, datagram, 0, n);
             lock (_gate) _session.Receive(datagram, Now);
         }
+    }
+
+    /// <summary>The TCP reader: bytes arrive in pieces of any size and are cut back into packets.</summary>
+    private void StreamLoop()
+    {
+        var buffer = new byte[65535];
+        var reader = new TcpFraming.Reader();
+        while (_running)
+        {
+            int n;
+            try { n = _socket.Receive(buffer); }
+            catch (SocketException e) when (e.SocketErrorCode == SocketError.TimedOut) { continue; }
+            catch (SocketException) { break; }          // the connection is gone
+            catch (ObjectDisposedException) { break; }
+            if (n == 0) break;                           // the gateway closed it
+            bool sane;
+            lock (_gate) sane = reader.Add(buffer.AsSpan(0, n), packet => _session.Receive(packet, Now));
+            if (!sane) break;
+        }
+        // Nothing more can arrive on this connection. The session notices the silence and reports
+        // it, and the owner makes a new engine.
+        if (_running) Log?.Invoke("the TCP connection to the gateway ended");
     }
 
     private void TimerLoop()

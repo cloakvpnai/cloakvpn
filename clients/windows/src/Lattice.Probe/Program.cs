@@ -505,7 +505,10 @@ internal static class Program
         double rekey = double.TryParse(Option(args, "--rekey"), out double r) ? r : Cnsa2Enroller.RekeySeconds;
 
         using TunnelIdentity identity = t.Enroller.IdentityFor(t.Gateway);
-        using var engine = new TunnelEngine(identity, t.EndPoint, rekey);
+        // --tcp: reach the gateway's TCP 443 listener, the path for networks that block UDP.
+        bool tcp = args.Contains("--tcp");
+        using var engine = new TunnelEngine(identity, tcp ? new System.Net.IPEndPoint(t.EndPoint.Address, 443) : t.EndPoint, rekey, null, tcp);
+        if (tcp) Say("using TCP 443");
         engine.Log += m => Say($"  session: {m}");
         engine.StateChanged += s => Say($"  state: {s}");
 
@@ -557,7 +560,10 @@ internal static class Program
 
         using TunnelIdentity identity = t.Enroller.IdentityFor(t.Gateway);
         PhysicalRoute physical = TunnelNetwork.FindRoute(t.EndPoint.Address);
-        using var engine = new TunnelEngine(identity, t.EndPoint, rekey, physical.SourceAddress);
+        // --tcp: reach the gateway's TCP 443 listener, the path for networks that block UDP.
+        bool tcp = args.Contains("--tcp");
+        using var engine = new TunnelEngine(identity, tcp ? new System.Net.IPEndPoint(t.EndPoint.Address, 443) : t.EndPoint, rekey, physical.SourceAddress, tcp);
+        if (tcp) Say("using TCP 443");
         engine.Log += m => Say($"  session: {m}");
         engine.StateChanged += s => Say($"  state: {s}");
 

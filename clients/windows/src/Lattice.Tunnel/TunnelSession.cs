@@ -92,6 +92,9 @@ public sealed class TunnelSession : IDisposable
     public int RekeyCount { get; private set; }
     public double LastKeyTime { get; private set; }
 
+    /// <summary>True when the packets travel over TCP. Only changes what the session tells the gateway about itself.</summary>
+    public bool Tcp { get; set; }
+
     /// <summary>Datagram to send to the gateway.</summary>
     public Action<byte[]> Send { get; set; } = _ => { };
     /// <summary>IP packet received through the tunnel.</summary>
@@ -416,12 +419,12 @@ public sealed class TunnelSession : IDisposable
     /// The client half of OpenVPN's key method 2 message. With exported keys
     /// the random fields are not used for key derivation but are still sent.
     /// </summary>
-    private static byte[] KeyExchangeMessage()
+    private byte[] KeyExchangeMessage()
     {
         var m = new ByteWriter(512);
         m.Bytes(stackalloc byte[] { 0, 0, 0, 0, 2 });
         m.Bytes(Rng.Bytes(48 + 32 + 32));
-        AppendString(ref m, "V4,dev-type tun,link-mtu 1549,tun-mtu 1500,proto UDPv4,cipher AES-256-GCM,auth [null-digest],keysize 256,key-method 2,tls-client");
+        AppendString(ref m, "V4,dev-type tun,link-mtu 1549,tun-mtu 1500,proto " + (Tcp ? "TCPv4_CLIENT" : "UDPv4") + ",cipher AES-256-GCM,auth [null-digest],keysize 256,key-method 2,tls-client");
         m.UInt16BE(0); // no username
         m.UInt16BE(0); // no password
         // IV_PROTO: data v2 (2) + exported keys (8) + exit notification (128)
