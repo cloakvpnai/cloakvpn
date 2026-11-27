@@ -40,6 +40,11 @@ public sealed class TunnelEngine : IDisposable
     /// <summary>True when this engine reaches the gateway over TCP, for networks that block UDP.</summary>
     public bool Tcp { get; }
 
+    private readonly System.Threading.Tasks.Task? _connect;
+    private volatile bool _transportFailed;
+    /// <summary>TCP only: the connection could not be made, or ended. This engine will never connect.</summary>
+    public bool TransportFailed => _transportFailed;
+
     /// <param name="bindTo">Local address of the physical interface to send from, or null to let Windows choose.</param>
     /// <param name="tcp">Carry the tunnel over TCP. The gateway must be listening for it on this port.</param>
     public TunnelEngine(TunnelIdentity identity, IPEndPoint gateway, double rekeySeconds, IPAddress? bindTo = null, bool tcp = false)
@@ -56,11 +61,10 @@ public sealed class TunnelEngine : IDisposable
                 SendTimeout = 3000,      // a stalled connection must not hold the session lock for long
             };
             if (bindTo is not null) _socket.Bind(new IPEndPoint(bindTo, 0));
-            // Unlike UDP, TCP has to reach the gateway before anything can be sent. Give it a few
-            // seconds; if it fails the session finds out the usual way, by getting no answer.
-            try { if (!_socket.ConnectAsync(gateway).Wait(6000)) _socket.Close(); }
-            catch (AggregateException) { }
-            catch (SocketException) { }
+            // Unlike UDP, TCP has to reach the gateway before anything can be sent. The attempt
+            // starts now and is waited for on the reader thread, so making an engine never blocks.
+            try { _connect = _socket.ConnectAsync(gateway); }
+            catch (SocketException e) { _connect = System.Threading.Tasks.Task.FromException(e); }
         }
         else
         {
@@ -107,6 +111,7 @@ public sealed class TunnelEngine : IDisposable
         _socketThread = new Thread(SocketLoop) { IsBackground = true, Name = "lattice-udp" };
         _timerThread = new Thread(TimerLoop) { IsBackground = true, Name = "lattice-timer" };
         _socketThread.Start();
+        if (Tcp) return; // the reader thread starts the session once the connection is made
         lock (_gate) _session.Start(Now);
         _timerThread.Start();
     }
@@ -143,6 +148,19 @@ public sealed class TunnelEngine : IDisposable
     /// <summary>The TCP reader: bytes arrive in pieces of any size and are cut back into packets.</summary>
     private void StreamLoop()
     {
+        // First the connection itself. A few seconds is plenty; a network that drops it never answers.
+        bool connected = false;
+        try { connected = _connect is not null && _connect.Wait(6000); }
+        catch (AggregateException) { }
+        if (!connected || !_running)
+        {
+            _transportFailed = true;
+            if (_running) Log?.Invoke("no TCP connection to the gateway");
+            return;
+        }
+        lock (_gate) _session.Start(Now);
+        _timerThread?.Start();
+
         var buffer = new byte[65535];
         var reader = new TcpFraming.Reader();
         while (_running)
@@ -157,8 +175,8 @@ public sealed class TunnelEngine : IDisposable
             lock (_gate) sane = reader.Add(buffer.AsSpan(0, n), packet => _session.Receive(packet, Now));
             if (!sane) break;
         }
-        // Nothing more can arrive on this connection. The session notices the silence and reports
-        // it, and the owner makes a new engine.
+        // Nothing more can arrive on this connection. The owner makes a new engine.
+        _transportFailed = true;
         if (_running) Log?.Invoke("the TCP connection to the gateway ended");
     }
 
@@ -213,8 +231,9 @@ public sealed class TunnelEngine : IDisposable
         _tunThread?.Join(2000);
         _tun = null;
         try { _socket.Close(); } catch (SocketException) { }
-        _socketThread?.Join(2000);
-        _timerThread?.Join(2000);
+        if (_socketThread is { IsAlive: true }) _socketThread.Join(2000);
+        // Over TCP the timer thread only starts once the connection is made.
+        if (_timerThread is { IsAlive: true }) _timerThread.Join(2000);
     }
 
     public void Dispose()

@@ -58,6 +58,12 @@ public sealed class VpnController : IDisposable
 {
     private static readonly TimeSpan RenewalAfterRefusalEvery = TimeSpan.FromMinutes(10);
 
+    // Connecting tries UDP and, where the gateway has one, its TCP way in, side by side.
+    /// <summary>TCP starts this long after UDP. A fast UDP answer usually arrives first anyway.</summary>
+    private const double TcpStartsAfterSeconds = 0.5;
+    /// <summary>UDP is preferred until this long after the start, even if TCP is ready sooner.</summary>
+    private const double UdpFirstSeconds = 2.0;
+
     private readonly object _gate = new();
     private readonly string _dataDir;
     private readonly string _serviceExecutable;
@@ -247,7 +253,7 @@ public sealed class VpnController : IDisposable
         using var engine = new TunnelEngine(identity, new IPEndPoint(address, port), Cnsa2Enroller.RekeySeconds, null, tcp: true);
         engine.Log += m => { lock (notes) notes.Add(m); };
         engine.Start();
-        while (engine.State.Kind == TunnelStateKind.Connecting && clock.Elapsed.TotalSeconds < 20) Thread.Sleep(50);
+        while (engine.State.Kind is TunnelStateKind.Idle or TunnelStateKind.Connecting && !engine.TransportFailed && clock.Elapsed.TotalSeconds < 20) Thread.Sleep(50);
         bool connected = engine.State.Kind == TunnelStateKind.Connected;
         string suite = engine.Suite;
         TunnelSettings settings = engine.Settings;
@@ -338,17 +344,21 @@ public sealed class VpnController : IDisposable
                 lock (_gate) { if (_region.Length == 0) _region = gateway.Id; }
 
                 IPEndPoint? tcpPath = TcpPaths.For(gateway);
-                bool useTcp = preferTcp && tcpPath is not null;
+                // UDP already got no answer on this network: do not spend time on it again.
+                bool tcpOnly = preferTcp && tcpPath is not null;
+                bool useTcp = false; // which way in won, once one has
 
                 IPAddress address;   // the gateway's own address: where UDP goes, and where traffic leaves from
-                IPAddress target;    // where this attempt connects
+                IPAddress target;    // the address the winning connection uses
                 PhysicalRoute physical;
+                PhysicalRoute? physicalTcp = null;
                 try
                 {
                     address = _names.Resolve(gateway.Host).First(a => a.AddressFamily == AddressFamily.InterNetwork);
-                    target = useTcp ? tcpPath!.Address : address;
+                    target = address;
                     network.ClearGatewayBypasses();
-                    physical = network.AddGatewayBypass(target);
+                    physical = network.AddGatewayBypass(address);
+                    if (tcpPath is not null) physicalTcp = network.AddGatewayBypass(tcpPath.Address);
                 }
                 catch (Exception e) when (e is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
                 {
@@ -360,23 +370,54 @@ public sealed class VpnController : IDisposable
                 }
 
                 string failure = "";
+                TunnelEngine? udpEngine = null, tcpEngine = null;
                 using (TunnelIdentity identity = _enroller.IdentityFor(gateway))
-                using (var engine = new TunnelEngine(identity, useTcp ? tcpPath! : new IPEndPoint(address, gateway.Port), Cnsa2Enroller.RekeySeconds, physical.SourceAddress, useTcp))
+                using (TunnelIdentity? identityTcp = tcpPath is null ? null : _enroller.IdentityFor(gateway))
+                try
                 {
-                    engine.Log += m => _log("session: " + m);
-                    _log($"connecting to {gateway.Id}{(useTcp ? " over TCP 443" : "")}");
-                    engine.Start();
-                    // A UDP handshake normally takes a second or two. Where there is a TCP way in,
-                    // do not wait the full time for UDP before trying it.
-                    var deadline = DateTime.UtcNow.AddSeconds(useTcp ? 20 : tcpPath is not null ? 10 : 35);
-                    while (Wanted && engine.State.Kind == TunnelStateKind.Connecting && DateTime.UtcNow < deadline)
+                    // Both ways in are tried side by side, so a network that blocks UDP costs the
+                    // person about two seconds, not a long wait. UDP is the better carrier, so it
+                    // starts first and is given until UdpFirstSeconds to win even if TCP is ready.
+                    var race = System.Diagnostics.Stopwatch.StartNew();
+                    _log($"connecting to {gateway.Id}");
+                    if (!tcpOnly)
+                    {
+                        udpEngine = new TunnelEngine(identity, new IPEndPoint(address, gateway.Port), Cnsa2Enroller.RekeySeconds, physical.SourceAddress);
+                        udpEngine.Log += m => _log("session: " + m);
+                        udpEngine.Start();
+                    }
+                    TunnelEngine? engine = null;
+                    double limit = tcpPath is null ? 35 : 25;
+                    while (Wanted && engine is null && race.Elapsed.TotalSeconds < limit)
                     {
                         lock (_gate) if (_regionChanged) break;
-                        Thread.Sleep(50);
+                        double t = race.Elapsed.TotalSeconds;
+                        if (tcpEngine is null && tcpPath is not null && (tcpOnly || t >= TcpStartsAfterSeconds))
+                        {
+                            tcpEngine = new TunnelEngine(identityTcp!, tcpPath, Cnsa2Enroller.RekeySeconds, physicalTcp!.SourceAddress, tcp: true);
+                            tcpEngine.Log += m => _log("session (tcp): " + m);
+                            tcpEngine.Start();
+                        }
+                        bool udpDead = udpEngine is null || udpEngine.State.Kind is TunnelStateKind.Failed or TunnelStateKind.Closed;
+                        bool tcpDead = tcpPath is null || (tcpEngine is not null && (tcpEngine.TransportFailed || tcpEngine.State.Kind is TunnelStateKind.Failed or TunnelStateKind.Closed));
+                        if (udpEngine?.State.Kind == TunnelStateKind.Connected) engine = udpEngine;
+                        else if (tcpEngine?.State.Kind == TunnelStateKind.Connected && (udpDead || t >= UdpFirstSeconds)) engine = tcpEngine;
+                        else if (udpDead && tcpDead) break;
+                        else Thread.Sleep(25);
                     }
 
-                    if (engine.State.Kind == TunnelStateKind.Connected)
+                    if (engine is not null)
                     {
+                        // The other attempt is not needed: tell its gateway and drop it.
+                        if (ReferenceEquals(engine, tcpEngine))
+                        {
+                            useTcp = true; preferTcp = true;
+                            target = tcpPath!.Address; physical = physicalTcp!;
+                            udpEngine?.Stop();
+                            if (!tcpOnly) _log($"UDP gave no answer in {race.Elapsed.TotalSeconds:0.0} s; using TCP 443");
+                        }
+                        else tcpEngine?.Stop();
+
                         TunnelSettings s = engine.Settings;
                         string wantAddress = s.Address + "/" + s.Netmask + "/" + s.Address6;
                         if (wantAddress != appliedAddress)
@@ -415,6 +456,8 @@ public sealed class VpnController : IDisposable
                         while (Wanted && engine.State.Kind == TunnelStateKind.Connected)
                         {
                             lock (_gate) if (_regionChanged) break;
+                            // Over TCP a dropped connection is known at once; do not wait for the keepalive.
+                            if (engine.TransportFailed) { failure = "the TCP connection ended"; break; }
                             DateTime now = DateTime.UtcNow;
                             // The PC slept: the gateway has long since dropped this session.
                             if ((now - lastLoop).TotalSeconds > 20) { failure = "woke from sleep"; break; }
@@ -452,9 +495,16 @@ public sealed class VpnController : IDisposable
                     }
                     else
                     {
-                        failure = engine.State.Kind == TunnelStateKind.Failed ? engine.State.Reason : "the gateway did not answer";
+                        // A reason one of them gave (a refused certificate, say) beats plain silence.
+                        failure = udpEngine?.State.Kind == TunnelStateKind.Failed ? udpEngine.State.Reason
+                            : tcpEngine?.State.Kind == TunnelStateKind.Failed ? tcpEngine.State.Reason
+                            : "the gateway did not answer";
                     }
-                    engine.Stop();
+                }
+                finally
+                {
+                    udpEngine?.Dispose();
+                    tcpEngine?.Dispose();
                 }
 
                 if (!Wanted) break;
@@ -464,13 +514,8 @@ public sealed class VpnController : IDisposable
                 _log($"connection ended: {failure}");
                 // A different network may well allow UDP: start from UDP again there.
                 if (failure is "network changed" or "woke from sleep") preferTcp = false;
-                // Silence from the gateway usually means the network blocks this way in. Switch
-                // to the other one, and go to TCP at once since the wait for UDP was already served.
-                else if (tcpPath is not null && failure == "the gateway did not answer")
-                {
-                    preferTcp = !useTcp;
-                    if (preferTcp) { _log("no answer over UDP; trying TCP 443"); continue; }
-                }
+                // Nothing answered, by either way in: next time try both again from the start.
+                else if (failure == "the gateway did not answer") preferTcp = false;
                 if (CertificateCannotFix(failure))
                     throw new LatticeTunnelException("This version of the app cannot connect to the gateway. Please update Lattice VPN.");
 
