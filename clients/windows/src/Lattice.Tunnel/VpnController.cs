@@ -24,6 +24,8 @@ public sealed class VpnStatus
     [JsonPropertyName("message")] public string Message { get; set; } = "";
     [JsonPropertyName("region")] public string Region { get; set; } = "";
     [JsonPropertyName("suite")] public string Suite { get; set; } = "";
+    /// <summary>"udp", or "tcp" when the network blocked UDP and the tunnel runs over TCP 443. Empty when not connected.</summary>
+    [JsonPropertyName("transport")] public string Transport { get; set; } = "";
     [JsonPropertyName("address")] public string Address { get; set; } = "";
     [JsonPropertyName("address6")] public string Address6 { get; set; } = "";
     [JsonPropertyName("exit")] public string Exit { get; set; } = "";
@@ -143,6 +145,7 @@ public sealed class VpnController : IDisposable
             if (_state == "connected" && _engine is { } engine)
             {
                 s.Suite = engine.Suite;
+                s.Transport = engine.Tcp ? "tcp" : "udp";
                 s.BytesIn = engine.BytesIn; s.BytesOut = engine.BytesOut; s.KeyChanges = engine.RekeyCount;
                 s.Address = _settings?.Address ?? ""; s.Address6 = _settings?.Address6 ?? "";
                 s.ConnectedSinceUnix = _since?.ToUnixTimeSeconds() ?? 0;
@@ -321,6 +324,9 @@ public sealed class VpnController : IDisposable
 
             double backoff = 1;
             bool everConnected = false, routed = false;
+            // Set after UDP gets no answer from a gateway that also listens on TCP 443. Cleared
+            // when the network or the region changes, so UDP is always tried first there.
+            bool preferTcp = false;
             string appliedAddress = "";
 
             while (Wanted)
@@ -331,13 +337,18 @@ public sealed class VpnController : IDisposable
                     ?? throw new EnrollmentException($"Region \"{region}\" is not available.");
                 lock (_gate) { if (_region.Length == 0) _region = gateway.Id; }
 
-                IPAddress address;
+                IPEndPoint? tcpPath = TcpPaths.For(gateway);
+                bool useTcp = preferTcp && tcpPath is not null;
+
+                IPAddress address;   // the gateway's own address: where UDP goes, and where traffic leaves from
+                IPAddress target;    // where this attempt connects
                 PhysicalRoute physical;
                 try
                 {
                     address = _names.Resolve(gateway.Host).First(a => a.AddressFamily == AddressFamily.InterNetwork);
+                    target = useTcp ? tcpPath!.Address : address;
                     network.ClearGatewayBypasses();
-                    physical = network.AddGatewayBypass(address);
+                    physical = network.AddGatewayBypass(target);
                 }
                 catch (Exception e) when (e is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
                 {
@@ -350,12 +361,14 @@ public sealed class VpnController : IDisposable
 
                 string failure = "";
                 using (TunnelIdentity identity = _enroller.IdentityFor(gateway))
-                using (var engine = new TunnelEngine(identity, new IPEndPoint(address, gateway.Port), Cnsa2Enroller.RekeySeconds, physical.SourceAddress))
+                using (var engine = new TunnelEngine(identity, useTcp ? tcpPath! : new IPEndPoint(address, gateway.Port), Cnsa2Enroller.RekeySeconds, physical.SourceAddress, useTcp))
                 {
                     engine.Log += m => _log("session: " + m);
-                    _log($"connecting to {gateway.Id}");
+                    _log($"connecting to {gateway.Id}{(useTcp ? " over TCP 443" : "")}");
                     engine.Start();
-                    var deadline = DateTime.UtcNow.AddSeconds(35);
+                    // A UDP handshake normally takes a second or two. Where there is a TCP way in,
+                    // do not wait the full time for UDP before trying it.
+                    var deadline = DateTime.UtcNow.AddSeconds(useTcp ? 20 : tcpPath is not null ? 10 : 35);
                     while (Wanted && engine.State.Kind == TunnelStateKind.Connecting && DateTime.UtcNow < deadline)
                     {
                         lock (_gate) if (_regionChanged) break;
@@ -393,7 +406,7 @@ public sealed class VpnController : IDisposable
                         }
                         _names.PreferCache = false; // lookups now go through the tunnel
                         Set("connected");
-                        _log($"connected: {engine.Suite}");
+                        _log($"connected{(useTcp ? " over TCP 443" : "")}: {engine.Suite}");
                         everConnected = true; backoff = 1;
 
                         IPAddress? inside = IPAddress.TryParse(s.Gateway, out IPAddress? g) ? g : null;
@@ -409,7 +422,7 @@ public sealed class VpnController : IDisposable
                             if (_networkChanged)
                             {
                                 _networkChanged = false;
-                                PhysicalRoute? current = PhysicalRoutes.Find(address, adapter.Luid);
+                                PhysicalRoute? current = PhysicalRoutes.Find(target, adapter.Luid);
                                 if (current is null || !Equals(current.SourceAddress, physical.SourceAddress) || current.InterfaceLuid != physical.InterfaceLuid)
                                 {
                                     failure = "network changed";
@@ -446,9 +459,18 @@ public sealed class VpnController : IDisposable
 
                 if (!Wanted) break;
                 bool moving; lock (_gate) moving = _regionChanged;
-                if (moving) { Set("connecting"); _log("changing region inside the hold"); continue; }
+                if (moving) { preferTcp = false; Set("connecting"); _log("changing region inside the hold"); continue; }
 
                 _log($"connection ended: {failure}");
+                // A different network may well allow UDP: start from UDP again there.
+                if (failure is "network changed" or "woke from sleep") preferTcp = false;
+                // Silence from the gateway usually means the network blocks this way in. Switch
+                // to the other one, and go to TCP at once since the wait for UDP was already served.
+                else if (tcpPath is not null && failure == "the gateway did not answer")
+                {
+                    preferTcp = !useTcp;
+                    if (preferTcp) { _log("no answer over UDP; trying TCP 443"); continue; }
+                }
                 if (CertificateCannotFix(failure))
                     throw new LatticeTunnelException("This version of the app cannot connect to the gateway. Please update Lattice VPN.");
 
@@ -511,4 +533,22 @@ public sealed class VpnController : IDisposable
         _worker?.Join(8000);
         _api.Dispose();
     }
+}
+
+/// <summary>
+/// Where each gateway also accepts the tunnel over TCP 443, for networks that block UDP.
+///
+/// TEMPORARY, FOR TESTING: the one gateway that has a TCP listener is written in here. Before
+/// this ships, the addresses must come from the gateway list the account service sends, so
+/// that no address is built into the app. Do not release with this table.
+/// </summary>
+public static class TcpPaths
+{
+    private static readonly Dictionary<string, IPEndPoint> Known = new()
+    {
+        ["mx1"] = new IPEndPoint(IPAddress.Parse("216.238.75.153"), 443),
+    };
+
+    /// <summary>The gateway's TCP address, or null when it has none.</summary>
+    public static IPEndPoint? For(Cnsa2Gateway gateway) => Known.TryGetValue(gateway.Id, out IPEndPoint? path) ? path : null;
 }
