@@ -194,9 +194,28 @@ public sealed class VpnController : IDisposable
         {
             AccountStatus status = await _api.FetchAccountAsync(account).ConfigureAwait(false);
             lock (_gate) _account = status;
+            await RefreshGatewaysAsync(account).ConfigureAwait(false);
             return "";
         }
         catch (AccountException e) { return e.Message; }
+    }
+
+    /// <summary>
+    /// Fetches the current gateway list, so new regions and new ways in to a gateway reach this
+    /// PC without waiting for its certificate to be renewed. Best effort: a failure changes nothing.
+    /// </summary>
+    private async Task RefreshGatewaysAsync(string account)
+    {
+        if (_enroller.NeedsEnrollment(DateTimeOffset.UtcNow)) return; // enrolling brings the list anyway
+        try
+        {
+            await _enroller.RefreshGatewaysAsync(account).ConfigureAwait(false);
+            _names.Prime(_enroller.Gateways().Select(g => g.Host));
+        }
+        catch (Exception e) when (e is AccountException or EnrollmentException or IOException or System.Net.Http.HttpRequestException or OperationCanceledException)
+        {
+            _log($"gateway list was not refreshed: {e.Message}");
+        }
     }
 
     /// <summary>Disconnects, removes this PC from the account and erases its key.</summary>
@@ -224,6 +243,8 @@ public sealed class VpnController : IDisposable
         {
             _log($"background renewal did not succeed: {e.Message}");
         }
+        // The same timer keeps the gateway list current (every 6 hours while the service runs).
+        if (_store.AccountNumber() is { } signedIn) RefreshGatewaysAsync(signedIn).GetAwaiter().GetResult();
     }
 
     // ---- commands ----
@@ -581,19 +602,16 @@ public sealed class VpnController : IDisposable
 }
 
 /// <summary>
-/// Where each gateway also accepts the tunnel over TCP 443, for networks that block UDP.
-///
-/// TEMPORARY, FOR TESTING: the one gateway that has a TCP listener is written in here. Before
-/// this ships, the addresses must come from the gateway list the account service sends, so
-/// that no address is built into the app. Do not release with this table.
+/// Where a gateway also accepts the tunnel over TCP, for networks that block UDP. The address
+/// comes with the gateway list from the account service; none is built into the app.
 /// </summary>
 public static class TcpPaths
 {
-    private static readonly Dictionary<string, IPEndPoint> Known = new()
-    {
-        ["mx1"] = new IPEndPoint(IPAddress.Parse("216.238.75.153"), 443),
-    };
-
-    /// <summary>The gateway's TCP address, or null when it has none.</summary>
-    public static IPEndPoint? For(Cnsa2Gateway gateway) => Known.TryGetValue(gateway.Id, out IPEndPoint? path) ? path : null;
+    /// <summary>The gateway's TCP address, or null when it has none or what was sent is not usable.</summary>
+    public static IPEndPoint? For(Cnsa2Gateway gateway) =>
+        gateway.TcpPort is > 0 and <= 65535
+        && IPAddress.TryParse(gateway.TcpHost, out IPAddress? address)
+        && address.AddressFamily == AddressFamily.InterNetwork
+            ? new IPEndPoint(address, gateway.TcpPort)
+            : null;
 }

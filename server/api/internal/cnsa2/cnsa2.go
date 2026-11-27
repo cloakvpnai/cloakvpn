@@ -193,10 +193,18 @@ func (c *Client) issue(ctx context.Context, kind, name string, requestDER []byte
 // KeyHash is the SHA-384 of the gateway's public key (the same value
 // RequestKeyHash gives for its certificate request). It is configuration
 // for certificate renewal only and is never sent to apps.
+//
+// TCPHost and TCPPort are the gateway's second way in, for networks that
+// block UDP: an IPv4 address (not a name, since apps cannot look names up
+// while they hold traffic) and a port, normally 443, where the same tunnel is
+// accepted over TCP. Both are left out for a gateway that has no TCP
+// listener. Apps that do not know these fields ignore them.
 type Gateway struct {
 	ID      string `json:"id"`
 	Host    string `json:"host"`
 	Port    int    `json:"port"`
 	Name    string `json:"name"`
+	TCPHost string `json:"tcp_host,omitempty"`
+	TCPPort int    `json:"tcp_port,omitempty"`
 	KeyHash string `json:"key_sha384,omitempty"`
 }

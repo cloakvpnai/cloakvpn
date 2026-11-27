@@ -516,6 +516,43 @@ func TestCNSA2GatewayKeyHashIsNotSentToApps(t *testing.T) {
 	}
 }
 
+// A gateway's TCP way in reaches the apps in both replies that carry the list,
+// and a gateway without one sends neither field, so older apps see what they
+// always saw.
+func TestCNSA2GatewayTCPAddressIsSentToApps(t *testing.T) {
+	f := newCNSA2Fixture(t)
+	f.h = NewCNSA2Handler(f.db, f.signer, cnsa2TestSecret, cnsa2TestInternal, "dev.example.",
+		[]cnsa2.Gateway{
+			{ID: "lab", Host: "198.51.100.7", Port: 1194, Name: "lab.gw.example", TCPHost: "198.51.100.8", TCPPort: 443},
+			{ID: "plain", Host: "198.51.100.9", Port: 1194, Name: "plain.gw.example"},
+		})
+	f.h.now = func() time.Time { return f.now }
+	number := f.account("txn-tcp", 3, f.now.Add(24*time.Hour))
+	req := httptest.NewRequest(http.MethodGet, "/v1/cnsa2/gateways", nil)
+	req.Header.Set("Authorization", "Bearer "+number)
+	rec := httptest.NewRecorder()
+	f.h.Gateways(rec, req)
+	var out struct {
+		Gateways []map[string]any `json:"gateways"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || rec.Code != http.StatusOK || len(out.Gateways) != 2 {
+		t.Fatalf("gateways: %d %v %s", rec.Code, err, rec.Body)
+	}
+	if out.Gateways[0]["tcp_host"] != "198.51.100.8" || out.Gateways[0]["tcp_port"] != float64(443) {
+		t.Fatalf("gateway with a TCP way in: %v", out.Gateways[0])
+	}
+	if _, has := out.Gateways[1]["tcp_host"]; has {
+		t.Fatalf("gateway without a TCP way in sent tcp_host: %v", out.Gateways[1])
+	}
+	if _, has := out.Gateways[1]["tcp_port"]; has {
+		t.Fatalf("gateway without a TCP way in sent tcp_port: %v", out.Gateways[1])
+	}
+	rec2, _ := f.enroll(number, testRequest(t, oidMLDSA87, 2592))
+	if rec2.Code != http.StatusOK || !strings.Contains(rec2.Body.String(), `"tcp_host":"198.51.100.8"`) {
+		t.Fatalf("enroll reply does not carry the TCP way in: %d", rec2.Code)
+	}
+}
+
 func TestCNSA2DeviceEnrolledUnderSHA256KeepsItsIdentity(t *testing.T) {
 	f := newCNSA2Fixture(t)
 	number := f.account("txn-legacy", 3, f.now.Add(24*time.Hour))

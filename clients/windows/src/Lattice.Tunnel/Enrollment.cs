@@ -129,9 +129,12 @@ public sealed class GatewayRecord
     [JsonPropertyName("host")] public string Host { get; set; } = "";
     [JsonPropertyName("port")] public int Port { get; set; } = 1194;
     [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("tcp_host")] public string TcpHost { get; set; } = "";
+    [JsonPropertyName("tcp_port")] public int TcpPort { get; set; }
 
-    public Cnsa2Gateway ToGateway() => new(Id, Host, Port, Name);
-    public static GatewayRecord From(Cnsa2Gateway g) => new() { Id = g.Id, Host = g.Host, Port = g.Port, Name = g.Name };
+    public Cnsa2Gateway ToGateway() => new(Id, Host, Port, Name, TcpHost, TcpPort);
+    public static GatewayRecord From(Cnsa2Gateway g) =>
+        new() { Id = g.Id, Host = g.Host, Port = g.Port, Name = g.Name, TcpHost = g.TcpHost, TcpPort = g.TcpPort };
 }
 
 /// <summary>

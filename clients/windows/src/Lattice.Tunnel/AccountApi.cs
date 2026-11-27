@@ -74,7 +74,9 @@ public sealed record AccountStatus(string Tier, int DeviceLimit, int DeviceCount
 }
 
 /// <summary>One CNSA 2.0 gateway. Name is the name in its certificate, which the tunnel checks.</summary>
-public sealed record Cnsa2Gateway(string Id, string Host, int Port, string Name);
+/// <param name="TcpHost">IPv4 address where the gateway also accepts the tunnel over TCP, or "" when it has none.</param>
+/// <param name="TcpPort">The port for <paramref name="TcpHost"/>, normally 443. 0 when there is none.</param>
+public sealed record Cnsa2Gateway(string Id, string Host, int Port, string Name, string TcpHost = "", int TcpPort = 0);
 
 /// <summary>Result of POST /v1/device/cnsa2/enroll. Certificates are DER.</summary>
 public sealed record Cnsa2Enrollment(byte[] Certificate, byte[] Issuing, byte[] Root, string NotAfter,
@@ -173,7 +175,14 @@ public sealed class AccountApi : IDisposable
                 string host = Str(g, "host"), name = Str(g, "name");
                 if (host.Length == 0 || name.Length == 0) continue;
                 long port = Int64(g, "port");
-                list.Add(new Cnsa2Gateway(Str(g, "id"), host, port is > 0 and <= 65535 ? (int)port : 1194, name));
+                // The TCP way in is optional. Anything odd about it is dropped, never guessed at.
+                string tcpHost = Str(g, "tcp_host");
+                long tcpPort = Int64(g, "tcp_port");
+                bool tcp = tcpPort is > 0 and <= 65535
+                    && System.Net.IPAddress.TryParse(tcpHost, out System.Net.IPAddress? parsed)
+                    && parsed.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork;
+                list.Add(new Cnsa2Gateway(Str(g, "id"), host, port is > 0 and <= 65535 ? (int)port : 1194, name,
+                                          tcp ? tcpHost : "", tcp ? (int)tcpPort : 0));
             }
         }
         return list;
